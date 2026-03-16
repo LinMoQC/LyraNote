@@ -29,9 +29,9 @@
 - [🛠 技术栈](#-技术栈)
 - [🏗 系统架构](#-系统架构)
 - [🛳 部署](#-部署)
-  - [Docker Compose（推荐）](#docker-compose推荐)
-  - [本地开发](#本地开发)
-  - [前端 Vercel + 后端服务器](#前端-vercel--后端服务器)
+  - [方式一 — 本地开发](#方式一--本地开发)
+  - [方式二 — Docker Compose（全栈一体）](#方式二--docker-compose全栈一体)
+  - [方式三 — 前端 Vercel + 后端服务器](#方式三--前端-vercel--后端服务器)
 - [⚙️ 环境变量](#️-环境变量)
 - [⌨️ 快速启动](#️-快速启动)
 - [🤝 贡献](#-贡献)
@@ -148,62 +148,13 @@
 
 ## 🛳 部署
 
-### Docker Compose（推荐）
-
-确保已安装 Docker 和 Docker Compose。
-
-**1. 配置环境变量**
-
-```bash
-cp api/.env.example api/.env
-```
-
-打开 `api/.env`，填写以下两个必填变量（其余均有默认值）：
-
-| 变量 | 说明 |
-|---|---|
-| `JWT_SECRET` | 随机字符串，用于签发登录 Token（`openssl rand -hex 32`） |
-| `FRONTEND_URL` | 前端地址（**跨域关键**），例如 `https://your-app.vercel.app` 或 `http://localhost:3000` |
-
-> **AI 配置**（API Key、模型、存储等）无需在 `.env` 中设置，首次访问时 Setup Wizard 会引导完成，配置保存在数据库中。
-
-**2. （可选）调整 `docker-compose.yml`**
-
-`docker-compose.yml` 中的默认值适合本地开发，生产环境建议修改：
-
-- `db.environment.POSTGRES_PASSWORD` — 数据库密码（同步修改 `DATABASE_URL`）
-- `minio.environment.MINIO_ROOT_PASSWORD` — MinIO 密码
-- `api.ports` — 后端对外端口（默认 `8000`）
-- `web.build.args.NEXT_PUBLIC_API_BASE_URL` — 前端构建时内嵌的 API 地址
-
-**3. 启动**
-
-```bash
-./start.sh
-# 等价于：docker compose up -d
-```
-
-服务启动后：
-- **前端**：`http://localhost:3000`
-- **后端 API**：`http://localhost:8000`
-- **API 文档**：`http://localhost:8000/docs`
-
-其他命令：
-
-```bash
-./start.sh logs   # 查看实时日志
-./start.sh stop   # 停止所有服务
-```
-
----
-
-### 本地开发
+### 方式一 — 本地开发
 
 适合需要热重载调试的场景。数据层（PostgreSQL + Redis）通过 Docker 自动管理，应用层在本地进程中运行。
 
 ```bash
 cp api/.env.example api/.env
-# 编辑 api/.env，填入必要配置
+# 至少填写 JWT_SECRET
 
 ./start.sh local
 ```
@@ -214,7 +165,74 @@ cp api/.env.example api/.env
 
 ---
 
-### 前端 Vercel + 后端服务器
+### 方式二 — Docker Compose（全栈一体）
+
+前端、后端、Worker 及所有基础设施全部运行在容器中，适合快速预览或服务器自托管。
+
+**1. 配置环境变量**
+
+```bash
+cp api/.env.example api/.env
+```
+
+打开 `api/.env`，填写必要变量：
+
+| 变量 | 说明 | 必填 |
+|---|---|---|
+| `JWT_SECRET` | JWT 签名密钥（`openssl rand -hex 32`） | ✅ |
+| `GOOGLE_CLIENT_ID/SECRET` | Google OAuth 登录 | 可选 |
+| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth 登录 | 可选 |
+
+> 基础设施连接信息（`DATABASE_URL`、`REDIS_URL`、`STORAGE_S3_*`）已由 compose 文件注入，**无需**在 `.env` 中填写。
+
+> **AI 配置**（API Key、模型等）通过首次启动的 Setup Wizard 管理，存储在数据库中，`.env` 中的值仅作 fallback。
+
+**2. 启动（开发环境）**
+
+```bash
+./start.sh          # 使用 docker-compose.yml
+```
+
+服务启动后：
+- **前端**：`http://localhost:3000`
+- **后端 API**：`http://localhost:8000`
+- **API 文档**：`http://localhost:8000/docs`
+
+```bash
+./start.sh logs     # 查看实时日志
+./start.sh stop     # 停止所有服务
+```
+
+**3. 部署到生产服务器**
+
+使用 `docker-compose.prod.yml`，包含 Nginx、关闭 debug、不暴露数据库端口。
+
+打开 `docker-compose.prod.yml`，替换三处域名占位符：
+
+```yaml
+APP_BASE_URL: https://your-domain.com
+FRONTEND_URL: https://your-domain.com
+CORS_ORIGINS: https://your-domain.com
+```
+
+首次部署前还需修改默认密码：
+
+| 位置 | 变量 | 操作 |
+|---|---|---|
+| `db.environment` | `POSTGRES_PASSWORD` | 修改 + 同步更新 `DATABASE_URL` |
+| `minio.environment` | `MINIO_ROOT_PASSWORD` | 修改 + 同步更新 `STORAGE_S3_SECRET_KEY` 和 `minio-init` |
+
+然后部署：
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+打开 `https://your-domain.com` 完成 Setup Wizard 即可。
+
+---
+
+### 方式三 — 前端 Vercel + 后端服务器
 
 后端通过 Docker Compose 部署在服务器，前端单独部署到 Vercel。
 
@@ -222,12 +240,16 @@ cp api/.env.example api/.env
 
 ```bash
 cp api/.env.example api/.env
-# 设置 FRONTEND_URL=https://your-app.vercel.app
+# 填写 JWT_SECRET，按需填写 OAuth 密钥
 
-docker compose up -d db redis minio minio-init api worker
+# 编辑 docker-compose.prod.yml：
+#   - 设置 APP_BASE_URL / FRONTEND_URL / CORS_ORIGINS 为你的域名
+#   - 修改 db/minio 默认密码
+
+docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
 ```
 
-确保服务器防火墙开放 `8000` 端口，建议配置 Nginx 反向代理 + HTTPS。
+确保服务器防火墙开放 `80` 端口（Nginx），建议配置 HTTPS。
 
 **前端（Vercel）**
 
@@ -245,22 +267,21 @@ docker compose up -d db redis minio minio-init api worker
 
 ### 后端（`api/.env`）
 
-Docker Compose 模式下，数据库 / Redis / MinIO 连接信息已由 `docker-compose.yml` 注入，**无需**在 `.env` 中重复填写。
+Docker Compose 模式下，基础设施连接信息已由 compose 文件注入，**无需**在 `.env` 中重复填写。
 
 | 变量 | 说明 | 必填 |
 |---|---|---|
 | `JWT_SECRET` | JWT 签名密钥（`openssl rand -hex 32`） | ✅ |
-| `FRONTEND_URL` | 前端地址，用于 CORS | ✅ |
 | `GOOGLE_CLIENT_ID/SECRET` | Google OAuth | 可选 |
 | `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth | 可选 |
 
-> AI 相关配置（`OPENAI_API_KEY`、`LLM_MODEL`、`EMBEDDING_MODEL`、`TAVILY_API_KEY`、存储后端等）已迁移到数据库，通过 **Setup Wizard** 或设置页面管理。若在 `.env` 中设置，仅作为数据库无值时的 fallback。
+> AI 相关配置（`OPENAI_API_KEY`、`LLM_MODEL`、`EMBEDDING_MODEL`、`TAVILY_API_KEY`、存储后端等）已迁移到数据库，通过 **Setup Wizard** 或设置页面管理。若在 `.env` 中设置，仅作为 fallback。
 
 ### 前端（`web/.env.local`）
 
 | 变量 | 说明 |
 |---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | 后端 API 地址 |
+| `NEXT_PUBLIC_API_BASE_URL` | 后端 API 地址（仅 Vercel 部署时需要填写） |
 | `NEXT_PUBLIC_USE_MOCK` | 是否使用 Mock 数据（开发调试，`true`/`false`） |
 
 ---

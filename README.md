@@ -29,9 +29,9 @@
 - [🛠 Tech Stack](#-tech-stack)
 - [🏗 Architecture](#-architecture)
 - [🛳 Self Hosting](#-self-hosting)
-  - [Docker Compose (Recommended)](#docker-compose-recommended)
-  - [Local Development](#local-development)
-  - [Frontend on Vercel + Backend on Server](#frontend-on-vercel--backend-on-server)
+  - [Option 1 — Local Development](#option-1--local-development)
+  - [Option 2 — Docker Compose (All-in-one)](#option-2--docker-compose-all-in-one)
+  - [Option 3 — Frontend on Vercel + Backend on Server](#option-3--frontend-on-vercel--backend-on-server)
 - [⚙️ Environment Variables](#️-environment-variables)
 - [⌨️ Quick Start](#️-quick-start)
 - [🤝 Contributing](#-contributing)
@@ -148,62 +148,13 @@
 
 ## 🛳 Self Hosting
 
-### Docker Compose (Recommended)
-
-Make sure Docker and Docker Compose are installed.
-
-**1. Configure environment variables**
-
-```bash
-cp api/.env.example api/.env
-```
-
-Open `api/.env` and fill in the two required variables (everything else has sensible defaults):
-
-| Variable | Description |
-|---|---|
-| `JWT_SECRET` | Random string for signing login tokens (`openssl rand -hex 32`) |
-| `FRONTEND_URL` | Frontend origin for CORS — e.g. `https://your-app.vercel.app` or `http://localhost:3000` |
-
-> **AI configuration** (API keys, models, storage backends, etc.) does **not** need to be set in `.env`. The Setup Wizard on first launch guides you through it, and settings are stored in the database.
-
-**2. (Optional) Tweak `docker-compose.yml`**
-
-The default values are fine for local development. For production, consider changing:
-
-- `db.environment.POSTGRES_PASSWORD` — database password (also update `DATABASE_URL` in `api`)
-- `minio.environment.MINIO_ROOT_PASSWORD` — MinIO password
-- `api.ports` — backend port (default `8000`)
-- `web.build.args.NEXT_PUBLIC_API_BASE_URL` — API base URL baked into the frontend image
-
-**3. Start**
-
-```bash
-./start.sh
-# equivalent to: docker compose up -d
-```
-
-Once running:
-- **Frontend**: `http://localhost:3000`
-- **Backend API**: `http://localhost:8000`
-- **API Docs**: `http://localhost:8000/docs`
-
-Other commands:
-
-```bash
-./start.sh logs   # tail live logs
-./start.sh stop   # stop all services
-```
-
----
-
-### Local Development
+### Option 1 — Local Development
 
 Best for hot-reload debugging. The data layer (PostgreSQL + Redis) is managed by Docker; the application layer runs as local processes.
 
 ```bash
 cp api/.env.example api/.env
-# Edit api/.env with required config
+# Edit api/.env: set JWT_SECRET at minimum
 
 ./start.sh local
 ```
@@ -214,7 +165,74 @@ Press `Ctrl+C` to stop local processes; database containers are unaffected.
 
 ---
 
-### Frontend on Vercel + Backend on Server
+### Option 2 — Docker Compose (All-in-one)
+
+Runs everything — frontend, backend, worker, and all infrastructure — in containers. Good for a quick full-stack preview or self-hosted server deployment.
+
+**1. Configure environment variables**
+
+```bash
+cp api/.env.example api/.env
+```
+
+Open `api/.env` and fill in the required variables:
+
+| Variable | Description | Required |
+|---|---|---|
+| `JWT_SECRET` | JWT signing key (`openssl rand -hex 32`) | ✅ |
+| `GOOGLE_CLIENT_ID/SECRET` | Google OAuth login | Optional |
+| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth login | Optional |
+
+> Infrastructure connection strings (`DATABASE_URL`, `REDIS_URL`, `STORAGE_S3_*`) are already injected by the compose file — no need to set them in `.env`.
+
+> **AI configuration** (API keys, models, etc.) is managed via the Setup Wizard on first launch, stored in the database. `.env` values act only as fallbacks.
+
+**2. Start (development)**
+
+```bash
+./start.sh          # uses docker-compose.yml
+```
+
+Once running:
+- **Frontend**: `http://localhost:3000`
+- **Backend API**: `http://localhost:8000`
+- **API Docs**: `http://localhost:8000/docs`
+
+```bash
+./start.sh logs     # tail live logs
+./start.sh stop     # stop all services
+```
+
+**3. Deploy to production server**
+
+Use `docker-compose.prod.yml` which adds Nginx, disables debug, and omits exposed ports for the database/cache services.
+
+Open `docker-compose.prod.yml` and replace the three domain placeholders:
+
+```yaml
+APP_BASE_URL: https://your-domain.com
+FRONTEND_URL: https://your-domain.com
+CORS_ORIGINS: https://your-domain.com
+```
+
+Also change the default passwords in the same file before first deploy:
+
+| Location | Variable | Action |
+|---|---|---|
+| `db.environment` | `POSTGRES_PASSWORD` | Change + update `DATABASE_URL` accordingly |
+| `minio.environment` | `MINIO_ROOT_PASSWORD` | Change + update `STORAGE_S3_SECRET_KEY` + `minio-init` |
+
+Then deploy:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+Open `https://your-domain.com` and complete the Setup Wizard.
+
+---
+
+### Option 3 — Frontend on Vercel + Backend on Server
 
 Deploy the backend via Docker Compose on your server, and the frontend separately on Vercel.
 
@@ -222,12 +240,16 @@ Deploy the backend via Docker Compose on your server, and the frontend separatel
 
 ```bash
 cp api/.env.example api/.env
-# Set FRONTEND_URL=https://your-app.vercel.app
+# Fill in JWT_SECRET and optionally OAuth keys
 
-docker compose up -d db redis minio minio-init api worker
+# Edit docker-compose.prod.yml:
+#   - Set your domain in APP_BASE_URL / FRONTEND_URL / CORS_ORIGINS
+#   - Change db/minio default passwords
+
+docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
 ```
 
-Open port `8000` in your firewall. A reverse proxy with HTTPS is strongly recommended.
+Open port `80` (Nginx) in your firewall. HTTPS via a reverse proxy is strongly recommended.
 
 **Frontend (Vercel)**
 
@@ -245,12 +267,11 @@ Push your code and Vercel will deploy automatically.
 
 ### Backend (`api/.env`)
 
-In Docker Compose mode, database / Redis / MinIO connection strings are injected by `docker-compose.yml` and do **not** need to be set in `.env`.
+In Docker Compose mode, infrastructure connection strings are injected by the compose file and do **not** need to be set in `.env`.
 
 | Variable | Description | Required |
 |---|---|---|
 | `JWT_SECRET` | JWT signing key (`openssl rand -hex 32`) | ✅ |
-| `FRONTEND_URL` | Frontend origin for CORS | ✅ |
 | `GOOGLE_CLIENT_ID/SECRET` | Google OAuth | Optional |
 | `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth | Optional |
 
@@ -260,7 +281,7 @@ In Docker Compose mode, database / Redis / MinIO connection strings are injected
 
 | Variable | Description |
 |---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | Backend API base URL |
+| `NEXT_PUBLIC_API_BASE_URL` | Backend API base URL (only needed for Vercel deployments) |
 | `NEXT_PUBLIC_USE_MOCK` | Use mock data for development (`true`/`false`) |
 
 ---
