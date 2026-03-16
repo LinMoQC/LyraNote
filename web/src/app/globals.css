@@ -1,0 +1,266 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Light mode ─────────────────────────────────────────────────────────── */
+:root {
+  --background:         0   0%  100%;
+  --foreground:         220 16% 16%;
+  --card:               0   0%  100%;
+  --card-foreground:    220 16% 16%;
+  --border:             220 8%  91%;
+  --input:              220 8%  93%;
+  --primary:            243 68% 52%;
+  --primary-foreground: 0   0%  100%;
+  --secondary:          220 6%  95%;
+  --secondary-foreground: 220 18% 22%;
+  --muted:              220 6%  96%;
+  --muted-foreground:   220 8%  46%;
+  --accent:             220 6%  93%;
+  --accent-foreground:  220 16% 16%;
+  --destructive:        0   68% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --ring:               243 68% 52%;
+  --sidebar:            220 6%  98%;
+}
+
+/* ─── Dark mode ──────────────────────────────────────────────────────────── */
+.dark {
+  --background:         224 32% 7%;
+  --foreground:         210 28% 93%;
+  --card:               224 26% 10%;
+  --card-foreground:    210 28% 93%;
+  --border:             224 18% 18%;
+  --input:              224 18% 15%;
+  --primary:            243 68% 62%;
+  --primary-foreground: 0   0%  100%;
+  --secondary:          224 20% 15%;
+  --secondary-foreground: 210 24% 88%;
+  --muted:              224 20% 13%;
+  --muted-foreground:   218 16% 56%;
+  --accent:             224 20% 17%;
+  --accent-foreground:  210 28% 90%;
+  --destructive:        0   65% 56%;
+  --destructive-foreground: 0 0% 100%;
+  --ring:               243 68% 62%;
+  --sidebar:            224 30% 6%;
+}
+
+/* ─── View Transition (directional theme reveal) ─────────────────────────── */
+@keyframes reveal-from-bottom-left {
+  from { clip-path: circle(0%   at 0%    100%); }
+  to   { clip-path: circle(150% at 0%    100%); }
+}
+@keyframes reveal-from-top-right {
+  from { clip-path: circle(0%   at 100%  0%  ); }
+  to   { clip-path: circle(150% at 100%  0%  ); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* dark → light : 新页面（浅色）从左下角扩张 */
+  html:not(.dark)::view-transition-new(root) {
+    animation: reveal-from-bottom-left 500ms cubic-bezier(0.25, 0, 0, 1) both;
+    z-index: 9999;
+  }
+  /* light → dark : 新页面（深色）从右上角扩张 */
+  html.dark::view-transition-new(root) {
+    animation: reveal-from-top-right 500ms cubic-bezier(0.25, 0, 0, 1) both;
+    z-index: 9999;
+  }
+  ::view-transition-old(root) {
+    animation: none;
+    z-index: 1;
+  }
+}
+
+/* ─── Grain noise overlay (global) ──────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  opacity: 0.06;
+  mix-blend-mode: screen;
+}
+
+/* 浅色模式下降低强度 */
+:root:not(.dark) body::after {
+  opacity: 0.04;
+  mix-blend-mode: multiply;
+}
+
+/* ─── Base ───────────────────────────────────────────────────────────────── */
+* {
+  @apply border-border;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family:
+    "SF Pro Display",
+    "PingFang SC",
+    "Segoe UI Variable",
+    sans-serif;
+}
+
+.dark body,
+.dark {
+  background:
+    radial-gradient(ellipse at top, hsl(243 68% 62% / 0.07), transparent 45%),
+    hsl(var(--background));
+}
+
+a {
+  @apply text-inherit no-underline;
+}
+
+::selection {
+  background: hsl(243 68% 62% / 0.3);
+}
+
+/* ─── Utilities ──────────────────────────────────────────────────────────── */
+.surface-panel {
+  @apply rounded-3xl border border-foreground/[0.06] bg-card/85 shadow-panel backdrop-blur;
+}
+
+.hero-grid {
+  background-size: 36px 36px;
+}
+
+.tiptap {
+  @apply min-h-[320px] outline-none;
+}
+
+/* ─── Tiptap editor content styles ──────────────────────────────────────── */
+.tiptap h1 {
+  @apply mb-3 mt-8 text-2xl font-bold leading-tight tracking-tight text-foreground first:mt-0;
+}
+.tiptap h2 {
+  @apply mb-2 mt-6 text-xl font-semibold leading-tight tracking-tight text-foreground first:mt-0;
+}
+.tiptap h3 {
+  @apply mb-2 mt-5 text-lg font-semibold leading-snug text-foreground first:mt-0;
+}
+.tiptap p {
+  @apply mb-3 leading-[1.8] last:mb-0;
+}
+.tiptap strong {
+  @apply font-semibold text-foreground;
+}
+.tiptap em {
+  @apply italic;
+}
+.tiptap u {
+  @apply underline underline-offset-2;
+}
+.tiptap s {
+  @apply line-through opacity-60;
+}
+.tiptap mark {
+  @apply rounded-sm bg-yellow-400/25 px-0.5 text-foreground;
+}
+.tiptap code {
+  @apply rounded bg-foreground/10 px-1.5 py-0.5 font-mono text-[0.875em] text-primary/90;
+}
+.tiptap pre {
+  @apply my-4 overflow-x-auto rounded-xl bg-foreground/[0.08] p-4;
+}
+.tiptap pre code {
+  @apply bg-transparent p-0 text-sm text-foreground/80;
+}
+.tiptap ul {
+  @apply my-3 ml-5 list-disc space-y-1;
+}
+.tiptap ol {
+  @apply my-3 ml-5 list-decimal space-y-1;
+}
+.tiptap li {
+  @apply leading-[1.75];
+}
+.tiptap li p {
+  @apply mb-0;
+}
+.tiptap blockquote {
+  @apply my-4 border-l-2 border-primary/40 pl-4 text-muted-foreground italic;
+}
+.tiptap hr {
+  @apply my-6 border-foreground/10;
+}
+.tiptap a {
+  @apply text-primary underline underline-offset-2 transition-opacity hover:opacity-75;
+}
+
+/* ─── Global scrollbar ────────────────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--foreground) / 0.08) transparent;
+}
+*:hover {
+  scrollbar-color: hsl(var(--foreground) / 0.14) transparent;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--foreground) / 0.08);
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--foreground) / 0.2);
+}
+::-webkit-scrollbar-thumb:active {
+  background: hsl(var(--foreground) / 0.28);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-scroll:hover {
+  scrollbar-color: hsl(var(--foreground) / 0.12) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+.sidebar-scroll:hover::-webkit-scrollbar-thumb {
+  background: hsl(var(--foreground) / 0.12);
+}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--foreground) / 0.2);
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  @apply pointer-events-none float-left h-0 text-foreground/20;
+  content: attr(data-placeholder);
+}
+
+.ghost-text {
+  @apply pointer-events-none select-none text-foreground/30 italic;
+}

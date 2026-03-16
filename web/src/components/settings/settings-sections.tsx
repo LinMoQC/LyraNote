@@ -1,0 +1,10 @@
+export { GeneralSection } from "./sections/general-section";
+export { AppearanceSection } from "./sections/appearance-section";
+export { AccountSection } from "./sections/account-section";
+export { AIConfigSection } from "./sections/ai-config-section";
+export { PersonalitySection } from "./sections/personality-section";
+export { StorageSection } from "./sections/storage-section";
+export { NotifySection } from "./sections/notify-section";
+export { SecuritySection } from "./sections/security-section";
+export { MemorySection } from "./sections/memory-section";
+export { SkillsSection } from "./sections/skills-section";

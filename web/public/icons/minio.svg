@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 30" fill="none">
+  <!-- MinIO brand red columns mark -->
+  <rect x="0" y="0" width="14" height="30" rx="3" fill="#C72C48"/>
+  <rect x="18" y="0" width="14" height="30" rx="3" fill="#C72C48"/>
+  <rect x="6" y="12" width="20" height="6" rx="2" fill="#C72C48"/>
+  <!-- MinIO wordmark -->
+  <text x="36" y="22" font-family="system-ui,-apple-system,sans-serif" font-weight="700" font-size="18" fill="#C72C48" letter-spacing="-0.5">MinIO</text>
+</svg>
