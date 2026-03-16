@@ -122,7 +122,8 @@ services:
         NEXT_PUBLIC_API_BASE_URL: /api/v1
     restart: unless-stopped
     env_file:
-      - ./web/.env.local
+      - path: ./web/.env.local
+        required: false
     environment:
       NEXT_PUBLIC_API_BASE_URL: /api/v1
       # SSR 服务端请求走 Docker 内网，避免容器内相对路径解析失败

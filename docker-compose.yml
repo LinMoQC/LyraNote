@@ -118,7 +118,8 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - ./web/.env.local
+      - path: ./web/.env.local
+        required: false
     environment:
       # SSR 服务端请求走 Docker 内网，避免容器内 localhost ECONNREFUSED
       INTERNAL_API_BASE_URL: http://api:8000/api/v1

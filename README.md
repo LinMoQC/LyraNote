@@ -207,6 +207,13 @@ Once running:
 
 Use `docker-compose.prod.yml` which adds Nginx, disables debug, and omits exposed ports for the database/cache services.
 
+Copy the env files:
+
+```bash
+cp api/.env.example api/.env
+cp web/.env.local.example web/.env.local
+```
+
 Open `docker-compose.prod.yml` and replace the three domain placeholders:
 
 ```yaml
@@ -240,6 +247,7 @@ Deploy the backend via Docker Compose on your server, and the frontend separatel
 
 ```bash
 cp api/.env.example api/.env
+cp web/.env.local.example web/.env.local
 # Fill in JWT_SECRET and optionally OAuth keys
 
 # Edit docker-compose.prod.yml:

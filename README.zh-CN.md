@@ -207,6 +207,13 @@ cp api/.env.example api/.env
 
 使用 `docker-compose.prod.yml`，包含 Nginx、关闭 debug、不暴露数据库端口。
 
+复制环境变量文件：
+
+```bash
+cp api/.env.example api/.env
+cp web/.env.local.example web/.env.local
+```
+
 打开 `docker-compose.prod.yml`，替换三处域名占位符：
 
 ```yaml
@@ -240,6 +247,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ```bash
 cp api/.env.example api/.env
+cp web/.env.local.example web/.env.local
 # 填写 JWT_SECRET，按需填写 OAuth 密钥
 
 # 编辑 docker-compose.prod.yml：
