@@ -1,261 +1,308 @@
-# LyraNote
+<div align="center">
+  <img width="120" alt="LyraNote Logo" src="./web/public/lyra.png">
 
-**LyraNote** 是一款 AI 驱动的个人知识管理与笔记应用，旨在成为用户的"第二大脑"。通过将 RAG 检索增强生成、多步骤 AI Agent、知识图谱和长期记忆融为一体，LyraNote 让用户能够真正与自己的知识库对话。
+  <h1>LyraNote</h1>
+
+  <p><strong>Your AI-powered second brain — chat with your knowledge, not just store it.</strong></p>
+
+**English** · [简体中文](./README.zh-CN.md)
+
+[![][github-contributors-shield]][github-contributors-link]
+[![][github-forks-shield]][github-forks-link]
+[![][github-stars-shield]][github-stars-link]
+[![][github-issues-shield]][github-issues-link]
+[![][github-license-shield]][github-license-link]
+
+</div>
+
+<details>
+<summary><kbd>Table of Contents</kbd></summary>
+
+#### TOC
+
+- [👋 Getting Started](#-getting-started)
+- [✨ Features](#-features)
+  - [Knowledge Management](#knowledge-management)
+  - [AI Assistant](#ai-assistant)
+  - [Rich Note Editing](#rich-note-editing)
+  - [Smart Automation](#smart-automation)
+- [🛠 Tech Stack](#-tech-stack)
+- [🏗 Architecture](#-architecture)
+- [🛳 Self Hosting](#-self-hosting)
+  - [Docker Compose (Recommended)](#docker-compose-recommended)
+  - [Local Development](#local-development)
+  - [Frontend on Vercel + Backend on Server](#frontend-on-vercel--backend-on-server)
+- [⚙️ Environment Variables](#️-environment-variables)
+- [⌨️ Quick Start](#️-quick-start)
+- [🤝 Contributing](#-contributing)
+- [📈 Star History](#-star-history)
+
+####
+
+<br/>
+
+</details>
+
+<br/>
+
+## 👋 Getting Started
+
+**LyraNote** is a modern, AI-powered personal knowledge management app designed to be your *second brain*. By integrating RAG (Retrieval-Augmented Generation), multi-step AI Agents, knowledge graphs, and long-term memory, LyraNote lets you truly *converse* with your own knowledge base — not just search through it.
 
 ---
 
-## 功能特性
+## ✨ Features
 
-### 知识管理
-- **多格式来源导入** — 支持 PDF 文件、网页 URL、Markdown 文本，自动解析、分块、向量化入库
-- **RAG 对话** — AI 基于笔记本内的知识库进行检索增强回答，并附带来源引用
-- **知识图谱** — 自动从来源中提取实体与关系，生成可交互的力导向图谱
+### Knowledge Management
 
-### AI 助手
-- **流式 AI 对话** — 实时 SSE 流式输出，支持多轮上下文对话
-- **深度研究 Agent** — 多步骤自主研究，联网搜索并输出结构化研究报告
-- **AI 副驾驶** — 悬浮于编辑器旁的 AI 面板，随时与当前笔记本内容互动
-- **内联润色** — 在编辑器中 AI 实时提供幽灵文字建议，Tab 键一键接受
-- **AI 生成内容** — 一键生成摘要、FAQ、学习指南、简报等结构化文档
+- **Multi-format Import** — Ingest PDF files, web URLs, and Markdown text; auto-parsed, chunked, and vectorized into your knowledge base.
+- **RAG Conversations** — AI answers questions grounded in your notebook's knowledge base, with source citations.
+- **Knowledge Graph** — Automatically extracts entities and relationships from sources and renders an interactive force-directed graph.
 
-### 笔记编辑
-- **富文本编辑器** — 基于 Tiptap，支持 Markdown 快捷键、标题、列表、代码块、引用等
-- **自动保存** — 编辑内容实时同步至后端
-- **公开分享** — 笔记本可生成只读公开链接
+### AI Assistant
 
-### 智能化
-- **长期记忆** — AI 跨会话记忆用户偏好与知识点，持续个性化
-- **场景感知** — 自动识别对话场景（研究 / 写作 / 学习 / 复习）并切换策略
-- **思维导图** — AI 对话中实时渲染思维导图
-- **定时任务** — 创建 Cron 自动化任务（每日新闻摘要、知识简报等），通过邮件推送
-- **主动洞察** — AI 主动推送与当前内容相关的洞察卡片
+- **Streaming AI Chat** — Real-time SSE streaming with multi-turn context support.
+- **Deep Research Agent** — Multi-step autonomous research: browses the web and produces structured research reports.
+- **AI Copilot** — A floating AI panel docked beside the editor, always aware of your current notebook.
+- **Inline Ghost Text** — AI suggestions appear inline as you type; press `Tab` to accept.
+- **AI-Generated Content** — One-click generation of summaries, FAQs, study guides, briefings, and more.
+
+### Rich Note Editing
+
+- **Rich Text Editor** — Powered by Tiptap with Markdown shortcuts, headings, lists, code blocks, and blockquotes.
+- **Auto-save** — Edits sync to the backend in real time.
+- **Public Sharing** — Generate a read-only public link for any notebook.
+
+### Smart Automation
+
+- **Long-term Memory** — AI remembers user preferences and knowledge points across sessions for continuous personalization.
+- **Scene Awareness** — Automatically detects conversation context (research / writing / learning / review) and adapts strategy.
+- **Mind Maps** — Renders interactive mind maps directly inside AI chat.
+- **Scheduled Tasks** — Create Cron jobs (daily news digests, knowledge briefings, etc.) with email delivery.
+- **Proactive Insights** — AI proactively surfaces insight cards related to your current content.
 
 ---
 
-## 系统架构
+## 🛠 Tech Stack
+
+### Frontend (`web/`)
+
+| Technology | Purpose |
+|---|---|
+| [Next.js 15](https://nextjs.org/) (App Router) | React full-stack framework |
+| [React 19](https://react.dev/) + TypeScript | UI development |
+| [Tailwind CSS](https://tailwindcss.com/) | Utility-first styling |
+| [Tiptap](https://tiptap.dev/) | Rich text editor |
+| [TanStack Query](https://tanstack.com/query) | Server-state management & caching |
+| [Zustand](https://zustand-demo.pmnd.rs/) | Client-side global state |
+| [Framer Motion](https://www.framer.com/motion/) | Animations |
+| [react-force-graph-2d](https://github.com/vasturiano/react-force-graph) | Knowledge graph visualization |
+| [markmap](https://markmap.js.org/) | Mind map rendering |
+| [next-intl](https://next-intl-docs.vercel.app/) | Internationalization (i18n) |
+
+### Backend (`api/`)
+
+| Technology | Purpose |
+|---|---|
+| Python 3.12 + [FastAPI](https://fastapi.tiangolo.com/) | Async web framework |
+| SQLAlchemy 2.0 + asyncpg | Async ORM |
+| Alembic | Database migrations |
+| PostgreSQL 16 + pgvector | Relational data + vector similarity search |
+| Celery + Redis | Background async task queue |
+| OpenAI SDK | LLM calls & text embeddings |
+| [LangGraph](https://www.langchain.com/langgraph) | Multi-step Agent orchestration |
+| MinIO / S3 | File object storage |
+| Tavily API | Web search tool |
+
+---
+
+## 🏗 Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        用户浏览器                                │
-│           Next.js 15 前端 (React 19 + Tiptap + Zustand)         │
+│                         User Browser                            │
+│          Next.js 15 Frontend (React 19 + Tiptap + Zustand)      │
 └──────────────────────────────┬──────────────────────────────────┘
                                │ HTTP / SSE
 ┌──────────────────────────────▼──────────────────────────────────┐
-│                    FastAPI 后端 (Python 3.12)                    │
+│                   FastAPI Backend (Python 3.12)                  │
 │   ┌─────────────┐  ┌──────────────┐  ┌───────────────────────┐  │
-│   │  REST API   │  │  SSE 流式    │  │    Celery Worker      │  │
-│   │  路由层     │  │  AI 对话     │  │  （后台 AI 任务）      │  │
+│   │  REST API   │  │  SSE Stream  │  │    Celery Worker      │  │
+│   │   Routers   │  │  AI Chat     │  │  (Background AI Tasks)│  │
 │   └──────┬──────┘  └──────┬───────┘  └──────────┬────────────┘  │
 │          │                │                     │               │
 │   ┌──────▼────────────────▼─────────────────────▼────────────┐  │
-│   │                   Agent / Skills 层                       │  │
-│   │  ReAct Agent · RAG · 深度研究 · 记忆 · 知识图谱 · 写作    │  │
+│   │                  Agent / Skills Layer                     │  │
+│   │   ReAct Agent · RAG · Deep Research · Memory · KG · Write │  │
 │   └──────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────┘
          │                    │                    │
 ┌────────▼──────┐   ┌─────────▼────────┐   ┌──────▼───────────┐
 │  PostgreSQL   │   │      Redis       │   │   MinIO / S3     │
-│  + pgvector   │   │  (Celery Broker  │   │  (文件对象存储)   │
-│  (数据 + 向量) │   │   + 缓存)        │   │                  │
+│  + pgvector   │   │ (Celery Broker   │   │  (File Storage)  │
+│ (Data+Vector) │   │   + Cache)       │   │                  │
 └───────────────┘   └──────────────────┘   └──────────────────┘
 ```
 
 ---
 
-## 技术栈总览
+## 🛳 Self Hosting
 
-### 后端（`api/`）
+### Docker Compose (Recommended)
 
-| 技术 | 用途 |
-|---|---|
-| Python 3.12 + FastAPI | 异步 Web 框架 |
-| SQLAlchemy 2.0 + asyncpg | 异步 ORM |
-| Alembic | 数据库迁移 |
-| PostgreSQL 16 + pgvector | 关系数据 + 向量相似度检索 |
-| Celery + Redis | 后台异步任务队列 |
-| OpenAI SDK | LLM 调用与文本嵌入 |
-| LangGraph | 多步骤 Agent 编排 |
-| MinIO / S3 | 文件对象存储 |
-| Tavily API | 网络搜索工具 |
+Make sure Docker and Docker Compose are installed.
 
-### 前端（`web/`）
-
-| 技术 | 用途 |
-|---|---|
-| Next.js 15 (App Router) | React 全栈框架 |
-| React 19 + TypeScript | UI 开发 |
-| Tailwind CSS | 原子化样式 |
-| Tiptap | 富文本编辑器 |
-| TanStack Query | 服务端状态与缓存 |
-| Zustand | 客户端全局状态 |
-| Framer Motion | 动画 |
-| react-force-graph-2d | 知识图谱可视化 |
-| markmap | 思维导图渲染 |
-| next-intl | 国际化（i18n） |
-
----
-
-## 目录结构
-
-```
-LyraNote/
-├── api/                    # Python FastAPI 后端
-│   ├── app/
-│   │   ├── routers/        # 各业务域 API 路由
-│   │   ├── agents/         # AI Agent 层
-│   │   ├── skills/         # AI 技能插件
-│   │   └── providers/      # 外部服务封装
-│   ├── alembic/            # 数据库迁移
-│   └── requirements.txt
-├── web/                    # Next.js 前端
-│   └── src/
-│       ├── app/            # App Router 页面
-│       ├── features/       # 业务功能组件
-│       ├── services/       # API 服务层
-│       ├── store/          # Zustand 状态
-│       └── lib/            # 工具函数
-├── docs/                   # 架构与功能文档
-├── docker-compose.yml      # 开发环境编排
-├── docker-compose.prod.yml # 生产环境编排
-├── nginx.prod.conf         # 生产 Nginx 配置
-└── start.sh                # 快捷启动脚本
-```
-
----
-
-## 快速开始
-
-### 方式一：Docker Compose（推荐）
-
-确保已安装 Docker 和 Docker Compose。
-
-**1. 配置环境变量**
+**1. Configure environment variables**
 
 ```bash
 cp api/.env.example api/.env
 ```
 
-打开 `api/.env`，填写以下两个关键变量（其余均有默认值）：
+Open `api/.env` and fill in the two required variables (everything else has sensible defaults):
 
-| 变量 | 说明 |
+| Variable | Description |
 |---|---|
-| `JWT_SECRET` | 随机字符串，用于签发登录 Token（`openssl rand -hex 32`） |
-| `FRONTEND_URL` | 前端地址（**跨域关键**），例如 `https://your-app.vercel.app` 或 `http://localhost:3000` |
+| `JWT_SECRET` | Random string for signing login tokens (`openssl rand -hex 32`) |
+| `FRONTEND_URL` | Frontend origin for CORS — e.g. `https://your-app.vercel.app` or `http://localhost:3000` |
 
-> **AI 配置（API Key、模型、存储等）无需在 `.env` 中设置**，首次访问时 Setup Wizard 会引导完成，配置保存在数据库中。
+> **AI configuration** (API keys, models, storage backends, etc.) does **not** need to be set in `.env`. The Setup Wizard on first launch guides you through it, and settings are stored in the database.
 
-**2. （可选）调整 `docker-compose.yml`**
+**2. (Optional) Tweak `docker-compose.yml`**
 
-`docker-compose.yml` 中的数据库密码、端口映射等默认值适合本地开发，生产环境建议修改：
+The default values are fine for local development. For production, consider changing:
 
-- `db.environment.POSTGRES_PASSWORD` — 数据库密码（同步修改 `api.environment.DATABASE_URL`）
-- `minio.environment.MINIO_ROOT_PASSWORD` — MinIO 密码
-- `api.ports` — 如需修改后端对外端口（默认 `8000`）
-- `web.build.args.NEXT_PUBLIC_API_BASE_URL` — 前端构建时内嵌的 API 地址（仅 Docker 部署前端时有效）
+- `db.environment.POSTGRES_PASSWORD` — database password (also update `DATABASE_URL` in `api`)
+- `minio.environment.MINIO_ROOT_PASSWORD` — MinIO password
+- `api.ports` — backend port (default `8000`)
+- `web.build.args.NEXT_PUBLIC_API_BASE_URL` — API base URL baked into the frontend image
 
-**3. 启动**
+**3. Start**
 
 ```bash
 ./start.sh
-# 或等价：docker compose up -d
+# equivalent to: docker compose up -d
 ```
 
-服务启动后：
-- 前端：`http://localhost:3000`
-- 后端 API：`http://localhost:8000`
-- API 文档：`http://localhost:8000/docs`
+Once running:
+- **Frontend**: `http://localhost:3000`
+- **Backend API**: `http://localhost:8000`
+- **API Docs**: `http://localhost:8000/docs`
 
-其他命令：
+Other commands:
 
 ```bash
-./start.sh logs   # 查看实时日志
-./start.sh stop   # 停止所有服务
+./start.sh logs   # tail live logs
+./start.sh stop   # stop all services
 ```
 
 ---
 
-### 方式二：本地开发（start.sh local）
+### Local Development
 
-适合需要热重载调试的场景。数据层（PostgreSQL + Redis）通过 Docker 自动管理，应用层在本地进程中运行。
+Best for hot-reload debugging. The data layer (PostgreSQL + Redis) is managed by Docker; the application layer runs as local processes.
 
 ```bash
 cp api/.env.example api/.env
-# 编辑 api/.env，填入必要配置
+# Edit api/.env with required config
 
 ./start.sh local
 ```
 
-脚本会自动完成：检测/启动数据库容器 → 创建 Python 虚拟环境 → 安装依赖 → 执行数据库迁移 → 并行启动 FastAPI、Celery Worker 和 Next.js Dev Server。
+The script automatically: detects/starts database containers → creates a Python venv → installs dependencies → runs DB migrations → starts FastAPI, Celery Worker, and Next.js Dev Server in parallel.
 
-按 `Ctrl+C` 停止本地进程，数据库容器不受影响。
+Press `Ctrl+C` to stop local processes; database containers are unaffected.
 
 ---
 
-### 方式三：前端 Vercel + 后端服务器
+### Frontend on Vercel + Backend on Server
 
-后端通过 Docker Compose 部署在服务器，前端单独部署到 Vercel。
+Deploy the backend via Docker Compose on your server, and the frontend separately on Vercel.
 
-**后端（服务器端）**
+**Backend (server)**
 
 ```bash
 cp api/.env.example api/.env
-# 编辑 api/.env：
-#   FRONTEND_URL=https://your-app.vercel.app  ← 必须填写 Vercel 域名
-#   其他必要配置...
+# Set FRONTEND_URL=https://your-app.vercel.app
 
-# 仅启动后端相关服务（不含 web 容器）
 docker compose up -d db redis minio minio-init api worker
 ```
 
-确保服务器防火墙开放 `8000` 端口，并建议配置 Nginx 反向代理 + HTTPS。
+Open port `8000` in your firewall. A reverse proxy with HTTPS is strongly recommended.
 
-**前端（Vercel）**
+**Frontend (Vercel)**
 
-在 Vercel 项目的 **Environment Variables** 中添加：
+Add the following **Environment Variable** in your Vercel project dashboard:
 
-| 变量 | 值 |
+| Variable | Value |
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | `https://your-server.com/api/v1` |
 
-然后推送代码触发 Vercel 自动部署即可。
+Push your code and Vercel will deploy automatically.
 
 ---
 
-## 环境变量
+## ⚙️ Environment Variables
 
-### 后端（`api/.env`）
+### Backend (`api/.env`)
 
-Docker Compose 模式下，数据库/Redis/MinIO 连接信息已由 `docker-compose.yml` 的 `environment` 块覆盖，**无需**在 `.env` 中重复填写。
+In Docker Compose mode, database / Redis / MinIO connection strings are injected by `docker-compose.yml` and do **not** need to be set in `.env`.
 
-| 变量 | 说明 | 必填 |
+| Variable | Description | Required |
 |---|---|---|
-| `JWT_SECRET` | JWT 签名密钥（`openssl rand -hex 32`） | ✅ |
-| `FRONTEND_URL` | 前端地址，用于 CORS（如 `https://your-app.vercel.app`） | ✅ |
-| `GOOGLE_CLIENT_ID/SECRET` | Google OAuth | 可选 |
-| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth | 可选 |
+| `JWT_SECRET` | JWT signing key (`openssl rand -hex 32`) | ✅ |
+| `FRONTEND_URL` | Frontend origin for CORS | ✅ |
+| `GOOGLE_CLIENT_ID/SECRET` | Google OAuth | Optional |
+| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth | Optional |
 
-> **AI 相关配置**（`OPENAI_API_KEY`、`LLM_MODEL`、`EMBEDDING_MODEL`、`TAVILY_API_KEY`、存储后端等）已迁移到数据库，通过首次启动的 **Setup Wizard** 或设置页面管理，无需写入 `.env`。若在 `.env` 中设置，仅作为数据库无值时的 fallback。
+> AI-related config (`OPENAI_API_KEY`, `LLM_MODEL`, `EMBEDDING_MODEL`, `TAVILY_API_KEY`, storage backend, etc.) is stored in the database and managed via the **Setup Wizard** or Settings page. Values in `.env` act only as fallbacks.
 
-### 前端（`web/.env.local`）
+### Frontend (`web/.env.local`)
 
-| 变量 | 说明 |
+| Variable | Description |
 |---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | 后端 API 地址 |
-| `NEXT_PUBLIC_USE_MOCK` | 是否使用 Mock 数据（开发调试） |
+| `NEXT_PUBLIC_API_BASE_URL` | Backend API base URL |
+| `NEXT_PUBLIC_USE_MOCK` | Use mock data for development (`true`/`false`) |
 
 ---
 
-## 基础设施服务
+## ⌨️ Quick Start (Manual)
 
-| 服务 | 版本 | 用途 |
-|---|---|---|
-| PostgreSQL | 16 | 主数据库 + pgvector 向量存储 |
-| Redis | 7 | Celery 消息队列 + 缓存 |
-| MinIO | latest | 本地 S3 兼容对象存储（文件上传） |
+```bash
+git clone https://github.com/LinMoQC/LyraNote.git
+cd LyraNote
+cp api/.env.example api/.env
+./start.sh
+```
 
 ---
 
-## 详细文档
+## 🤝 Contributing
 
-- [后端 README](api/README.md) — FastAPI 后端详细说明
-- [前端 README](web/README.md) — Next.js 前端详细说明
+Contributions are welcome! Feel free to open an issue or submit a pull request.
+
+<a href="https://github.com/LinMoQC/LyraNote/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=LinMoQC/LyraNote" alt="contributors" />
+</a>
+
+---
+
+## 📈 Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=LinMoQC/LyraNote&type=Date)](https://star-history.com/#LinMoQC/LyraNote&Date)
+
+---
+
+Copyright © 2026 [LinMoQC](https://github.com/LinMoQC). <br />
+This project is [MIT](./LICENSE) licensed.
+
+<!-- LINK GROUP -->
+[github-contributors-shield]: https://img.shields.io/github/contributors/LinMoQC/LyraNote?color=c4f042&labelColor=black&style=flat-square
+[github-contributors-link]: https://github.com/LinMoQC/LyraNote/graphs/contributors
+[github-forks-shield]: https://img.shields.io/github/forks/LinMoQC/LyraNote?color=8ae8ff&labelColor=black&style=flat-square
+[github-forks-link]: https://github.com/LinMoQC/LyraNote/network/members
+[github-stars-shield]: https://img.shields.io/github/stars/LinMoQC/LyraNote?color=ffcb47&labelColor=black&style=flat-square
+[github-stars-link]: https://github.com/LinMoQC/LyraNote/stargazers
+[github-issues-shield]: https://img.shields.io/github/issues/LinMoQC/LyraNote?color=ff80eb&labelColor=black&style=flat-square
+[github-issues-link]: https://github.com/LinMoQC/LyraNote/issues
+[github-license-shield]: https://img.shields.io/badge/license-MIT-white?labelColor=black&style=flat-square
+[github-license-link]: https://github.com/LinMoQC/LyraNote/blob/main/LICENSE
