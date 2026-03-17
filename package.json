@@ -11,7 +11,10 @@
     "stop": "./lyra stop",
     "logs": "./lyra logs",
     "status": "./lyra status",
-    "typecheck": "cd web && pnpm exec tsc --noEmit"
+    "typecheck": "cd web && pnpm exec tsc --noEmit",
+    "docs:dev": "cd docs-site && pnpm run dev",
+    "docs:build": "cd docs-site && pnpm run build",
+    "docs:preview": "cd docs-site && pnpm run preview"
   },
   "repository": {
     "type": "git",
