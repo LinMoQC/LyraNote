@@ -17,7 +17,7 @@ class TestNotebookCRUD:
             headers=auth_headers,
             json={"title": "My Test Notebook"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code == 201
         nb = resp.json()["data"]
         assert nb["title"] == "My Test Notebook"
         assert "id" in nb
@@ -35,6 +35,7 @@ class TestNotebookCRUD:
             headers=auth_headers,
             json={"title": "Fetch Me"},
         )
+        assert create_resp.status_code == 201, create_resp.text
         nb_id = create_resp.json()["data"]["id"]
 
         get_resp = await client.get(f"/api/v1/notebooks/{nb_id}", headers=auth_headers)
@@ -54,6 +55,7 @@ class TestNotebookCRUD:
             headers=auth_headers,
             json={"title": "Old Title"},
         )
+        assert create_resp.status_code == 201, create_resp.text
         nb_id = create_resp.json()["data"]["id"]
 
         patch_resp = await client.patch(
@@ -70,20 +72,24 @@ class TestNotebookCRUD:
             headers=auth_headers,
             json={"title": "Delete Me"},
         )
+        assert create_resp.status_code == 201, create_resp.text
         nb_id = create_resp.json()["data"]["id"]
 
         del_resp = await client.delete(f"/api/v1/notebooks/{nb_id}", headers=auth_headers)
-        assert del_resp.status_code in (200, 204)
+        assert del_resp.status_code == 204
 
         get_resp = await client.get(f"/api/v1/notebooks/{nb_id}", headers=auth_headers)
         assert get_resp.status_code == 404
 
     async def test_list_notebooks_returns_created(self, client, auth_headers):
-        await client.post(
+        create_resp = await client.post(
             "/api/v1/notebooks",
             headers=auth_headers,
             json={"title": "Listed Notebook"},
         )
+        assert create_resp.status_code == 201, create_resp.text
+
         list_resp = await client.get("/api/v1/notebooks", headers=auth_headers)
+        assert list_resp.status_code == 200
         titles = [nb["title"] for nb in list_resp.json()["data"]]
         assert "Listed Notebook" in titles
