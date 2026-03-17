@@ -63,5 +63,8 @@ env/
 # local storage
 api/storage/
 
+# agent memory (runtime data, user-specific — not for version control)
+api/data/memory/
+
 # design docs (internal only)
 docs/

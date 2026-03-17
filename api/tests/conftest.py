@@ -1,7 +1,8 @@
 """
 Shared pytest fixtures for LyraNote API tests.
 
-Uses an in-memory SQLite database for fast, dependency-free tests.
+Uses the DATABASE_URL environment variable if set (CI uses PostgreSQL),
+otherwise falls back to in-memory SQLite for fast local development.
 Each test gets a fresh database via function-scoped fixtures.
 """
 from __future__ import annotations
@@ -13,10 +14,11 @@ import pytest
 import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import StaticPool, NullPool
 
 # ── Force test environment before any app imports ────────────────────────────
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+_db_url = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("DATABASE_URL", _db_url)
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-pytest")
 os.environ.setdefault("STORAGE_BACKEND", "local")
@@ -30,20 +32,32 @@ from app.models import Base
 from app.auth import hash_password, create_access_token
 from app.models import User
 
+_USE_SQLITE = _db_url.startswith("sqlite")
 
-# ── In-memory SQLite engine ───────────────────────────────────────────────────
+
+# ── Database engine ───────────────────────────────────────────────────────────
 
 @pytest_asyncio.fixture(scope="function")
 async def engine():
-    """Create a fresh in-memory SQLite engine per test."""
-    _engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    """Create a fresh database engine per test."""
+    if _USE_SQLITE:
+        _engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+    else:
+        # PostgreSQL — use NullPool to avoid connection leaks between tests
+        _engine = create_async_engine(_db_url, poolclass=NullPool)
+
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
     yield _engine
+
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
     await _engine.dispose()
 
 
@@ -59,13 +73,18 @@ async def db_session(engine):
 async def client(engine):
     """
     Provide a test HTTP client with the database dependency overridden
-    to use the in-memory test engine.
+    to use the test engine.
     """
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     async def override_get_db():
         async with session_factory() as session:
-            yield session
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = override_get_db
 
