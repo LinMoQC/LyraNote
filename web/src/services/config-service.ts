@@ -19,6 +19,7 @@ export interface AppConfigMap {
   storage_backend: StorageBackend
   storage_region: string
   storage_s3_endpoint_url: string
+  storage_s3_public_url: string
   storage_s3_bucket: string
   storage_s3_access_key: string
   storage_s3_secret_key: string
