@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question / Discussion
+    url: https://github.com/LinMoQC/LyraNote/discussions
+    about: Ask questions and discuss LyraNote with the community
+  - name: Security Vulnerability
+    url: https://github.com/LinMoQC/LyraNote/security/advisories/new
+    about: Report a security vulnerability privately

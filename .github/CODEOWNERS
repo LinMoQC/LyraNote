@@ -1,0 +1,21 @@
+# CODEOWNERS
+# Defines who is automatically requested for review when files in those paths are changed.
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @LinMoQC
+
+# Backend
+/api/ @LinMoQC
+
+# Frontend
+/web/ @LinMoQC
+
+# Infrastructure & CI
+/.github/ @LinMoQC
+/docker-compose*.yml @LinMoQC
+/scripts/ @LinMoQC
+
+# Documentation
+/docs/ @LinMoQC
+*.md @LinMoQC

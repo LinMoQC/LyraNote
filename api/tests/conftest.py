@@ -1,0 +1,103 @@
+"""
+Shared pytest fixtures for LyraNote API tests.
+
+Uses an in-memory SQLite database for fast, dependency-free tests.
+Each test gets a fresh database via function-scoped fixtures.
+"""
+from __future__ import annotations
+
+import os
+import uuid
+
+import pytest
+import pytest_asyncio
+from httpx import AsyncClient, ASGITransport
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.pool import StaticPool
+
+# ── Force test environment before any app imports ────────────────────────────
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("JWT_SECRET", "test-secret-key-for-pytest")
+os.environ.setdefault("STORAGE_BACKEND", "local")
+os.environ.setdefault("STORAGE_LOCAL_PATH", "/tmp/lyranote-test-storage")
+os.environ.setdefault("OPENAI_API_KEY", "sk-test")
+os.environ.setdefault("DEBUG", "false")
+
+from app.main import app
+from app.database import get_db
+from app.models import Base
+from app.auth import hash_password, create_access_token
+from app.models import User
+
+
+# ── In-memory SQLite engine ───────────────────────────────────────────────────
+
+@pytest_asyncio.fixture(scope="function")
+async def engine():
+    """Create a fresh in-memory SQLite engine per test."""
+    _engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield _engine
+    await _engine.dispose()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def db_session(engine):
+    """Provide a test database session."""
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as session:
+        yield session
+
+
+@pytest_asyncio.fixture(scope="function")
+async def client(engine):
+    """
+    Provide a test HTTP client with the database dependency overridden
+    to use the in-memory test engine.
+    """
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with session_factory() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        yield ac
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def test_user(db_session: AsyncSession):
+    """Create a test user and return (user, plaintext_password)."""
+    password = "testpassword123"
+    user = User(
+        id=uuid.uuid4(),
+        username="testuser",
+        email="test@example.com",
+        name="Test User",
+        password_hash=hash_password(password),
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user, password
+
+
+@pytest_asyncio.fixture
+async def auth_headers(test_user):
+    """Return Authorization headers for the test user."""
+    user, _ = test_user
+    token = create_access_token(user.id)
+    return {"Authorization": f"Bearer {token}"}
