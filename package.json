@@ -1,6 +1,7 @@
 {
   "name": "lyranote",
   "version": "1.0.0",
+  "type": "module",
   "description": "<div align=\"center\">   <img width=\"120\" alt=\"LyraNote Logo\" src=\"./web/public/lyra.png\">",
   "private": true,
   "scripts": {
@@ -29,6 +30,8 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0"
   }
