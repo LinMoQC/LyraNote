@@ -1,6 +1,7 @@
 {
   "name": "lyranote",
   "version": "1.0.0",
+  "type": "module",
   "description": "<div align=\"center\">   <img width=\"120\" alt=\"LyraNote Logo\" src=\"./web/public/lyra.png\">",
   "private": true,
   "scripts": {
@@ -11,7 +12,11 @@
     "stop": "./lyra stop",
     "logs": "./lyra logs",
     "status": "./lyra status",
-    "typecheck": "cd web && pnpm exec tsc --noEmit"
+    "typecheck": "cd web && pnpm exec tsc --noEmit",
+    "docs:dev": "cd docs-site && pnpm run dev",
+    "docs:build": "cd docs-site && pnpm run build",
+    "docs:preview": "cd docs-site && pnpm run preview",
+    "commit": "gitmoji -c"
   },
   "repository": {
     "type": "git",
@@ -26,6 +31,10 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "commitlint-config-gitmoji": "^2.3.1",
+    "gitmoji-cli": "^9.7.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0"
   }
