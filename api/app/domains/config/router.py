@@ -32,6 +32,7 @@ EDITABLE_KEYS = {
     "storage_backend",
     "storage_region",
     "storage_s3_endpoint_url",
+    "storage_s3_public_url",
     "storage_s3_bucket",
     "storage_s3_access_key",
     "storage_s3_secret_key",

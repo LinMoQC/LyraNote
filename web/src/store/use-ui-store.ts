@@ -6,6 +6,7 @@
  *              侧边栏折叠状态通过 localStorage 持久化。
  */
 
+import type { ReactNode } from "react";
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 
@@ -17,11 +18,14 @@ type UiStore = {
   settingsOpen: boolean;
   settingsInitialSection: string | null;
   activeRightPanel: "copilot" | "artifacts";
+  /** 移动端顶部 header 右侧插槽（由当前页面注入） */
+  mobileHeaderRight: ReactNode;
   toggleSidebar: () => void;
   setSidebarMobileOpen: (open: boolean) => void;
   setImportDialogOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: string) => void;
   setActiveRightPanel: (panel: UiStore["activeRightPanel"]) => void;
+  setMobileHeaderRight: (node: ReactNode) => void;
 };
 
 export const useUiStore = create<UiStore>()(
@@ -33,11 +37,13 @@ export const useUiStore = create<UiStore>()(
       settingsOpen: false,
       settingsInitialSection: null,
       activeRightPanel: "copilot",
+      mobileHeaderRight: null,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       setSidebarMobileOpen: (open) => set({ sidebarMobileOpen: open }),
       setImportDialogOpen: (open) => set({ importDialogOpen: open }),
       setSettingsOpen: (open, section) => set({ settingsOpen: open, settingsInitialSection: section ?? null }),
       setActiveRightPanel: (panel) => set({ activeRightPanel: panel }),
+      setMobileHeaderRight: (node) => set({ mobileHeaderRight: node }),
     }),
     {
       name: "lyranote-ui",

@@ -142,8 +142,10 @@ class S3Storage(StorageProvider):
         secret_key: str,
         region: str = "us-east-1",
         endpoint_url: str | None = None,
+        public_url: str | None = None,
     ) -> None:
         self.bucket = bucket
+        self._public_url = public_url or endpoint_url
         self._client_kwargs: dict = {
             "aws_access_key_id": access_key,
             "aws_secret_access_key": secret_key,
@@ -205,6 +207,12 @@ class S3Storage(StorageProvider):
                 Params={"Bucket": self.bucket, "Key": key},
                 ExpiresIn=expires_in,
             )
+        # Replace internal endpoint with public-facing URL so browsers can access the link
+        if self._public_url and self._client_kwargs.get("endpoint_url"):
+            internal = self._client_kwargs["endpoint_url"].rstrip("/")
+            public = self._public_url.rstrip("/")
+            if internal != public:
+                url = url.replace(internal, public, 1)
         return url
 
     async def exists(self, key: str) -> bool:
@@ -231,12 +239,14 @@ def get_storage_provider() -> StorageProvider:
 
     if backend in ("s3", "minio", "oss", "r2"):
         endpoint = settings.storage_s3_endpoint_url or None
+        public = settings.storage_s3_public_url or None
         return S3Storage(
             bucket=settings.storage_s3_bucket,
             access_key=settings.storage_s3_access_key,
             secret_key=settings.storage_s3_secret_key,
             region=settings.storage_s3_region,
             endpoint_url=endpoint,
+            public_url=public,
         )
 
     raise ValueError(f"Unknown storage backend: {backend!r}. Choose from: local, s3, minio, oss, r2")

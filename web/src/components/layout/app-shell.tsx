@@ -46,6 +46,7 @@ function OAuthRedirectHandler() {
 function MobileTopBar() {
   const setSidebarMobileOpen = useUiStore((s) => s.setSidebarMobileOpen);
   const sidebarMobileOpen = useUiStore((s) => s.sidebarMobileOpen);
+  const mobileHeaderRight = useUiStore((s) => s.mobileHeaderRight);
 
   return (
     <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-border/40 bg-sidebar px-4 md:hidden">
@@ -63,6 +64,9 @@ function MobileTopBar() {
           <span className="text-sm font-semibold text-foreground">LyraNote</span>
         </div>
       </div>
+      {mobileHeaderRight && (
+        <div className="flex items-center">{mobileHeaderRight}</div>
+      )}
     </header>
   );
 }

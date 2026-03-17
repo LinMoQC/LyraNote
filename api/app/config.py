@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     storage_s3_region: str = "us-east-1"
     # Custom endpoint for MinIO / OSS / R2; leave empty for AWS S3
     storage_s3_endpoint_url: str = ""
+    # Public-facing URL for presigned links (browser-accessible).
+    # For Docker/self-hosted MinIO: set to http://localhost:9000 (or your server's public address).
+    # Leave empty to fall back to storage_s3_endpoint_url.
+    storage_s3_public_url: str = ""
 
     # Tavily AI Search
     tavily_api_key: str = ""
