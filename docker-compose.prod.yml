@@ -47,8 +47,7 @@ services:
       # ⚠️ 改了 MINIO_ROOT_USER/PASSWORD 后，上面两行的 lyranote / lyranote123 也要同步修改
 
   api:
-    build:
-      context: ./api
+    image: ghcr.io/linmoqc/lyranote/api:main
     restart: unless-stopped
     env_file:
       - ./api/.env
@@ -86,8 +85,7 @@ services:
       retries: 10
 
   worker:
-    build:
-      context: ./api
+    image: ghcr.io/linmoqc/lyranote/api:main
     restart: unless-stopped
     env_file:
       - ./api/.env
@@ -115,11 +113,7 @@ services:
     command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=4
 
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_BASE_URL: /api/v1
+    image: ghcr.io/linmoqc/lyranote/web:main
     restart: unless-stopped
     env_file:
       - path: ./web/.env.local
