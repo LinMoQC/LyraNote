@@ -30,6 +30,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { INSIGHT_POLL_INTERVAL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import {
@@ -69,6 +70,9 @@ export function Sidebar() {
   const router = useRouter();
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggle = useUiStore((s) => s.toggleSidebar);
+  const sidebarMobileOpen = useUiStore((s) => s.sidebarMobileOpen);
+  const setSidebarMobileOpen = useUiStore((s) => s.setSidebarMobileOpen);
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const [logoHovered, setLogoHovered] = useState(false);
   const [recentNotebooks, setRecentNotebooks] = useState<Pick<Notebook, "id" | "title">[]>([]);
   const [notebooksLoading, setNotebooksLoading] = useState(true);
@@ -131,10 +135,19 @@ export function Sidebar() {
   return (
     <m.aside
       initial={false}
-      animate={{ width: collapsed ? 64 : 240 }}
+      animate={
+        isMobile
+          ? { x: sidebarMobileOpen ? 0 : -288 }
+          : { width: collapsed ? 64 : 240 }
+      }
       transition={hydrated ? { type: "spring", stiffness: 320, damping: 32, restDelta: 0.5 } : { duration: 0 }}
-      className="flex h-screen flex-shrink-0 flex-col overflow-hidden bg-sidebar"
-      style={{ width: collapsed ? 64 : 240 }}
+      className={cn(
+        "flex h-screen flex-shrink-0 flex-col overflow-hidden bg-sidebar",
+        isMobile
+          ? "fixed left-0 top-0 z-50 w-72"
+          : ""
+      )}
+      style={isMobile ? undefined : { width: collapsed ? 64 : 240 }}
     >
       {/* ── Brand ─────────────────────────────────────── */}
       <div className="flex h-16 flex-shrink-0 items-center justify-between px-2">
@@ -190,9 +203,9 @@ export function Sidebar() {
             onMouseLeave={() => setCollapseTooltip(null)}
             className={cn(
               "flex h-8 w-8 cursor-w-resize flex-shrink-0 items-center justify-center rounded-full text-muted-foreground/50 transition-all duration-150 hover:bg-foreground/[0.06] hover:text-foreground",
-              collapsed ? "pointer-events-none opacity-0" : "opacity-100"
+              collapsed || isMobile ? "pointer-events-none opacity-0" : "opacity-100"
             )}
-            tabIndex={collapsed ? -1 : 0}
+            tabIndex={collapsed || isMobile ? -1 : 0}
           >
             <PanelLeft size={20} />
           </button>
@@ -231,6 +244,7 @@ export function Sidebar() {
               key={href}
               href={href}
               title={collapsed ? label : undefined}
+              onClick={() => { if (isMobile) setSidebarMobileOpen(false); }}
               className={cn(
                 "flex items-center gap-3 rounded-lg py-2.5 pl-3 pr-3 text-sm transition-colors",
                 isActive
@@ -284,10 +298,11 @@ export function Sidebar() {
                           style={{ height: 26, width: `${w}%`, animationDelay: `${i * 60}ms` }}
                         />
                       ))
-                    : recentNotebooks.map((nb) => (
+                        : recentNotebooks.map((nb) => (
                         <Link
                           key={nb.id}
                           href={`/app/notebooks/${nb.id}`}
+                          onClick={() => { if (isMobile) setSidebarMobileOpen(false); }}
                           className={cn(
                             "block truncate rounded-lg py-1.5 pl-3 pr-2 text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground",
                             pathname.includes(nb.id) && "bg-foreground/[0.08] text-foreground"

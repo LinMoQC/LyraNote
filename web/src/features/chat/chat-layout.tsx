@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function ChatSidebar({ children }: { children: ReactNode }) {
-  return <div className="flex w-60 flex-shrink-0 flex-col border-r border-border/30">{children}</div>;
+  return <div className="hidden md:flex w-60 flex-shrink-0 flex-col border-r border-border/30">{children}</div>;
 }
 
 export function ChatMessageList({ children }: { children: ReactNode }) {

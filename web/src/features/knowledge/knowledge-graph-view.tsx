@@ -460,9 +460,9 @@ export function KnowledgeGraphView({ toolbarContainer }: KnowledgeGraphViewProps
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 320, opacity: 0 }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="absolute right-0 top-0 h-full w-[300px] border-l border-border/40 bg-background/95 backdrop-blur-md"
+              className="absolute bottom-0 left-0 right-0 z-20 border-t border-border/40 bg-background/95 backdrop-blur-md md:bottom-auto md:left-auto md:right-0 md:top-0 md:h-full md:w-[300px] md:border-l md:border-t-0"
             >
-              <div className="flex h-full flex-col overflow-hidden">
+              <div className="flex h-full max-h-[50vh] flex-col overflow-hidden md:max-h-none">
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-border/40 px-4 py-3">
                   <h3 className="text-sm font-semibold">{t("entityDetail")}</h3>

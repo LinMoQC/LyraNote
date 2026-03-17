@@ -12,11 +12,13 @@ import { persist, createJSONStorage } from "zustand/middleware";
 /** UI 全局状态 */
 type UiStore = {
   sidebarCollapsed: boolean;
+  sidebarMobileOpen: boolean;
   importDialogOpen: boolean;
   settingsOpen: boolean;
   settingsInitialSection: string | null;
   activeRightPanel: "copilot" | "artifacts";
   toggleSidebar: () => void;
+  setSidebarMobileOpen: (open: boolean) => void;
   setImportDialogOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean, section?: string) => void;
   setActiveRightPanel: (panel: UiStore["activeRightPanel"]) => void;
@@ -26,11 +28,13 @@ export const useUiStore = create<UiStore>()(
   persist(
     (set) => ({
       sidebarCollapsed: false,
+      sidebarMobileOpen: false,
       importDialogOpen: false,
       settingsOpen: false,
       settingsInitialSection: null,
       activeRightPanel: "copilot",
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      setSidebarMobileOpen: (open) => set({ sidebarMobileOpen: open }),
       setImportDialogOpen: (open) => set({ importDialogOpen: open }),
       setSettingsOpen: (open, section) => set({ settingsOpen: open, settingsInitialSection: section ?? null }),
       setActiveRightPanel: (panel) => set({ activeRightPanel: panel }),

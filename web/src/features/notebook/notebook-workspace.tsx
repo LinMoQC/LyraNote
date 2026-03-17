@@ -12,6 +12,7 @@ import { useTranslations } from "next-intl";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { CopilotPanel, DEFAULT_WIDTH } from "@/features/copilot/copilot-panel";
 import { FloatingOrb } from "@/features/copilot/floating-orb";
 import { NoteEditor } from "@/features/editor/note-editor";
@@ -49,8 +50,17 @@ export function NotebookWorkspace({
   const setImportDialogOpen = useUiStore((state) => state.setImportDialogOpen);
   const activeSourceId = useNotebookStore((state) => state.activeSourceId);
   const setActiveSourceId = useNotebookStore((state) => state.setActiveSourceId);
+  const isMobile = useMediaQuery("(max-width: 767px)");
   const [copilotOpen, setCopilotOpen] = useState(true);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+
+  // 移动端默认关闭所有侧面板，确保编辑区占满屏幕
+  useEffect(() => {
+    if (isMobile) {
+      setCopilotOpen(false);
+      setSourcesOpen(false);
+    }
+  }, [isMobile]);
   // Direct DOM ref for the CopilotPanel wrapper — updated on every spring tick
   // so there is only ONE spring driving the layout (no double-spring jitter).
   const copilotWrapperRef = useRef<HTMLDivElement>(null);
@@ -209,10 +219,11 @@ export function NotebookWorkspace({
           ref={copilotWrapperRef}
           className="h-full flex-shrink-0"
           style={{
-            width: DEFAULT_WIDTH,
-            pointerEvents: copilotOpen ? "auto" : "none",
+            width: isMobile ? 0 : DEFAULT_WIDTH,
+            pointerEvents: copilotOpen && !isMobile ? "auto" : "none",
           }}
         >
+          {!isMobile && (
           <CopilotPanel
             notebookId={notebookId}
             initialMessages={initialMessages}
@@ -226,11 +237,12 @@ export function NotebookWorkspace({
             pendingQuote={pendingQuote}
             getEditorContext={getEditorContext}
           />
+          )}
         </div>
 
-        {/* TOC — shrinks/expands toward the right edge with the same spring */}
+        {/* TOC — 移动端不渲染 */}
         <AnimatePresence initial={false}>
-          {!copilotOpen && (
+          {!isMobile && !copilotOpen && (
             <m.div
               key="toc"
               initial={{ width: 0, opacity: 0 }}

@@ -19,7 +19,7 @@ export default async function AppHomePage() {
   const displayName: string | null = null; // resolved client-side via useAuth()
 
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8">
+    <div className="flex h-full flex-col items-center justify-center px-4 md:px-8">
       <div className="w-full max-w-2xl space-y-8">
 
         {/* Greeting — Gemini style */}
@@ -39,7 +39,7 @@ export default async function AppHomePage() {
             </svg>
             {displayName ? `${displayName}，` : ""}{t(greetingKey)}
           </p>
-          <h1 className="text-4xl font-bold tracking-tight text-foreground">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground md:text-4xl">
             {t("tagline")}
           </h1>
         </div>

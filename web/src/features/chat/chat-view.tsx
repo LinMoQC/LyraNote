@@ -468,6 +468,32 @@ export function ChatView() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* 移动端顶部会话选择栏 */}
+        <div className="flex items-center gap-2 border-b border-border/30 px-4 py-2.5 md:hidden">
+          <select
+            value={activeConvId ?? ""}
+            onChange={(e) => {
+              const conv = conversationList.find((c) => c.id === e.target.value);
+              if (conv) handleSelectConv(conv);
+            }}
+            className="min-w-0 flex-1 rounded-lg border border-border/50 bg-card px-3 py-1.5 text-sm text-foreground outline-none"
+          >
+            <option value="" disabled>{t("selectConversation")}</option>
+            {conversationList.map((conv) => (
+              <option key={conv.id} value={conv.id}>
+                {conv.title ?? t("newChat")}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleNewChat}
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-border/50 bg-card text-muted-foreground transition-colors hover:text-foreground"
+            title={t("newChat")}
+          >
+            <Plus size={15} />
+          </button>
+        </div>
         <ChatAlerts
           noteCreatedAlert={noteCreatedAlert}
           onDismissNoteAlert={() => setNoteCreatedAlert(null)}

@@ -299,7 +299,7 @@ export function KnowledgeView() {
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-border/30 px-8 pb-0 pt-8">
+      <div className="flex-shrink-0 border-b border-border/30 px-4 pb-0 pt-6 md:px-8 md:pt-8">
         <div className="mb-6 flex items-center gap-4">
           <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
           <div className="flex gap-0.5 rounded-lg border border-border/40 bg-muted/40 p-0.5">
@@ -343,8 +343,8 @@ export function KnowledgeView() {
         />
 
         {/* Search + tabs + actions row (sources view only) */}
-        {pageView === "sources" && <div className="flex items-center gap-4">
-          <div className="relative max-w-sm flex-1">
+        {pageView === "sources" && <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 basis-40">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             <input
               value={search}
@@ -363,7 +363,7 @@ export function KnowledgeView() {
             )}
           </div>
 
-          <div className="flex gap-0.5 rounded-lg border border-border/40 bg-muted/40 p-0.5">
+          <div className="flex gap-0.5 overflow-x-auto rounded-lg border border-border/40 bg-muted/40 p-0.5 no-scrollbar">
             {TYPE_TAB_KEYS.map((key) => (
               <button
                 key={key}
@@ -404,7 +404,7 @@ export function KnowledgeView() {
             </button>
           </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-2 md:ml-auto">
             <button
               type="button"
               onClick={() => refetch()}
