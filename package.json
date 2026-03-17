@@ -5,6 +5,12 @@
   "private": true,
   "scripts": {
     "prepare": "husky",
+    "lyra": "./lyra",
+    "start": "./lyra start",
+    "dev": "./lyra dev",
+    "stop": "./lyra stop",
+    "logs": "./lyra logs",
+    "status": "./lyra status",
     "typecheck": "cd web && pnpm exec tsc --noEmit"
   },
   "repository": {
