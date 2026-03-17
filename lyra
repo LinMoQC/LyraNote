@@ -17,6 +17,7 @@
 
 set -e
 LYRA_ROOT="$(cd "$(dirname "$0")" && pwd)"
+LYRA_SCRIPTS="$LYRA_ROOT/scripts"
 
 # ── 颜色 ──────────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -59,15 +60,15 @@ cmd_help() {
 }
 
 cmd_start() {
-  bash "$LYRA_ROOT/start.sh" docker
+  bash "$LYRA_SCRIPTS/start.sh" docker
 }
 
 cmd_dev() {
-  bash "$LYRA_ROOT/start.sh" local
+  bash "$LYRA_SCRIPTS/start.sh" local
 }
 
 cmd_stop() {
-  bash "$LYRA_ROOT/start.sh" stop
+  bash "$LYRA_SCRIPTS/start.sh" stop
 }
 
 cmd_restart() {
@@ -83,12 +84,12 @@ cmd_logs() {
   if [ -n "$svc" ]; then
     docker compose logs -f --tail=100 "$svc"
   else
-    bash "$LYRA_ROOT/start.sh" logs
+    bash "$LYRA_SCRIPTS/start.sh" logs
   fi
 }
 
 cmd_status() {
-  bash "$LYRA_ROOT/start.sh" status
+  bash "$LYRA_SCRIPTS/start.sh" status
 }
 
 cmd_ps() {
@@ -97,7 +98,7 @@ cmd_ps() {
 }
 
 cmd_build() {
-  bash "$LYRA_ROOT/start.sh" build
+  bash "$LYRA_SCRIPTS/start.sh" build
 }
 
 cmd_shell() {
@@ -147,7 +148,7 @@ cmd_version() {
 # ── 入口 ──────────────────────────────────────────────────────────────────────
 
 case "${1:-}" in
-  "")         bash "$LYRA_ROOT/start.sh" ;;
+  "")         bash "$LYRA_SCRIPTS/start.sh" ;;
   start)      cmd_start ;;
   dev)        cmd_dev ;;
   stop)       cmd_stop ;;
