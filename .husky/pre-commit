@@ -1,1 +1,10 @@
 npx lint-staged
+
+# Run API tests if Python venv is available
+if [ -f "api/.venv/bin/pytest" ]; then
+  echo "Running API tests..."
+  cd api && .venv/bin/pytest tests/ -q --tb=short
+  cd ..
+else
+  echo "Skipping API tests (api/.venv not found — run './lyra dev' to set up)"
+fi
