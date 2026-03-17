@@ -5,6 +5,7 @@
  * @description 实现右侧 Copilot 面板的弹性拖拽调整宽度，
  *              使用 framer-motion 的 useSpring 实现阻尼动画效果。
  *              拖拽时创建全屏透明覆层防止 Tiptap 编辑器抢夺鼠标事件。
+ *              同时支持触摸（Touch）事件，兼容移动端/平板。
  */
 
 import { useSpring } from "framer-motion";
@@ -22,7 +23,7 @@ export const DEFAULT_WIDTH = 300;
  * @param isOpen - 面板是否展开
  * @param onWidthChange - 宽度变化回调（每帧触发），用于父容器同步布局
  * @param markAllRead - 面板打开时标记所有建议为已读
- * @returns {{ isDragging, asideRef, handleResizeStart }} 拖拽状态、面板 ref 和拖拽起始事件处理
+ * @returns {{ isDragging, asideRef, handleResizeStart, handleResizeTouchStart }} 拖拽状态、面板 ref 和拖拽起始事件处理
  */
 export function useCopilotResize(
   isOpen: boolean,
@@ -56,10 +57,8 @@ export function useCopilotResize(
     });
   }, [springWidth, onWidthChange]);
 
-  const handleResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
+  const startDrag = useCallback((startX: number) => {
     setIsDragging(true);
-    const startX = e.clientX;
     const startWidth = widthRef.current;
 
     const overlay = document.createElement("div");
@@ -67,24 +66,42 @@ export function useCopilotResize(
     document.body.appendChild(overlay);
     document.body.style.userSelect = "none";
 
-    const onMouseMove = (ev: MouseEvent) => {
-      const delta = startX - ev.clientX;
+    const applyDelta = (currentX: number) => {
+      const delta = startX - currentX;
       const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + delta));
       widthRef.current = next;
       springWidth.set(next);
     };
 
-    const onMouseUp = () => {
+    const onMouseMove = (ev: MouseEvent) => applyDelta(ev.clientX);
+    const onTouchMove = (ev: TouchEvent) => {
+      if (ev.touches[0]) applyDelta(ev.touches[0].clientX);
+    };
+
+    const cleanup = () => {
       setIsDragging(false);
       document.body.removeChild(overlay);
       document.body.style.userSelect = "";
       document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
+      document.removeEventListener("mouseup", cleanup);
+      document.removeEventListener("touchmove", onTouchMove);
+      document.removeEventListener("touchend", cleanup);
     };
 
     document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("mouseup", cleanup);
+    document.addEventListener("touchmove", onTouchMove, { passive: true });
+    document.addEventListener("touchend", cleanup);
   }, [springWidth]);
 
-  return { isDragging, asideRef, handleResizeStart };
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    startDrag(e.clientX);
+  }, [startDrag]);
+
+  const handleResizeTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches[0]) startDrag(e.touches[0].clientX);
+  }, [startDrag]);
+
+  return { isDragging, asideRef, handleResizeStart, handleResizeTouchStart };
 }

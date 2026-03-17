@@ -191,7 +191,7 @@ export function SourceDetailDrawer({ source, onClose }: Props) {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", stiffness: 350, damping: 34, mass: 0.8 }}
-            className="fixed right-0 top-0 z-[70] flex h-screen w-[420px] flex-col overflow-hidden border-l border-border/40 bg-background shadow-2xl"
+            className="fixed right-0 top-0 z-[70] flex h-screen w-full flex-col overflow-hidden border-l border-border/40 bg-background shadow-2xl md:w-[420px]"
           >
             {/* ── Header ─────────────────────────────────────────── */}
             <div className="flex-shrink-0 border-b border-border/30 px-5 py-4">

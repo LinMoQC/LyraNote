@@ -213,14 +213,14 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
 
       {/* For completed deep research, the document card is already shown above -- skip the chat bubble content */}
       {!(msg.role === "assistant" && msg.deepResearch?.status === "done" && msg.deepResearch.reportTokens) && (
-      <div className={cn("flex gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
+      <div className={cn("flex gap-2 md:gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
         {msg.role === "assistant" && (
-          <BotAvatar className="h-7 w-7" />
+          <BotAvatar className="h-6 w-6 flex-shrink-0 md:h-7 md:w-7" />
         )}
-        <div className="min-w-0 max-w-[80%]">
+        <div className="min-w-0 max-w-[85%] md:max-w-[80%]">
           <div
             className={cn(
-              "rounded-2xl px-4 py-3",
+              "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
               msg.role === "user"
                 ? "rounded-br-sm bg-primary text-white"
                 : "rounded-bl-sm bg-muted/50 text-foreground"

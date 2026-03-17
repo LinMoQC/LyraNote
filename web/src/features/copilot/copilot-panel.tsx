@@ -129,7 +129,7 @@ export function CopilotPanel({
   }, [isOpen]);
 
   // ── Resize ────────────────────────────────────────────────
-  const { isDragging, asideRef, handleResizeStart } = useCopilotResize(isOpen, onWidthChange, markAllRead);
+  const { isDragging, asideRef, handleResizeStart, handleResizeTouchStart } = useCopilotResize(isOpen, onWidthChange, markAllRead);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -305,7 +305,8 @@ export function CopilotPanel({
       {/* ── Resize handle ─────────────────────────────────────────────────── */}
       <div
         onMouseDown={handleResizeStart}
-        className="group absolute inset-y-0 -left-2.5 z-20 w-5 cursor-col-resize"
+        onTouchStart={handleResizeTouchStart}
+        className="group absolute inset-y-0 -left-2.5 z-20 w-5 cursor-col-resize touch-none"
       >
         {/* Full-height hover line */}
         <div

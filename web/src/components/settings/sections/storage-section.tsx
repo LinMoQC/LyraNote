@@ -28,6 +28,7 @@ export function StorageSection() {
       storage_backend: form.storage_backend,
       storage_region: form.storage_region,
       storage_s3_endpoint_url: form.storage_s3_endpoint_url,
+      storage_s3_public_url: form.storage_s3_public_url,
       storage_s3_bucket: form.storage_s3_bucket,
       storage_s3_access_key: form.storage_s3_access_key,
       storage_s3_secret_key: form.storage_s3_secret_key,
@@ -61,7 +62,12 @@ export function StorageSection() {
       {(backend === "minio" || backend === "oss") && (
         <FieldInput label={t("storage.endpoint")} description={backend === "minio" ? t("storage.minioEndpointDesc") : t("storage.ossEndpointDesc")}
           value={form.storage_s3_endpoint_url ?? ""} onChange={(v) => set("storage_s3_endpoint_url", v)}
-          placeholder={backend === "minio" ? "http://localhost:9000" : "https://oss-cn-hangzhou.aliyuncs.com"} />
+          placeholder={backend === "minio" ? "http://minio:9000" : "https://oss-cn-hangzhou.aliyuncs.com"} />
+      )}
+      {backend === "minio" && (
+        <FieldInput label={t("storage.minioPublicUrl")} description={t("storage.minioPublicUrlDesc")}
+          value={form.storage_s3_public_url ?? ""} onChange={(v) => set("storage_s3_public_url", v)}
+          placeholder="http://localhost:9000" />
       )}
       {(backend === "s3" || backend === "cos") && (
         <FieldInput label={t("storage.region")} description={backend === "s3" ? t("storage.awsRegionDesc") : t("storage.cosRegionDesc")}

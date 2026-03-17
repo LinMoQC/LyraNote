@@ -117,10 +117,12 @@ export function SettingsModal() {
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="pointer-events-auto flex h-[600px] w-full max-w-2xl overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+          className="pointer-events-auto flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl md:flex-row"
+          style={{ height: "min(600px, calc(100dvh - 2rem))" }}
         >
-          <nav className="flex w-44 flex-shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/50 p-3">
-            <p className="mb-2 px-3 text-base font-semibold">{t("title")}</p>
+          {/* 左侧导航 — 桌面端垂直排列，移动端水平 Tab 栏 */}
+          <nav className="flex w-full flex-shrink-0 flex-row items-center gap-0.5 overflow-x-auto border-b border-border/50 p-2 no-scrollbar md:w-44 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:p-3">
+            <p className="mb-0 hidden px-3 text-base font-semibold md:mb-2 md:block">{t("title")}</p>
             {NAV_IDS.map((id) => {
               const Icon = NAV_ICONS[id];
               return (
@@ -129,12 +131,13 @@ export function SettingsModal() {
                   type="button"
                   onClick={() => setActive(id)}
                   className={cn(
-                    "flex items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm transition-colors",
+                    "flex flex-shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-left text-sm transition-colors md:w-full",
                     active === id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                   )}
                 >
                   <Icon size={14} className="flex-shrink-0" />
-                  {t(NAV_LABEL_KEYS[id])}
+                  <span className="hidden md:inline">{t(NAV_LABEL_KEYS[id])}</span>
+                  <span className="md:hidden">{t(NAV_LABEL_KEYS[id])}</span>
                 </button>
               );
             })}

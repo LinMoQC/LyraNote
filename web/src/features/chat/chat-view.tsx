@@ -11,7 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, m } from "framer-motion";
 import {
+  ChevronDown,
   FlaskConical,
+  MessageSquare,
   Plus,
   Sparkles,
   Zap,
@@ -28,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getSuggestions } from "@/services/ai-service";
 import { DeepResearchProgress } from "@/features/chat/deep-research-progress";
+import { useUiStore } from "@/store/use-ui-store";
 import { getConversationFeedback, submitMessageFeedback, type FeedbackRating } from "@/services/feedback-service";
 import {
   deleteConversation,
@@ -60,6 +63,9 @@ export function ChatView() {
   const { success: toastOk } = useToast();
   const t = useTranslations("chat");
   const tc = useTranslations("common");
+  const setMobileHeaderRight = useUiStore((s) => s.setMobileHeaderRight);
+
+  const [convSheetOpen, setConvSheetOpen] = useState(false);
 
   const avatarUrl = user?.avatar_url ?? null;
   const initials = (user?.name?.[0] ?? user?.username?.[0] ?? "U").toUpperCase();
@@ -101,6 +107,26 @@ export function ChatView() {
   const { copied, copy } = useCopyToClipboard();
 
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // ── 注入移动端 header 右侧按钮 ──────────────────────────────────────────
+  useEffect(() => {
+    const activeConv = conversationList.find((c) => c.id === activeConvId);
+    setMobileHeaderRight(
+      <button
+        type="button"
+        onClick={() => setConvSheetOpen(true)}
+        className="flex h-9 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+      >
+        <MessageSquare size={16} />
+        <span className="max-w-[120px] truncate text-xs">
+          {activeConv?.title ?? t("newChat")}
+        </span>
+        <ChevronDown size={12} />
+      </button>
+    );
+    return () => setMobileHeaderRight(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConvId, conversationList]);
   const chatInputRef = useRef<ChatInputHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileAttachments = useFileAttachments();
@@ -468,6 +494,7 @@ export function ChatView() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* 移动端顶部会话选择栏已移至 header 右侧按钮 + 底部 Sheet */}
         <ChatAlerts
           noteCreatedAlert={noteCreatedAlert}
           onDismissNoteAlert={() => setNoteCreatedAlert(null)}
@@ -609,15 +636,15 @@ export function ChatView() {
                     e.target.value = "";
                   }}
                 />
-                <span className="flex items-center gap-1.5 rounded-full border border-border/40 bg-muted/30 px-2.5 py-1 text-[11px] text-muted-foreground/50">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/40 bg-muted/30 text-[11px] text-muted-foreground/50 sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1">
                   <Sparkles size={10} className="text-primary/60" />
-                  {t("globalKnowledge")}
+                  <span className="hidden sm:inline">{t("globalKnowledge")}</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => setIsDeepResearch((v) => !v)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] transition-all",
+                    "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] transition-all sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1",
                     isDeepResearch
                       ? "border-amber-500/30 bg-amber-500/10 text-amber-300/90"
                       : "border-border/40 bg-muted/30 text-muted-foreground/50 hover:border-border/60 hover:text-muted-foreground/70"
@@ -625,8 +652,8 @@ export function ChatView() {
                   title={isDeepResearch ? t("switchToNormal") : t("switchToDeepResearch")}
                 >
                   <FlaskConical size={10} className={isDeepResearch ? "text-amber-400" : ""} />
-                  {t("deepResearchLabel")}
-                  {isDeepResearch && <Zap size={8} className="text-amber-400" />}
+                  <span className="hidden sm:inline">{t("deepResearchLabel")}</span>
+                  {isDeepResearch && <Zap size={8} className="hidden text-amber-400 sm:block" />}
                 </button>
               </>
             }
@@ -643,6 +670,82 @@ export function ChatView() {
           />
         </ChatInputContainer>
       </div>
+
+      {/* 移动端：底部会话列表 Sheet */}
+      <AnimatePresence>
+        {convSheetOpen && (
+          <>
+            {/* 蒙层 */}
+            <m.div
+              key="conv-sheet-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 z-40 bg-black/50 md:hidden"
+              onClick={() => setConvSheetOpen(false)}
+            />
+            {/* Sheet 面板 */}
+            <m.div
+              key="conv-sheet"
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 320, damping: 32 }}
+              className="fixed bottom-0 left-0 right-0 z-50 flex max-h-[70vh] flex-col rounded-t-2xl bg-card md:hidden"
+            >
+              {/* 拖动指示条 */}
+              <div className="flex justify-center pt-3 pb-1">
+                <div className="h-1 w-10 rounded-full bg-border/60" />
+              </div>
+              {/* 标题栏 */}
+              <div className="flex items-center justify-between px-4 py-2">
+                <span className="text-sm font-medium text-foreground">{t("title")}</span>
+                <button
+                  type="button"
+                  onClick={() => { handleNewChat(); setConvSheetOpen(false); }}
+                  className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs text-primary transition-colors hover:bg-primary/20"
+                >
+                  <Plus size={13} />
+                  {t("newChat")}
+                </button>
+              </div>
+              {/* 会话列表 */}
+              <div className="flex-1 overflow-y-auto px-2 pb-6">
+                {conversationList.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground/50">{t("noConversations")}</p>
+                ) : (
+                  conversationList.map((conv) => (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      onClick={() => { handleSelectConv(conv); setConvSheetOpen(false); }}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+                        conv.id === activeConvId
+                          ? "bg-primary/10 text-primary"
+                          : "text-foreground/70 hover:bg-accent/50"
+                      )}
+                    >
+                      <MessageSquare size={15} className="flex-shrink-0" />
+                      <span className="flex-1 truncate text-sm">{conv.title ?? t("newChat")}</span>
+                    </button>
+                  ))
+                )}
+                {hasMoreConversations && (
+                  <button
+                    type="button"
+                    onClick={loadMoreConversations}
+                    className="mt-1 w-full rounded-xl py-2 text-xs text-muted-foreground/50 transition-colors hover:text-muted-foreground"
+                  >
+                    {tc("loadMore")}
+                  </button>
+                )}
+              </div>
+            </m.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
