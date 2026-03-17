@@ -1,0 +1,26 @@
+{
+  "name": "lyranote",
+  "version": "1.0.0",
+  "description": "<div align=\"center\">   <img width=\"120\" alt=\"LyraNote Logo\" src=\"./web/public/lyra.png\">",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "typecheck": "cd web && pnpm exec tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github-linmoqc:LinMoQC/LyraNote.git"
+  },
+  "lint-staged": {
+    "web/src/**/*.{ts,tsx}": [
+      "bash -c 'cd web && pnpm exec tsc --noEmit'"
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
+  }
+}
