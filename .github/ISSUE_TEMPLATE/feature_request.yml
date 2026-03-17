@@ -1,0 +1,79 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for LyraNote
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please provide as much context as possible to help us understand your request.
+
+  - type: checkboxes
+    id: existing-issues
+    attributes:
+      label: Pre-flight checks
+      options:
+        - label: I have searched existing issues and discussions — this has not been requested before
+          required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feature area
+      options:
+        - AI / Chat
+        - Notebook & Editor
+        - Knowledge Base / RAG
+        - Memory System
+        - Tasks / Scheduling
+        - Storage / File Upload
+        - Authentication
+        - API / Developer Experience
+        - UI / UX
+        - Performance
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: Describe the problem or limitation you're trying to solve.
+      placeholder: I'm frustrated when... / Currently there's no way to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe the feature you'd like to see.
+      placeholder: I'd like to be able to...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Have you tried any workarounds or alternative approaches?
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How important is this to you?
+      options:
+        - Nice to have
+        - Important — significantly improves my workflow
+        - Critical — blocking my use of LyraNote
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Would you like to implement this?
+      options:
+        - label: Yes, I'd be willing to submit a PR for this feature

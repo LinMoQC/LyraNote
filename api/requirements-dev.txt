@@ -1,0 +1,5 @@
+# Test dependencies for LyraNote API
+pytest>=8.0
+pytest-asyncio>=0.24
+httpx>=0.28
+pytest-cov>=5.0
