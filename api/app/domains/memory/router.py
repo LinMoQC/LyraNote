@@ -104,7 +104,7 @@ class DiaryEntryOut(BaseModel):
 @router.get("/memory/doc", response_model=ApiResponse[MemoryDocOut])
 async def get_memory_doc_endpoint(_current_user: CurrentUser) -> ApiResponse[MemoryDocOut]:
     """Return the global AI memory document (read from local file)."""
-    from app.agents.file_memory import get_memory_doc_mtime, read_memory_doc
+    from app.agents.memory.file_storage import get_memory_doc_mtime, read_memory_doc
     return success(MemoryDocOut(
         content_md=read_memory_doc(),
         updated_at=get_memory_doc_mtime(),
@@ -118,7 +118,7 @@ async def update_memory_doc_endpoint(
 ) -> None:
     """Overwrite the global AI memory document (write to local file)."""
     import asyncio
-    from app.agents.file_memory import write_memory_doc
+    from app.agents.memory.file_storage import write_memory_doc
     await asyncio.to_thread(write_memory_doc, body.content_md)
 
 
@@ -129,7 +129,7 @@ async def update_memory_doc_endpoint(
 @router.get("/memory/diary", response_model=ApiResponse[list[dict]])
 async def list_diary_notes(_current_user: CurrentUser) -> ApiResponse[list[dict]]:
     """List all diary note files (newest first)."""
-    from app.agents.file_memory import list_diary_files
+    from app.agents.memory.file_storage import list_diary_files
     return success(list_diary_files())
 
 
@@ -137,7 +137,7 @@ async def list_diary_notes(_current_user: CurrentUser) -> ApiResponse[list[dict]
 async def get_diary_note(date: str, _current_user: CurrentUser) -> ApiResponse[DiaryEntryOut]:
     """Return the content of a specific diary note by date (YYYY-MM-DD)."""
     import re
-    from app.agents.file_memory import get_memory_dir
+    from app.agents.memory.file_storage import get_memory_dir
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
         raise BadRequestError("日期格式无效，请使用 YYYY-MM-DD")

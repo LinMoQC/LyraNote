@@ -236,7 +236,7 @@ async def sync_memory_doc_to_db(user_id, db, force: bool = False) -> int:
     Returns the number of items synced.
     """
     from app.config import settings
-    from app.agents.memory import _upsert_memory
+    from app.agents.memory.extraction import _upsert_memory
 
     if not force and settings.memory_mode != "desktop":
         return 0
@@ -280,7 +280,7 @@ async def sync_diary_to_db(user_id, date_str: str, db) -> int:
     Only active when memory_mode='desktop'. Returns 1 if synced, 0 otherwise.
     """
     from app.config import settings
-    from app.agents.memory import _upsert_memory
+    from app.agents.memory.extraction import _upsert_memory
 
     if settings.memory_mode != "desktop":
         return 0

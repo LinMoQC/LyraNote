@@ -44,8 +44,8 @@ class SummarizeSkill(SkillBase):
         }
 
     async def execute(self, args: dict, ctx) -> str:
-        from app.agents.retrieval import retrieve_chunks
-        from app.agents.composer import generate_artifact, ArtifactType
+        from app.agents.rag.retrieval import retrieve_chunks
+        from app.agents.writing.composer import generate_artifact, ArtifactType
 
         artifact_type: ArtifactType = args.get("artifact_type", "summary")
 

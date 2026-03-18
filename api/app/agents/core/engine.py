@@ -16,8 +16,8 @@ import time
 from collections.abc import AsyncGenerator
 from typing import Any
 
-from app.agents.brain import AgentBrain
-from app.agents.instructions import (
+from app.agents.core.brain import AgentBrain
+from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
@@ -27,8 +27,8 @@ from app.agents.instructions import (
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
 )
-from app.agents.state import AgentState
-from app.agents.tools import ToolContext, execute_tool
+from app.agents.core.state import AgentState
+from app.agents.core.tools import ToolContext, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -269,7 +269,7 @@ class AgentEngine:
     async def _exec_call_rag(
         self, instruction: CallRAGInstruction, state: AgentState
     ) -> AsyncGenerator[dict, None]:
-        from app.agents.retrieval import retrieve_chunks
+        from app.agents.rag.retrieval import retrieve_chunks
 
         chunks = await retrieve_chunks(
             instruction.query,

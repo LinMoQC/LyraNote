@@ -278,7 +278,7 @@ async def _research_one(
     model: str,
 ) -> Learning:
     """Research a single (query, dimension) pair with RAG + optional web search."""
-    from app.agents.retrieval import retrieve_chunks
+    from app.agents.rag.retrieval import retrieve_chunks
 
     citations: list[dict] = []
     raw_context = ""

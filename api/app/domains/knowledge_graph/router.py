@@ -155,7 +155,7 @@ async def rebuild_graph(
         rebuild_knowledge_graph_task.delay(str(notebook_id))
         return success(RebuildStatusOut(status="started"))
     except Exception:
-        from app.agents.knowledge_graph import rebuild_notebook_graph
+        from app.agents.kg.knowledge_graph import rebuild_notebook_graph
         await rebuild_notebook_graph(str(notebook_id), db)
         await db.commit()
         return success(RebuildStatusOut(status="completed"))
@@ -209,7 +209,7 @@ async def rebuild_all_graphs(
             from app.workers.tasks import rebuild_knowledge_graph_task
             rebuild_knowledge_graph_task.delay(str(nb_id), user_id=user_id)
         except Exception:
-            from app.agents.knowledge_graph import rebuild_notebook_graph
+            from app.agents.kg.knowledge_graph import rebuild_notebook_graph
             await rebuild_notebook_graph(str(nb_id), db)
             await db.commit()
     return success(RebuildStatusOut(status="started"))

@@ -250,13 +250,13 @@ async def get_conversation_summary(
 
 def get_memory_doc_content() -> str:
     """Read the global memory document from file."""
-    from app.agents.file_memory import read_memory_doc
+    from app.agents.memory.file_storage import read_memory_doc
     return read_memory_doc()
 
 
 def write_memory_doc_content(content_md: str) -> None:
     """Overwrite the global memory document file."""
-    from app.agents.file_memory import write_memory_doc
+    from app.agents.memory.file_storage import write_memory_doc
     write_memory_doc(content_md)
 
 
@@ -285,7 +285,7 @@ async def flush_conversation_to_diary(
     Summarise the conversation and append the summary to a dated diary file.
     Returns True if a file was written.
     """
-    from app.agents.file_memory import append_diary_entry
+    from app.agents.memory.file_storage import append_diary_entry
     from app.providers.llm import chat
 
     result = await db.execute(
@@ -330,5 +330,5 @@ async def get_recent_diary_notes(limit: int = 5) -> str:
     Read the N most recent diary files and return them as a Markdown string.
     """
     import asyncio
-    from app.agents.file_memory import read_recent_diary_notes
+    from app.agents.memory.file_storage import read_recent_diary_notes
     return await asyncio.to_thread(read_recent_diary_notes, limit)

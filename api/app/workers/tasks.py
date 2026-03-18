@@ -78,7 +78,7 @@ def _run_async(coro):
 @celery_app.task(name="ingest_source", bind=True, max_retries=3)
 def ingest_source(self, source_id: str, chunk_size: int = 512, chunk_overlap: int = 64):
     async def _run():
-        from app.agents.ingestion import ingest
+        from app.agents.rag.ingestion import ingest
 
         async with _task_db() as db:
             try:
@@ -95,7 +95,7 @@ def ingest_source(self, source_id: str, chunk_size: int = 512, chunk_overlap: in
 def extract_knowledge_graph(self, source_id: str):
     """Extract knowledge entities and relations from a source after ingestion."""
     async def _run():
-        from app.agents.knowledge_graph import extract_entities_and_relations
+        from app.agents.kg.knowledge_graph import extract_entities_and_relations
 
         async with _task_db() as db:
             try:
@@ -137,7 +137,7 @@ def rebuild_knowledge_graph_task(self, notebook_id: str, user_id: str | None = N
         )
 
     async def _run():
-        from app.agents.knowledge_graph import rebuild_notebook_graph
+        from app.agents.kg.knowledge_graph import rebuild_notebook_graph
 
         async with _task_db() as db:
             try:
@@ -370,7 +370,7 @@ def index_note(self, note_id: str):
 
         from sqlalchemy import select
 
-        from app.agents.ingestion import _chunk_text
+        from app.agents.rag.ingestion import _chunk_text
         from app.models import Chunk, Note
         from app.providers.embedding import embed_texts
 
@@ -440,7 +440,7 @@ def generate_artifact_task(self, artifact_id: str):
 
         from sqlalchemy import select
 
-        from app.agents.composer import generate_artifact
+        from app.agents.writing.composer import generate_artifact
         from app.models import Artifact, Chunk, Source
 
         async with _task_db() as db:

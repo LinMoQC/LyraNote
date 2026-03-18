@@ -34,7 +34,7 @@ async def lifespan(app: FastAPI):
     bootstrap_builtin_skills()
 
     # Initialize file-based memory storage (create dirs + default MEMORY.md)
-    from app.agents.file_memory import init_memory_storage
+    from app.agents.memory.file_storage import init_memory_storage
     init_memory_storage()
 
     yield

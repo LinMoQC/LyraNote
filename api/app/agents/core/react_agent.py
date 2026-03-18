@@ -21,11 +21,11 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.brain import AgentBrain
-from app.agents.composer import build_system_prompt
-from app.agents.engine import AgentEngine
-from app.agents.state import AgentState
-from app.agents.tools import ToolContext
+from app.agents.core.brain import AgentBrain
+from app.agents.writing.composer import build_system_prompt
+from app.agents.core.engine import AgentEngine
+from app.agents.core.state import AgentState
+from app.agents.core.tools import ToolContext
 
 logger = logging.getLogger(__name__)
 

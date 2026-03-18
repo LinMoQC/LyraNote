@@ -189,7 +189,7 @@ async def deep_research_stream(
         user_memories = []
 
     async def generate():
-        from app.agents.deep_research import create_research_graph
+        from app.agents.research.deep_research import create_research_graph
 
         graph = create_research_graph(
             db=db,

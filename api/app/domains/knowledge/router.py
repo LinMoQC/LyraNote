@@ -33,7 +33,7 @@ class SuggestResponse(BaseModel):
 
 @router.post("/ai/suggest", response_model=ApiResponse[SuggestResponse])
 async def suggest(body: SuggestRequest, current_user: CurrentUser, db: DbDep):
-    from app.agents.writing import suggest_continuation
+    from app.agents.writing.ghost_text import suggest_continuation
 
     suggestion = await suggest_continuation(body.note_context, body.cursor_text)
     return success(SuggestResponse(suggestion=suggestion))
@@ -55,7 +55,7 @@ class RewriteResponse(BaseModel):
 
 @router.post("/ai/rewrite", response_model=ApiResponse[RewriteResponse])
 async def rewrite(body: RewriteRequest, current_user: CurrentUser, db: DbDep):
-    from app.agents.writing import rewrite_selection
+    from app.agents.writing.ghost_text import rewrite_selection
 
     result = await rewrite_selection(body.selected_text, body.action, body.note_context)
     return success(RewriteResponse(result=result))

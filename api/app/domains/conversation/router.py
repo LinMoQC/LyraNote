@@ -99,8 +99,8 @@ async def send_message(
 
     history = await _load_history(db, conversation_id)
 
-    from app.agents.retrieval import retrieve_chunks
-    from app.agents.composer import compose_answer
+    from app.agents.rag.retrieval import retrieve_chunks
+    from app.agents.writing.composer import compose_answer
     from app.agents.memory import get_user_memories, get_notebook_summary
 
     user_memories = await get_user_memories(current_user.id, db)
@@ -170,9 +170,9 @@ async def stream_message(
 
     history = await _load_history(db, conversation_id)
 
-    from app.agents.react_agent import run_agent
+    from app.agents.core.react_agent import run_agent
     from app.agents.memory import build_memory_context, get_notebook_summary
-    from app.agents.scene_detector import detect_scene, get_scene_instruction
+    from app.agents.writing.scene_detector import detect_scene, get_scene_instruction
 
     # L4: detect scene before building context (non-blocking, defaults to "research" on error)
     scene = await detect_scene(body.content)
@@ -311,7 +311,7 @@ async def _reflect_safe(
     memory_context: list[dict],
 ) -> None:
     """Fire-and-forget L5 reflection with its own DB session."""
-    from app.agents.reflection import reflect_on_conversation
+    from app.agents.research.reflection import reflect_on_conversation
     from app.database import AsyncSessionLocal
     import logging
     try:
@@ -380,7 +380,7 @@ async def _maybe_flush_diary(conversation_id: UUID, user_id: UUID) -> None:
 
 async def _sync_diary_safe(user_id: UUID, date_str: str) -> None:
     """Fire-and-forget diary → DB sync (desktop mode only)."""
-    from app.agents.file_memory import sync_diary_to_db
+    from app.agents.memory.file_storage import sync_diary_to_db
     from app.database import AsyncSessionLocal
     import logging
     try:
@@ -397,7 +397,7 @@ async def _evaluate_conversation_safe(conversation_id: UUID, user_id: UUID) -> N
     Fire-and-forget evaluation agent. Scores conversation quality and writes
     to agent_evaluations. Failures are silently logged (never affect main flow).
     """
-    from app.agents.evaluation import evaluate_conversation
+    from app.agents.research.evaluation import evaluate_conversation
     from app.database import AsyncSessionLocal
     import logging
     try:

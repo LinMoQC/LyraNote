@@ -11,7 +11,7 @@ instruction to issue") from execution ("how to run it").
 
 from __future__ import annotations
 
-from app.agents.instructions import (
+from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
@@ -21,7 +21,7 @@ from app.agents.instructions import (
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
 )
-from app.agents.state import AgentState
+from app.agents.core.state import AgentState
 
 TOOLS_REQUIRING_APPROVAL: set[str] = set()
 
