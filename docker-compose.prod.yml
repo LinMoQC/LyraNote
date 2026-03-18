@@ -2,9 +2,6 @@ services:
   db:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
-    env_file:
-      - path: ./.env
-        required: false
     environment:
       POSTGRES_USER: lyranote
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyranote}
