@@ -158,7 +158,6 @@ def generate_notebook_summary(self, notebook_id: str, content_text: str):
         import logging
         from uuid import UUID
 
-        from openai import AsyncOpenAI
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from app.models import NotebookSummary
@@ -168,7 +167,8 @@ def generate_notebook_summary(self, notebook_id: str, content_text: str):
         if not content_text or len(content_text.strip()) < 50:
             return
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from app.providers.llm import get_client
+        client = get_client()
         prompt = (
             "你是一位专业的笔记助手。请根据以下笔记内容，用中文生成：\n"
             "1. 一段 2-3 句话的简明摘要（summary_md）\n"
@@ -266,7 +266,6 @@ def initialize_user_preferences(
         import logging
         from uuid import UUID
 
-        from openai import AsyncOpenAI
         from sqlalchemy import select
 
         from app.models import Notebook, Note
@@ -314,10 +313,8 @@ def initialize_user_preferences(
                 )
 
                 try:
-                    client = AsyncOpenAI(
-                        api_key=settings.openai_api_key,
-                        base_url=settings.openai_base_url or None,
-                    )
+                    from app.providers.llm import get_client as _get_client
+                    client = _get_client()
                     resp = await client.chat.completions.create(
                         model=settings.llm_model or "gpt-4o-mini",
                         messages=[{"role": "user", "content": prompt}],
@@ -605,7 +602,6 @@ def execute_scheduled_task(self, task_id: str):
         from datetime import datetime, timezone
         from uuid import UUID
 
-        from openai import AsyncOpenAI
         from sqlalchemy import select
 
         from app.config import settings
@@ -669,10 +665,8 @@ def execute_scheduled_task(self, task_id: str):
                     "briefing": "简报格式，要点列表，适合快速浏览",
                 }
 
-                client = AsyncOpenAI(
-                    api_key=settings.openai_api_key,
-                    base_url=settings.openai_base_url or None,
-                )
+                from app.providers.llm import get_client as _get_llm_client
+                client = _get_llm_client()
 
                 prompt = (
                     f"你是一位专业的资讯编辑。请根据以下搜索结果，"

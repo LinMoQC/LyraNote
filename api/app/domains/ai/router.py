@@ -13,7 +13,7 @@ from app.dependencies import CurrentUser, DbDep
 from app.config import settings
 from app.models import Chunk, Notebook, Note, Source, Conversation, NotebookSummary
 from app.schemas.response import ApiResponse, success
-from openai import AsyncOpenAI
+from app.providers.llm import get_client, get_model
 
 router = APIRouter(tags=["ai"])
 
@@ -113,10 +113,7 @@ async def get_suggestions(current_user: CurrentUser, db: DbDep):
     )
     user_prompt = "\n\n".join(prompt_parts)
 
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url or None,
-    )
+    client = get_client()
 
     try:
         resp = await client.chat.completions.create(
@@ -175,10 +172,7 @@ async def deep_research_stream(
     plan_node → parallel search_node × N → synthesis_node → deliverable_node
     Streams SSE events via graph.astream_events(version="v2").
     """
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url or None,
-    )
+    client = get_client()
 
     import logging as _logging
     from app.agents.memory import build_memory_context
@@ -236,10 +230,7 @@ class PolishRequest(BaseModel):
 @router.post("/ai/polish")
 async def polish_text(body: PolishRequest, current_user: CurrentUser):
     """Stream-polish a piece of text inline in the editor."""
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url or None,
-    )
+    client = get_client()
 
     async def generate():
         stream = await client.chat.completions.create(
@@ -382,14 +373,11 @@ async def get_context_greeting(
         "不要输出其他内容。"
     )
 
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url or None,
-    )
+    client = get_client()
 
     try:
         resp = await client.chat.completions.create(
-            model=settings.llm_model or "gpt-4o-mini",
+            model=get_model() or "gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "你是一个智能笔记助手，根据用户笔记本状态生成个性化建议。只返回JSON。"},
                 {"role": "user", "content": "\n\n".join(prompt_parts)},
@@ -457,14 +445,11 @@ async def get_source_suggestions(
     )
     context = "\n".join(row[0][:500] for row in chunks_result.all())
 
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url or None,
-    )
+    client = get_client()
 
     try:
         resp = await client.chat.completions.create(
-            model=settings.llm_model or "gpt-4o-mini",
+            model=get_model() or "gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "你是一个研究助手。根据资料内容生成探索性问题。只返回JSON数组。"},
                 {
