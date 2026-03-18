@@ -235,18 +235,18 @@ start_local() {
 
   section "Python 环境"
   if [ ! -d "$API_DIR/.venv" ]; then
-    info "创建虚拟环境..."
-    python3 -m venv "$API_DIR/.venv"
+    info "创建虚拟环境 (Python 3.12)..."
+    PYENV_VERSION=3.12.0 pyenv exec python -m venv "$API_DIR/.venv"
   fi
-  source "$API_DIR/.venv/bin/activate"
+  VENV_PYTHON="$API_DIR/.venv/bin/python"
   info "安装/更新依赖..."
-  pip install -q --upgrade pip
-  pip install -q -r "$API_DIR/requirements.txt"
+  "$VENV_PYTHON" -m pip install -q --upgrade pip
+  "$VENV_PYTHON" -m pip install -q -r "$API_DIR/requirements.txt"
   log "Python 依赖已就绪"
 
   section "数据库迁移"
   cd "$API_DIR"
-  alembic upgrade head
+  "$API_DIR/.venv/bin/alembic" upgrade head
   log "迁移完成"
 
   section "前端依赖"
@@ -257,11 +257,11 @@ start_local() {
   section "启动应用进程"
   cd "$API_DIR"
   info "FastAPI (port 8000)..."
-  uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &
+  "$API_DIR/.venv/bin/uvicorn" app.main:app --host 0.0.0.0 --port 8000 --reload &
   API_PID=$!
 
   info "Celery Worker..."
-  celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2 &
+  "$API_DIR/.venv/bin/celery" -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=2 &
   WORKER_PID=$!
 
   cd "$WEB_DIR"

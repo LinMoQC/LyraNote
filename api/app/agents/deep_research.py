@@ -103,6 +103,46 @@ def _strip_fences(raw: str) -> str:
     return raw.strip()
 
 
+import re
+
+_JSON_OBJ_RE = re.compile(r'\{[^{}]*\}', re.DOTALL)
+_FINDING_RE = re.compile(r'"finding"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
+_COUNTERPOINT_RE = re.compile(r'"counterpoint"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
+
+
+def _extract_finding(raw: str) -> tuple[str, str]:
+    """Robustly extract finding & counterpoint from LLM output.
+
+    Tries in order:
+      1. json.loads on the whole string
+      2. json.loads on the first {...} found via regex
+      3. Regex extraction of "finding" value
+      4. Fallback to raw text (stripping any leading JSON syntax)
+    """
+    for candidate in (raw, None):
+        if candidate is None:
+            m = _JSON_OBJ_RE.search(raw)
+            if not m:
+                break
+            candidate = m.group(0)
+        try:
+            parsed = json.loads(candidate)
+            return (
+                str(parsed.get("finding", raw[:LEARNING_MAX_CHARS])),
+                str(parsed.get("counterpoint", "")),
+            )
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    fm = _FINDING_RE.search(raw)
+    if fm:
+        cp = _COUNTERPOINT_RE.search(raw)
+        return fm.group(1), (cp.group(1) if cp else "")
+
+    cleaned = raw.lstrip('{" \t\n').removeprefix("finding").lstrip(':" \t\n')
+    return cleaned[:LEARNING_MAX_CHARS], ""
+
+
 def grade_evidence(citations: list[dict]) -> str:
     """Pure-rule evidence grading — no LLM call."""
     n = len(citations)
@@ -307,13 +347,7 @@ async def _research_one(
         max_tokens=400,
     )
     raw = _strip_fences((resp.choices[0].message.content or "").strip())
-    try:
-        parsed = json.loads(raw)
-        content = str(parsed.get("finding", raw[:LEARNING_MAX_CHARS]))
-        counterpoint = str(parsed.get("counterpoint", ""))
-    except Exception:
-        content = raw[:LEARNING_MAX_CHARS]
-        counterpoint = ""
+    content, counterpoint = _extract_finding(raw)
 
     return Learning(
         sub_question=query,
@@ -368,7 +402,7 @@ async def _synthesize_report(
         ],
         stream=True,
         temperature=0.5,
-        max_tokens=2000,
+        max_tokens=4096,
     )
     async for chunk in stream:
         if chunk.choices and chunk.choices[0].delta.content:
@@ -405,7 +439,7 @@ async def _generate_deliverable(
             },
             {
                 "role": "user",
-                "content": f"研究问题：{query}\n\n研究报告：\n{full_report[:3000]}",
+                "content": f"研究问题：{query}\n\n研究报告：\n{full_report[:6000]}",
             },
         ],
         temperature=0.3,
