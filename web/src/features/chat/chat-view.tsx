@@ -107,6 +107,8 @@ export function ChatView() {
   const { copied, copy } = useCopyToClipboard();
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   // ── 注入移动端 header 右侧按钮 ──────────────────────────────────────────
   useEffect(() => {
@@ -409,6 +411,16 @@ export function ChatView() {
     }
   }, [feedbackMap]);
 
+  const stableRegenerate = useCallback(() => {
+    chat.handleRegenerate(messagesRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.handleRegenerate]);
+
+  const stableFollowUp = useCallback((q: string) => {
+    chat.handleSend(q);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.handleSend]);
+
   // ── New chat ────────────────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveConvId(null);
@@ -530,8 +542,8 @@ export function ChatView() {
                   initials={initials}
                   onCopy={copy}
                   onFeedback={handleFeedback}
-                  onRegenerate={() => chat.handleRegenerate(messages)}
-                  onFollowUp={(q) => chat.handleSend(q)}
+                  onRegenerate={stableRegenerate}
+                  onFollowUp={stableFollowUp}
                 />
               ))}
             </AnimatePresence>

@@ -284,8 +284,8 @@ async def stream_answer(
     context, citations = _build_context(chunks)
     messages = await _build_messages(query, context, history, user_memories, notebook_summary, db)
 
-    async for token in chat_stream(messages):
-        yield {"type": "token", "content": token}
+    async for chunk in chat_stream(messages):
+        yield chunk
 
     yield {"type": "citations", "citations": citations}
     yield {"type": "done"}

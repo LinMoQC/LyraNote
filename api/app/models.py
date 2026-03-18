@@ -217,6 +217,10 @@ class Message(Base):
     agent_steps: Mapped[list | None] = mapped_column(JSONB)
     # [{name, type, file_id}] — user message attachments (images, docs)
     attachments: Mapped[list | None] = mapped_column(JSONB)
+    # Conversation branching: points to the message this branch forked from
+    parent_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, default=None,
+    )
     created_at: Mapped[datetime] = now_col()
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")

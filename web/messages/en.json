@@ -112,6 +112,7 @@
     "aiDraft": "AI Draft",
     "streamFailed": "Request failed, please try again.",
     "citationSources": "Citations · {count}",
+    "reasoning": "Thinking process",
     "copied": "Copied",
     "copy": "Copy",
     "suggestedPrompts": {
@@ -292,11 +293,21 @@
     },
     "memory": {
       "whatIsTitle": "What is AI Memory?",
-      "whatIsDesc": "This is what AI knows about you long-term. It reads this document every time you chat. You can write personal background, research interests, and preferences, or let AI update it automatically during conversations.",
+      "whatIsDesc": "AI learns about you through conversations — your preferences, facts, and skills. You can view, edit, or delete any memory entry below.",
       "lastUpdated": "Last updated: {date}",
       "globalDoc": "Global Memory Document",
       "globalDocDesc": "Markdown format, read by AI in every conversation",
-      "placeholder": "e.g.\n## About Me\n- Software engineer focusing on AI\n- Researching LLMs in knowledge management\n\n## Preferences\n- Keep answers concise, use bullet points\n- Primarily in English"
+      "placeholder": "e.g.\n## About Me\n- Software engineer focusing on AI\n- Researching LLMs in knowledge management\n\n## Preferences\n- Keep answers concise, use bullet points\n- Primarily in English",
+      "structuredTab": "Structured Memories",
+      "documentTab": "Memory Document",
+      "typePreference": "Preferences",
+      "typeFact": "Facts",
+      "typeSkill": "Skills",
+      "noMemories": "No memories yet. AI will learn about you during conversations.",
+      "confidence": "Confidence",
+      "accessCount": "Used",
+      "expiresAt": "Expires",
+      "save": "Save"
     },
     "skills": {
       "title": "Skills Management",

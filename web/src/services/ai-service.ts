@@ -53,7 +53,7 @@ export async function getInlineSuggestion(context: string): Promise<string> {
 
 /** 流式 Agent 事件（SSE 推送的各类事件） */
 export interface AgentEvent {
-  type: "token" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created"
+  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created" | "speed" | "human_approve_required"
   content?: string
   tool?: string
   input?: Record<string, unknown>
@@ -63,6 +63,11 @@ export interface AgentEvent {
   note_title?: string
   notebook_id?: string
   message_id?: string
+  ttft_ms?: number
+  tps?: number
+  tokens?: number
+  tool_names?: string[]
+  tool_calls?: Record<string, unknown>[]
 }
 
 /** 消息附件元信息 */
@@ -156,11 +161,9 @@ export async function sendMessageStream(
       try {
         const event = JSON.parse(json) as AgentEvent
         if (event.type === "token" && event.content) {
-          for (const char of event.content) {
-            if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-            onToken(char)
-            await new Promise<void>((r) => setTimeout(r, 16))
-          }
+          onToken(event.content)
+        } else if (event.type === "reasoning" && event.content && onAgentEvent) {
+          onAgentEvent(event)
         } else if (event.type === "citations" && event.citations) {
           richCitations = (event.citations as unknown as Array<Record<string, unknown>>).map((c, i) => ({
             source_id: (c.source_id as string) ?? "",
@@ -170,6 +173,10 @@ export async function sendMessageStream(
             score: c.score as number | undefined,
           }))
           onAgentEvent?.({ type: "citations", citations: richCitations })
+        } else if (event.type === "speed" && onAgentEvent) {
+          onAgentEvent(event)
+        } else if (event.type === "human_approve_required" && onAgentEvent) {
+          onAgentEvent(event)
         } else if (
           (event.type === "thought" || event.type === "tool_call" || event.type === "tool_result" || event.type === "mind_map" || event.type === "note_created") &&
           onAgentEvent

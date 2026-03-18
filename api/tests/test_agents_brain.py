@@ -1,0 +1,413 @@
+"""
+Tests for app/agents/brain.py
+
+AgentBrain is pure decision logic with no IO — tested with plain pytest assertions
+as documented in the module's docstring.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.agents.brain import (
+    CONTEXT_TOKEN_THRESHOLD,
+    TOOLS_REQUIRING_APPROVAL,
+    AgentBrain,
+    _is_knowledge_query,
+)
+from app.agents.instructions import (
+    CallLLMInstruction,
+    CallRAGInstruction,
+    CallToolsInstruction,
+    CompressContextInstruction,
+    FinishInstruction,
+    RequestHumanApprovalInstruction,
+    StreamAnswerInstruction,
+)
+from app.agents.state import AgentState
+
+
+# ── Helper factory ─────────────────────────────────────────────────────────────
+
+def make_state(**kwargs) -> AgentState:
+    """Create a minimal AgentState with sensible defaults."""
+    defaults = dict(
+        messages=[{"role": "system", "content": "You are helpful."}],
+        phase="init",
+        query="What is machine learning?",
+    )
+    defaults.update(kwargs)
+    return AgentState(**defaults)
+
+
+# ── _is_knowledge_query ────────────────────────────────────────────────────────
+
+class TestIsKnowledgeQuery:
+    def test_short_query_below_threshold_returns_false(self):
+        assert _is_knowledge_query("hi") is False
+
+    def test_exactly_three_chars_returns_false(self):
+        assert _is_knowledge_query("hey") is False
+
+    def test_four_chars_generic_returns_true(self):
+        # "data" is 4 chars and not a conversational pattern
+        assert _is_knowledge_query("data") is True
+
+    def test_exact_greeting_hi_returns_false(self):
+        assert _is_knowledge_query("hi") is False
+
+    def test_exact_greeting_hello_returns_false(self):
+        assert _is_knowledge_query("hello") is False
+
+    def test_exact_chinese_greeting_returns_false(self):
+        assert _is_knowledge_query("你好") is False
+
+    def test_exact_thanks_returns_false(self):
+        assert _is_knowledge_query("thanks") is False
+
+    def test_exact_thank_you_returns_false(self):
+        assert _is_knowledge_query("thank you") is False
+
+    def test_exact_ok_returns_false(self):
+        assert _is_knowledge_query("ok") is False
+
+    def test_exact_okay_returns_false(self):
+        assert _is_knowledge_query("okay") is False
+
+    def test_exact_bye_returns_false(self):
+        assert _is_knowledge_query("bye") is False
+
+    def test_short_startswith_greeting_hi_returns_false(self):
+        # "hi all" is 6 chars, starts with "hi"
+        assert _is_knowledge_query("hi all") is False
+
+    def test_short_startswith_hello_returns_false(self):
+        # "hello!" is 6 chars, starts with "hello"
+        assert _is_knowledge_query("hello!") is False
+
+    def test_longer_query_starting_with_greeting_not_filtered(self):
+        # len > 8, so startswith check doesn't apply
+        assert _is_knowledge_query("hello world this is a long query") is True
+
+    def test_typical_knowledge_query_returns_true(self):
+        assert _is_knowledge_query("What is machine learning?") is True
+
+    def test_chinese_knowledge_query_returns_true(self):
+        assert _is_knowledge_query("深度学习的原理是什么") is True
+
+    def test_whitespace_only_short_returns_false(self):
+        # strip makes it empty string, len < 4
+        assert _is_knowledge_query("   ") is False
+
+    def test_query_with_leading_whitespace_stripped(self):
+        # After strip: "hi" → len 2 < 4 → False
+        assert _is_knowledge_query("   hi   ") is False
+
+    def test_case_insensitive_matching(self):
+        # "HI" should be lowercased before comparison
+        assert _is_knowledge_query("HI") is False
+
+    def test_case_insensitive_hello(self):
+        assert _is_knowledge_query("HELLO") is False
+
+    def test_case_insensitive_ok(self):
+        assert _is_knowledge_query("OK") is False
+
+    def test_empty_string_returns_false(self):
+        assert _is_knowledge_query("") is False
+
+    def test_technical_question_returns_true(self):
+        assert _is_knowledge_query("How does gradient descent work?") is True
+
+    def test_exact_chinese_thanks_returns_false(self):
+        assert _is_knowledge_query("谢谢") is False
+
+    def test_exact_chinese_ok_returns_false(self):
+        assert _is_knowledge_query("好的") is False
+
+    def test_chinese_question_returns_true(self):
+        # Not a conversational pattern
+        assert _is_knowledge_query("量子计算是什么") is True
+
+
+# ── AgentBrain.decide — phase: init ──────────────────────────────────────────
+
+class TestAgentBrainInitPhase:
+    def test_init_phase_returns_call_llm(self):
+        brain = AgentBrain()
+        state = make_state(phase="init")
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+    def test_init_phase_has_correct_type_field(self):
+        brain = AgentBrain()
+        state = make_state(phase="init")
+        result = brain.decide(state)
+        assert result.type == "call_llm"
+
+
+# ── AgentBrain.decide — phase: llm_result ────────────────────────────────────
+
+class TestAgentBrainLLMResultPhase:
+    def test_pending_tool_calls_returns_call_tools(self):
+        brain = AgentBrain()
+        tool_calls = [{"id": "tc1", "name": "search", "arguments": {}}]
+        state = make_state(phase="llm_result", pending_tool_calls=tool_calls)
+        result = brain.decide(state)
+        assert isinstance(result, CallToolsInstruction)
+        assert result.tool_calls == tool_calls
+
+    def test_pending_tool_calls_tool_calls_attached_to_instruction(self):
+        brain = AgentBrain()
+        tool_calls = [
+            {"id": "tc1", "name": "search", "arguments": {"q": "test"}},
+            {"id": "tc2", "name": "summarize", "arguments": {}},
+        ]
+        state = make_state(phase="llm_result", pending_tool_calls=tool_calls)
+        result = brain.decide(state)
+        assert isinstance(result, CallToolsInstruction)
+        assert len(result.tool_calls) == 2
+
+    def test_no_tools_knowledge_query_no_results_returns_rag(self):
+        brain = AgentBrain()
+        state = make_state(
+            phase="llm_result",
+            pending_tool_calls=[],
+            tool_results=[],
+            query="What is deep learning?",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, CallRAGInstruction)
+        assert result.query == "What is deep learning?"
+
+    def test_no_tools_knowledge_query_rag_instruction_has_query(self):
+        brain = AgentBrain()
+        query = "Explain transformer architecture"
+        state = make_state(
+            phase="llm_result",
+            pending_tool_calls=[],
+            tool_results=[],
+            query=query,
+        )
+        result = brain.decide(state)
+        assert isinstance(result, CallRAGInstruction)
+        assert result.query == query
+
+    def test_no_tools_with_existing_tool_results_returns_stream_answer(self):
+        """If tool_results already populated, skip RAG and stream directly."""
+        brain = AgentBrain()
+        state = make_state(
+            phase="llm_result",
+            pending_tool_calls=[],
+            tool_results=["some retrieved content"],
+            query="What is deep learning?",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+    def test_no_tools_conversational_query_returns_stream_answer(self):
+        """Short/conversational queries skip RAG."""
+        brain = AgentBrain()
+        state = make_state(
+            phase="llm_result",
+            pending_tool_calls=[],
+            tool_results=[],
+            query="hi",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+    def test_no_tools_empty_query_returns_stream_answer(self):
+        """Empty query is not knowledge-seeking."""
+        brain = AgentBrain()
+        state = make_state(
+            phase="llm_result",
+            pending_tool_calls=[],
+            tool_results=[],
+            query="",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+    def test_tools_requiring_approval_triggers_approval_instruction(self):
+        """If TOOLS_REQUIRING_APPROVAL is non-empty, tool calls matching it get approval."""
+        brain = AgentBrain()
+        TOOLS_REQUIRING_APPROVAL.add("dangerous_tool")
+        try:
+            tool_calls = [{"id": "tc1", "name": "dangerous_tool", "arguments": {}}]
+            state = make_state(phase="llm_result", pending_tool_calls=tool_calls)
+            result = brain.decide(state)
+            assert isinstance(result, RequestHumanApprovalInstruction)
+            assert result.tool_calls == tool_calls
+        finally:
+            TOOLS_REQUIRING_APPROVAL.discard("dangerous_tool")
+
+    def test_tools_requiring_approval_non_matching_still_calls_tools(self):
+        """Only tools in TOOLS_REQUIRING_APPROVAL trigger approval; others proceed."""
+        brain = AgentBrain()
+        TOOLS_REQUIRING_APPROVAL.add("dangerous_tool")
+        try:
+            tool_calls = [{"id": "tc1", "name": "safe_tool", "arguments": {}}]
+            state = make_state(phase="llm_result", pending_tool_calls=tool_calls)
+            result = brain.decide(state)
+            assert isinstance(result, CallToolsInstruction)
+        finally:
+            TOOLS_REQUIRING_APPROVAL.discard("dangerous_tool")
+
+    def test_mixed_tools_some_requiring_approval(self):
+        """If any tool requires approval, the whole set goes through approval."""
+        brain = AgentBrain()
+        TOOLS_REQUIRING_APPROVAL.add("dangerous_tool")
+        try:
+            tool_calls = [
+                {"id": "tc1", "name": "safe_tool", "arguments": {}},
+                {"id": "tc2", "name": "dangerous_tool", "arguments": {}},
+            ]
+            state = make_state(phase="llm_result", pending_tool_calls=tool_calls)
+            result = brain.decide(state)
+            assert isinstance(result, RequestHumanApprovalInstruction)
+        finally:
+            TOOLS_REQUIRING_APPROVAL.discard("dangerous_tool")
+
+
+# ── AgentBrain.decide — phase: tool_result ────────────────────────────────────
+
+class TestAgentBrainToolResultPhase:
+    def test_within_step_limit_returns_call_llm(self):
+        brain = AgentBrain(max_steps=5)
+        state = make_state(phase="tool_result", step_count=2)
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+    def test_at_max_steps_returns_stream_answer(self):
+        brain = AgentBrain(max_steps=5)
+        state = make_state(phase="tool_result", step_count=5)
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+    def test_at_max_steps_sets_force_finish(self):
+        brain = AgentBrain(max_steps=5)
+        state = make_state(phase="tool_result", step_count=5)
+        brain.decide(state)
+        assert state.force_finish is True
+
+    def test_exceeding_max_steps_returns_stream_answer(self):
+        brain = AgentBrain(max_steps=3)
+        state = make_state(phase="tool_result", step_count=10)
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+    def test_custom_max_steps_respected(self):
+        brain = AgentBrain(max_steps=10)
+        state = make_state(phase="tool_result", step_count=9)
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+    def test_high_token_count_triggers_compress_context(self):
+        """Over CONTEXT_TOKEN_THRESHOLD tokens should trigger compression."""
+        brain = AgentBrain(max_steps=5)
+        # Craft messages that produce many chars → many tokens
+        large_content = "a" * (CONTEXT_TOKEN_THRESHOLD * 3 + 10)
+        messages = [{"role": "user", "content": large_content}]
+        state = make_state(
+            phase="tool_result",
+            step_count=1,
+            messages=messages,
+            context_compressed=False,
+        )
+        result = brain.decide(state)
+        assert isinstance(result, CompressContextInstruction)
+
+    def test_already_compressed_skips_compression(self):
+        """Context already compressed → skip compression, go to LLM."""
+        brain = AgentBrain(max_steps=5)
+        large_content = "a" * (CONTEXT_TOKEN_THRESHOLD * 3 + 10)
+        messages = [{"role": "user", "content": large_content}]
+        state = make_state(
+            phase="tool_result",
+            step_count=1,
+            messages=messages,
+            context_compressed=True,
+        )
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+    def test_low_token_count_returns_call_llm(self):
+        brain = AgentBrain(max_steps=5)
+        state = make_state(phase="tool_result", step_count=1)
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+
+# ── AgentBrain.decide — phase: rag_done ──────────────────────────────────────
+
+class TestAgentBrainRagDonePhase:
+    def test_rag_done_returns_stream_answer(self):
+        brain = AgentBrain()
+        state = make_state(phase="rag_done")
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+
+# ── AgentBrain.decide — phase: max_steps_fallback ────────────────────────────
+
+class TestAgentBrainMaxStepsFallbackPhase:
+    def test_max_steps_fallback_returns_stream_answer(self):
+        brain = AgentBrain()
+        state = make_state(phase="max_steps_fallback")
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+
+
+# ── AgentBrain.decide — unknown phase ────────────────────────────────────────
+
+class TestAgentBrainUnknownPhase:
+    def test_unknown_phase_returns_finish_with_error(self):
+        brain = AgentBrain()
+        state = make_state(phase="unknown_garbage")
+        result = brain.decide(state)
+        assert isinstance(result, FinishInstruction)
+        assert result.reason == "error"
+
+    def test_empty_phase_returns_finish_with_error(self):
+        brain = AgentBrain()
+        state = make_state(phase="")
+        result = brain.decide(state)
+        assert isinstance(result, FinishInstruction)
+        assert result.reason == "error"
+
+    def test_done_phase_returns_finish_with_error(self):
+        """'done' is not handled in decide() — it's an exit condition for Engine."""
+        brain = AgentBrain()
+        state = make_state(phase="done")
+        result = brain.decide(state)
+        assert isinstance(result, FinishInstruction)
+        assert result.reason == "error"
+
+
+# ── AgentBrain constructor ────────────────────────────────────────────────────
+
+class TestAgentBrainConstructor:
+    def test_default_has_tools_is_true(self):
+        brain = AgentBrain()
+        assert brain._has_tools is True
+
+    def test_custom_has_tools_false(self):
+        brain = AgentBrain(has_tools=False)
+        assert brain._has_tools is False
+
+    def test_default_max_steps(self):
+        brain = AgentBrain()
+        assert brain._max_steps == 5
+
+    def test_custom_max_steps(self):
+        brain = AgentBrain(max_steps=10)
+        assert brain._max_steps == 10
+
+    def test_zero_max_steps_immediately_forces_stream(self):
+        """max_steps=0 should force stream answer on first tool result."""
+        brain = AgentBrain(max_steps=0)
+        state = make_state(phase="tool_result", step_count=0)
+        result = brain.decide(state)
+        assert isinstance(result, StreamAnswerInstruction)
+        assert state.force_finish is True

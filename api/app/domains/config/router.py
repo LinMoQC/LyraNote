@@ -22,6 +22,7 @@ router = APIRouter(tags=["config"])
 # Keys that can be read/written via this endpoint (mirrors setup RUNTIME_CONFIG_KEYS)
 EDITABLE_KEYS = {
     # AI
+    "llm_provider",
     "openai_api_key",
     "openai_base_url",
     "llm_model",
@@ -115,6 +116,12 @@ async def update_config(body: ConfigPatchRequest, _current_user: CurrentUser, db
                 pass
 
     await db.commit()
+
+    # Reset LLM provider singleton when provider-related keys change
+    provider_keys = {"openai_api_key", "openai_base_url", "llm_model", "llm_provider"}
+    if provider_keys & set(body.data.keys()):
+        from app.providers.provider_factory import reset_provider
+        reset_provider()
 
 
 class TestEmailResult(BaseModel):

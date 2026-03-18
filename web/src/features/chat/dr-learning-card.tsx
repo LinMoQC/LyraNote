@@ -15,12 +15,24 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { DIMENSION_CONFIG, EVIDENCE_GRADE_CONFIG, type DrLearning } from "./dr-types";
 
+function cleanContent(raw: string): string {
+  if (!raw) return "";
+  let s = raw.trim();
+  if (s.startsWith("{") && s.includes('"finding"')) {
+    const m = s.match(/"finding"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    if (m) return m[1];
+    s = s.replace(/^\{\s*"finding"\s*:\s*"?/, "").replace(/"?\s*[,}]?\s*$/, "");
+  }
+  return s;
+}
+
 export function LearningCard({ learning }: { learning: DrLearning }) {
   const t = useTranslations("deepResearch");
   const tc = useTranslations("common");
   const [expanded, setExpanded] = useState(false);
   const dimCfg = DIMENSION_CONFIG[learning.dimension ?? "concept"];
   const gradeCfg = EVIDENCE_GRADE_CONFIG[learning.evidenceGrade ?? "weak"];
+  const displayContent = cleanContent(learning.content);
 
   return (
     <div className="mt-1.5 rounded-lg border border-border/30 bg-muted/20 px-3 py-2">
@@ -28,7 +40,7 @@ export function LearningCard({ learning }: { learning: DrLearning }) {
         <div className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
           <CheckCircle2 size={9} className="text-emerald-400" />
         </div>
-        <p className="flex-1 text-xs leading-relaxed text-foreground/80">{learning.content}</p>
+        <p className="line-clamp-2 flex-1 text-xs leading-relaxed text-foreground/80">{displayContent}</p>
         <button type="button" className="flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground/70">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </button>

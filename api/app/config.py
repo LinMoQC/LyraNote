@@ -11,7 +11,10 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # OpenAI / LLM
+    # LLM Provider
+    # Supported: openai (default, works with any OpenAI-compatible endpoint),
+    #            anthropic (native Anthropic SDK)
+    llm_provider: Literal["openai", "anthropic"] = "openai"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
