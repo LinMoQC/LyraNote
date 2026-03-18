@@ -7,13 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2026-03-17
+
 ### Added
 - Interactive `lyra` CLI with TUI menu for project management
 - `scripts/start.sh` with Docker and local dev modes
+- `lyra init` interactive wizard for environment variable setup
+- `lyra prod` / `lyra update` / `lyra reset` production management commands
 - husky + lint-staged pre-commit TypeScript type checking
+- commitlint with gitmoji format enforcement
+- VitePress documentation site with full Chinese/English bilingual support
 - `storage_s3_public_url` configuration field to separate internal MinIO endpoint from browser-accessible presigned URL
 - Mobile-responsive layout: bottom-fixed chat input on home page, conversation sheet on chat page
 - Mobile header right-slot injection system for page-specific actions
+- `.env.example` for production environment variable management
+- ghcr.io cloud image support in `docker-compose.prod.yml`
 
 ### Fixed
 - MinIO upload 500 error caused by using `localhost:9000` inside Docker containers (now uses service name `minio:9000`)
@@ -40,5 +50,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker Compose dev and production configurations
 - Bilingual UI (Chinese / English) with next-intl
 
-[Unreleased]: https://github.com/LinMoQC/LyraNote/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/LinMoQC/LyraNote/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/LinMoQC/LyraNote/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/LinMoQC/LyraNote/releases/tag/v0.1.0
