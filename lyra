@@ -39,8 +39,13 @@ cmd_help() {
   echo -e "  ${BOLD}${GREEN}启动 / 停止${NC}"
   echo -e "    ${CYAN}start${NC}      Docker Compose 模式启动（默认）"
   echo -e "    ${CYAN}dev${NC}        本地开发模式（应用层本地 + 数据层 Docker）"
+  echo -e "    ${CYAN}prod${NC}       生产模式启动（使用 ghcr.io 云端镜像）"
   echo -e "    ${CYAN}stop${NC}       停止服务"
   echo -e "    ${CYAN}restart${NC}    重启所有容器"
+  echo ""
+  echo -e "  ${BOLD}${GREEN}生产运维${NC}"
+  echo -e "    ${CYAN}update${NC}     git pull + 拉新镜像 + 重启（一键更新）"
+  echo -e "    ${CYAN}reset${NC}      清除所有数据并重建（${RED}不可恢复${NC}）"
   echo ""
   echo -e "  ${BOLD}${GREEN}开发工具${NC}"
   echo -e "    ${CYAN}logs${NC} [svc]  查看日志（可选：api/worker/web/db/redis）"
@@ -124,6 +129,49 @@ cmd_migrate() {
   log "迁移完成"
 }
 
+cmd_prod() {
+  info "生产模式启动（ghcr.io 云端镜像）..."
+  cd "$LYRA_ROOT"
+  if [ ! -f ".env" ]; then
+    warn ".env 不存在，从 .env.example 复制..."
+    cp ".env.example" ".env"
+    warn "请先编辑 ${BOLD}.env${NC} 填入生产环境配置后重新运行。"
+    "${EDITOR:-vi}" ".env"
+  fi
+  docker compose -f docker-compose.prod.yml pull
+  docker compose -f docker-compose.prod.yml up -d
+  log "生产环境已启动"
+}
+
+cmd_update() {
+  info "更新到最新版本..."
+  cd "$LYRA_ROOT"
+  git pull
+  docker compose -f docker-compose.prod.yml pull web api worker
+  docker compose -f docker-compose.prod.yml up -d
+  docker image prune -f
+  log "更新完成"
+}
+
+cmd_reset() {
+  cd "$LYRA_ROOT"
+  echo ""
+  echo -e "  ${RED}${BOLD}⚠  警告：此操作将删除所有容器和数据（不可恢复）${NC}"
+  echo ""
+  read -rp "  输入 'yes' 确认: " confirm
+  if [ "$confirm" = "yes" ]; then
+    docker compose -f docker-compose.prod.yml down -v --remove-orphans 2>/dev/null || \
+    docker compose down -v --remove-orphans
+    log "已清除所有容器和数据"
+    read -rp "  立即重新启动？[Y/n] " ans
+    if [[ "${ans:-y}" =~ ^[Yy]$ ]]; then
+      cmd_prod
+    fi
+  else
+    info "已取消"
+  fi
+}
+
 cmd_lint() {
   info "TypeScript 类型检查..."
   cd "$LYRA_ROOT/web"
@@ -162,6 +210,9 @@ case "${1:-}" in
   lint)       cmd_lint ;;
   version|-v) cmd_version ;;
   help|-h|--help) cmd_help ;;
+  prod)       cmd_prod ;;
+  update)     cmd_update ;;
+  reset)      cmd_reset ;;
   *)
     warn "未知命令：$1"
     cmd_help
