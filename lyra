@@ -44,6 +44,8 @@ cmd_help() {
   echo -e "    ${CYAN}restart${NC}    重启所有容器"
   echo ""
   echo -e "  ${BOLD}${GREEN}生产运维${NC}"
+  echo -e "    ${CYAN}init${NC}       交互式初始化向导（生成 .env 配置文件）"
+  echo -e "    ${CYAN}prod${NC}       生产模式启动（ghcr.io 云端镜像）"
   echo -e "    ${CYAN}update${NC}     git pull + 拉新镜像 + 重启（一键更新）"
   echo -e "    ${CYAN}reset${NC}      清除所有数据并重建（${RED}不可恢复${NC}）"
   echo ""
@@ -172,6 +174,171 @@ cmd_reset() {
   fi
 }
 
+# ── 颜色输入提示 ──────────────────────────────────────────────────────────────
+_ask() {
+  # _ask "提示文字" "默认值（可空）" → 输出到 REPLY
+  local prompt="$1" default="$2"
+  if [ -n "$default" ]; then
+    read -rp "$(echo -e "  ${CYAN}?${NC} $prompt ${DIM}[$default]${NC}: ")" REPLY
+    REPLY="${REPLY:-$default}"
+  else
+    read -rp "$(echo -e "  ${CYAN}?${NC} $prompt: ")" REPLY
+  fi
+}
+
+_ask_secret() {
+  local prompt="$1"
+  read -rsp "$(echo -e "  ${CYAN}?${NC} $prompt ${DIM}(输入不显示)${NC}: ")" REPLY
+  echo ""
+}
+
+_ask_yn() {
+  local prompt="$1" default="${2:-y}"
+  read -rp "$(echo -e "  ${CYAN}?${NC} $prompt ${DIM}[${default}]${NC}: ")" REPLY
+  REPLY="${REPLY:-$default}"
+  [[ "$REPLY" =~ ^[Yy]$ ]]
+}
+
+cmd_init() {
+  cd "$LYRA_ROOT"
+  echo ""
+  echo -e "  ${BOLD}${CYAN}LyraNote 初始化向导${NC}"
+  echo -e "  ${DIM}引导你完成环境变量配置，按 Enter 使用默认值${NC}"
+  echo ""
+
+  # ── 部署模式 ────────────────────────────────────────────────────────────────
+  echo -e "  ${BOLD}▸ 部署模式${NC}"
+  echo -e "    ${BOLD}1${NC}  本地开发  ${DIM}(localhost)${NC}"
+  echo -e "    ${BOLD}2${NC}  生产服务器 ${DIM}(自定义域名)${NC}"
+  read -rp "$(echo -e "  ${CYAN}?${NC} 选择模式 ${DIM}[1]${NC}: ")" mode_choice
+  mode_choice="${mode_choice:-1}"
+  echo ""
+
+  if [ "$mode_choice" = "2" ]; then
+    # ── 生产模式：根目录 .env ──────────────────────────────────────────────
+    echo -e "  ${BOLD}▸ 域名配置${NC}"
+    _ask "前端域名 (e.g. https://lyra.example.com)" "https://your-domain.com"
+    local frontend_url="$REPLY"
+    _ask "API 域名 (e.g. https://api.example.com，留空与前端相同)" ""
+    local app_base_url="${REPLY:-$frontend_url}"
+
+    echo ""
+    echo -e "  ${BOLD}▸ 数据库密码${NC}"
+    _ask_secret "PostgreSQL 密码"
+    local pg_pass="$REPLY"
+    [ -z "$pg_pass" ] && pg_pass="$(openssl rand -hex 16 2>/dev/null || echo "lyranote_$(date +%s)")"
+
+    echo ""
+    echo -e "  ${BOLD}▸ MinIO 密码${NC}"
+    _ask_secret "MinIO 密码（留空自动生成）"
+    local minio_pass="$REPLY"
+    [ -z "$minio_pass" ] && minio_pass="$(openssl rand -hex 16 2>/dev/null || echo "minio_$(date +%s)")"
+
+    # 写入根目录 .env
+    cat > "$LYRA_ROOT/.env" <<EOF
+# 由 ./lyra init 生成 $(date)
+
+POSTGRES_PASSWORD=$pg_pass
+MINIO_ROOT_USER=lyranote
+MINIO_ROOT_PASSWORD=$minio_pass
+APP_BASE_URL=$app_base_url
+FRONTEND_URL=$frontend_url
+CORS_ORIGINS=$frontend_url
+EOF
+    log "生产环境变量已写入 ${BOLD}.env${NC}"
+  fi
+
+  # ── api/.env ──────────────────────────────────────────────────────────────
+  echo ""
+  echo -e "  ${BOLD}▸ JWT 密钥${NC}"
+  local jwt_secret
+  jwt_secret="$(openssl rand -hex 32 2>/dev/null || date +%s%N | sha256sum | cut -c1-64)"
+  echo -e "  ${DIM}自动生成 JWT_SECRET: ${jwt_secret:0:16}...${NC}"
+
+  echo ""
+  echo -e "  ${BOLD}▸ OAuth 登录（可选，直接回车跳过）${NC}"
+  _ask "Google Client ID" ""
+  local google_id="$REPLY"
+  _ask_secret "Google Client Secret"
+  local google_secret="$REPLY"
+  _ask "GitHub Client ID" ""
+  local github_id="$REPLY"
+  _ask_secret "GitHub Client Secret"
+  local github_secret="$REPLY"
+
+  # 确定 api/.env 的基础设施地址
+  local db_url redis_url app_url frontend cors
+  if [ "$mode_choice" = "2" ]; then
+    # 读取刚才写入的 .env
+    local pg_pass2; pg_pass2="$(grep POSTGRES_PASSWORD "$LYRA_ROOT/.env" | cut -d= -f2)"
+    db_url="postgresql+asyncpg://lyranote:${pg_pass2}@db:5432/lyranote"
+    redis_url="redis://redis:6379/0"
+    app_url="$(grep APP_BASE_URL "$LYRA_ROOT/.env" | cut -d= -f2)"
+    frontend="$(grep FRONTEND_URL "$LYRA_ROOT/.env" | cut -d= -f2)"
+    cors="$frontend"
+    local debug="false"
+  else
+    db_url="postgresql+asyncpg://lyranote:lyranote@localhost:5433/lyranote"
+    redis_url="redis://localhost:6379/0"
+    app_url="http://localhost:8000"
+    frontend="http://localhost:3000"
+    cors="http://localhost:3000"
+    local debug="true"
+  fi
+
+  # 备份旧 api/.env
+  if [ -f "$LYRA_ROOT/api/.env" ]; then
+    cp "$LYRA_ROOT/api/.env" "$LYRA_ROOT/api/.env.bak"
+    warn "已备份旧配置到 api/.env.bak"
+  fi
+
+  # 写入 api/.env
+  cat > "$LYRA_ROOT/api/.env" <<EOF
+# 由 ./lyra init 生成 $(date)
+
+# ── Database ──────────────────────────────────────────────────
+DATABASE_URL=$db_url
+
+# ── Redis ─────────────────────────────────────────────────────
+REDIS_URL=$redis_url
+
+# ── Auth ──────────────────────────────────────────────────────
+JWT_SECRET=$jwt_secret
+JWT_EXPIRE_DAYS=30
+
+# ── OAuth — Google ────────────────────────────────────────────
+GOOGLE_CLIENT_ID=$google_id
+GOOGLE_CLIENT_SECRET=$google_secret
+
+# ── OAuth — GitHub ────────────────────────────────────────────
+GITHUB_CLIENT_ID=$github_id
+GITHUB_CLIENT_SECRET=$github_secret
+
+# ── URL Config ────────────────────────────────────────────────
+APP_BASE_URL=$app_url
+API_PREFIX=/api/v1
+FRONTEND_URL=$frontend
+
+# ── App ───────────────────────────────────────────────────────
+DEBUG=$debug
+CORS_ORIGINS=$cors
+MEMORY_MODE=server
+EOF
+
+  echo ""
+  log "api/.env 已生成"
+  echo ""
+  echo -e "  ${BOLD}${GREEN}✔ 初始化完成！${NC}"
+  echo ""
+
+  if [ "$mode_choice" = "2" ]; then
+    echo -e "  下一步：${CYAN}./lyra prod${NC}  启动生产环境"
+  else
+    echo -e "  下一步：${CYAN}./lyra start${NC}  启动开发环境"
+  fi
+  echo ""
+}
+
 cmd_lint() {
   info "TypeScript 类型检查..."
   cd "$LYRA_ROOT/web"
@@ -213,6 +380,7 @@ case "${1:-}" in
   prod)       cmd_prod ;;
   update)     cmd_update ;;
   reset)      cmd_reset ;;
+  init)       cmd_init ;;
   *)
     warn "未知命令：$1"
     cmd_help
