@@ -234,18 +234,64 @@ cmd_init() {
     local minio_pass="$REPLY"
     [ -z "$minio_pass" ] && minio_pass="$(openssl rand -hex 16 2>/dev/null || echo "minio_$(date +%s)")"
 
-    # 写入根目录 .env
+    echo ""
+    echo -e "  ${BOLD}▸ JWT 密钥${NC}"
+    local jwt_secret
+    jwt_secret="$(openssl rand -hex 32 2>/dev/null || date +%s%N | sha256sum | cut -c1-64)"
+    echo -e "  ${DIM}自动生成 JWT_SECRET: ${jwt_secret:0:16}...${NC}"
+
+    echo ""
+    echo -e "  ${BOLD}▸ OAuth 登录（可选，直接回车跳过）${NC}"
+    _ask "Google Client ID" ""
+    local google_id="$REPLY"
+    _ask_secret "Google Client Secret"
+    local google_secret="$REPLY"
+    _ask "GitHub Client ID" ""
+    local github_id="$REPLY"
+    _ask_secret "GitHub Client Secret"
+    local github_secret="$REPLY"
+
+    # 写入根目录 .env（生产模式所有配置都在这里）
     cat > "$LYRA_ROOT/.env" <<EOF
 # 由 ./lyra init 生成 $(date)
 
+# ── 数据库 ────────────────────────────────────────────────────
 POSTGRES_PASSWORD=$pg_pass
+
+# ── MinIO ─────────────────────────────────────────────────────
 MINIO_ROOT_USER=lyranote
 MINIO_ROOT_PASSWORD=$minio_pass
+
+# ── 域名 ──────────────────────────────────────────────────────
 APP_BASE_URL=$app_base_url
 FRONTEND_URL=$frontend_url
 CORS_ORIGINS=$frontend_url
+
+# ── JWT ───────────────────────────────────────────────────────
+JWT_SECRET=$jwt_secret
+JWT_EXPIRE_DAYS=30
+
+# ── OAuth ─────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID=$google_id
+GOOGLE_CLIENT_SECRET=$google_secret
+GITHUB_CLIENT_ID=$github_id
+GITHUB_CLIENT_SECRET=$github_secret
+
+# ── 应用 ──────────────────────────────────────────────────────
+MEMORY_MODE=server
+DEBUG=false
+API_PREFIX=/api/v1
 EOF
     log "生产环境变量已写入 ${BOLD}.env${NC}"
+
+    echo ""
+    log "api/.env 已生成"
+    echo ""
+    echo -e "  ${BOLD}${GREEN}✔ 初始化完成！${NC}"
+    echo ""
+    echo -e "  下一步：${CYAN}./lyra prod${NC}  启动生产环境"
+    echo ""
+    return
   fi
 
   # ── api/.env ──────────────────────────────────────────────────────────────
