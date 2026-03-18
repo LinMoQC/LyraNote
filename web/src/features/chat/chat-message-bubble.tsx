@@ -9,9 +9,9 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { m } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import {
-  Brain,
+  Check,
   Copy,
   FileText,
   RefreshCw,
@@ -20,13 +20,14 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { memo, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 
 import { BotAvatar } from "@/components/ui/bot-avatar";
 import { cn } from "@/lib/utils";
 import { InlineCitationBadge } from "@/features/copilot/inline-citation";
 import { AgentSteps } from "@/features/copilot/agent-steps";
 import { DeepResearchProgress } from "@/features/chat/deep-research-progress";
+import { ChoiceCards, parseChoicesBlock } from "@/features/chat/choice-cards";
 import type { CitationData } from "@/types";
 import type { AgentEvent } from "@/services/ai-service";
 import type { FeedbackRating } from "@/services/feedback-service";
@@ -79,15 +80,15 @@ function AttachmentImage({ att }: { att: MessageAttachment }) {
 function MarkdownContent({ content, citations }: { content: string; citations?: CitationData[] }) {
   const rendered = content.split("\n").map((line, i) => {
     if (line.startsWith("##### "))
-      return <h5 key={i} className="mb-1 text-xs font-semibold text-foreground/75">{processChildren(line.slice(6), citations)}</h5>;
+      return <h5 key={i} className="mb-1 mt-2.5 text-[13px] font-semibold text-foreground/80">{processChildren(line.slice(6), citations)}</h5>;
     if (line.startsWith("#### "))
-      return <h4 key={i} className="mb-1 text-xs font-semibold text-foreground/85">{processChildren(line.slice(5), citations)}</h4>;
+      return <h4 key={i} className="mb-1.5 mt-3 text-sm font-semibold text-foreground/90">{processChildren(line.slice(5), citations)}</h4>;
     if (line.startsWith("### "))
-      return <h3 key={i} className="mb-1 text-sm font-semibold text-foreground">{processChildren(line.slice(4), citations)}</h3>;
+      return <h3 key={i} className="mb-2 mt-4 text-base font-semibold text-foreground">{processChildren(line.slice(4), citations)}</h3>;
     if (line.startsWith("## "))
-      return <h2 key={i} className="mb-1.5 text-sm font-bold text-foreground">{processChildren(line.slice(3), citations)}</h2>;
+      return <h2 key={i} className="mb-2.5 mt-5 text-lg font-bold text-foreground">{processChildren(line.slice(3), citations)}</h2>;
     if (line.startsWith("# "))
-      return <h1 key={i} className="mb-2 text-base font-bold text-foreground">{processChildren(line.slice(2), citations)}</h1>;
+      return <h1 key={i} className="mb-3 mt-6 text-xl font-bold text-foreground">{processChildren(line.slice(2), citations)}</h1>;
     if (line.startsWith("**") && line.endsWith("**") && !line.slice(2, -2).includes("**"))
       return <p key={i} className="mb-1 font-semibold text-foreground">{processChildren(line.slice(2, -2), citations)}</p>;
     if (line.startsWith("- ")) {
@@ -104,35 +105,220 @@ function MarkdownContent({ content, citations }: { content: string; citations?: 
   return <div className="space-y-0.5 text-sm leading-relaxed">{rendered}</div>;
 }
 
-// ── ReasoningBlock ────────────────────────────────────────────────────────────
+// ── CodeBlock ────────────────────────────────────────────────────────────────
+
+function CodeBlock({ code, language }: { code: string; language?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const lang = language?.replace(/^language-/, "") ?? "";
+
+  return (
+    <div className="group/code my-3 overflow-hidden rounded-lg bg-[#1a1b26] shadow-lg ring-1 ring-white/[0.08]">
+      <div className="flex items-center gap-2 bg-[#15161e] px-4 py-2.5">
+        <div className="flex gap-1.5">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+        </div>
+        {lang && (
+          <span className="ml-1 text-[11px] font-medium text-white/30">
+            {lang}
+          </span>
+        )}
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={handleCopy}
+          className={cn(
+            "flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] transition-all",
+            copied
+              ? "text-emerald-400"
+              : "text-white/25 opacity-0 hover:bg-white/5 hover:text-white/50 group-hover/code:opacity-100"
+          )}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? "Copied!" : "Copy"}
+        </button>
+      </div>
+      <pre className="overflow-x-auto px-4 py-4 font-mono text-[13px] leading-6 text-[#c0caf5]">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+// ── MermaidBlock ──────────────────────────────────────────────────────────────
+
+const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let mermaidReady: Promise<any> | null = null;
+
+function loadMermaid() {
+  if (!mermaidReady) {
+    mermaidReady = import(/* webpackIgnore: true */ MERMAID_CDN).then((m) => {
+      const mermaid = m.default;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: "dark",
+        themeVariables: {
+          primaryColor: "#6366f1",
+          primaryTextColor: "#e2e8f0",
+          primaryBorderColor: "#4f46e5",
+          lineColor: "#64748b",
+          secondaryColor: "#1e293b",
+          tertiaryColor: "#0f172a",
+          fontFamily: "inherit",
+          fontSize: "13px",
+        },
+      });
+      return mermaid;
+    });
+  }
+  return mermaidReady;
+}
+
+function MermaidBlock({ code }: { code: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const uniqueId = useId().replace(/:/g, "_");
+  const [error, setError] = useState<string | null>(null);
+  const [svgHtml, setSvgHtml] = useState<string | null>(null);
+  const [zoomed, setZoomed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMermaid()
+      .then(async (mermaid) => {
+        if (cancelled) return;
+        try {
+          const { svg } = await mermaid.render(`mermaid${uniqueId}`, code.trim());
+          if (!cancelled) {
+            setSvgHtml(svg);
+            if (containerRef.current) containerRef.current.innerHTML = svg;
+          }
+        } catch {
+          if (!cancelled) setError("Diagram render failed");
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setError("Failed to load Mermaid");
+      });
+    return () => { cancelled = true; };
+  }, [code, uniqueId]);
+
+  if (error) {
+    return (
+      <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5">
+        <code>{code}</code>
+      </pre>
+    );
+  }
+
+  return (
+    <>
+      <div
+        ref={containerRef}
+        onClick={() => svgHtml && setZoomed(true)}
+        className="group my-2 flex cursor-zoom-in justify-center overflow-x-auto rounded-xl bg-accent/30 p-4 transition-colors hover:bg-accent/50 [&_svg]:max-w-full"
+      />
+      <AnimatePresence>
+        {zoomed && svgHtml && (
+          <m.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[999] flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setZoomed(false)}
+          >
+            <m.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="max-h-[90vh] max-w-[90vw] overflow-auto rounded-2xl bg-card/95 p-6 shadow-2xl ring-1 ring-white/10 [&_svg]:max-h-[80vh] [&_svg]:max-w-full"
+              onClick={(e) => e.stopPropagation()}
+              dangerouslySetInnerHTML={{ __html: svgHtml }}
+            />
+          </m.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+// ── ReasoningBlock (Gemini-style) ────────────────────────────────────────────
+
+function ThinkingSparkle({ streaming }: { streaming?: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className={cn(
+        "flex-shrink-0",
+        streaming ? "animate-pulse text-blue-400" : "text-blue-400/70"
+      )}
+    >
+      <path d="M8 0L9.2 5.3L14 4L10.5 7.5L16 8L10.5 8.5L14 12L9.2 10.7L8 16L6.8 10.7L2 12L5.5 8.5L0 8L5.5 7.5L2 4L6.8 5.3Z" />
+    </svg>
+  );
+}
 
 function ReasoningBlock({ content, streaming }: { content: string; streaming?: boolean }) {
   const t = useTranslations("chat");
   const [expanded, setExpanded] = useState(false);
+  const [userToggled, setUserToggled] = useState(false);
+
+  const isOpen = userToggled ? expanded : (streaming || expanded);
 
   return (
-    <div className="mb-2">
+    <div className="mb-3">
       <button
         type="button"
-        onClick={() => setExpanded((o) => !o)}
-        className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-muted-foreground/80"
+        onClick={() => { setExpanded((o) => !o); setUserToggled(true); }}
+        className="group flex items-center gap-1.5 py-1 text-[13px] text-muted-foreground/80 transition-colors hover:text-foreground"
       >
-        <Brain size={12} className={streaming ? "animate-pulse text-primary" : ""} />
-        <span>{t("reasoning")}</span>
+        <ThinkingSparkle streaming={streaming} />
+        <span className="font-medium">
+          {streaming ? t("thinkingInProgress") : t("reasoning")}
+        </span>
         <svg
           width="10"
           height="10"
           viewBox="0 0 10 10"
-          className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+          className={cn(
+            "text-muted-foreground/50 transition-transform duration-200",
+            isOpen && "rotate-180"
+          )}
         >
-          <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.2" fill="none" />
+          <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" fill="none" />
         </svg>
       </button>
-      {expanded && (
-        <div className="mt-1 rounded-lg bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground/70">
-          <pre className="whitespace-pre-wrap font-sans">{content}</pre>
-        </div>
-      )}
+      <AnimatePresence>
+        {isOpen && (
+          <m.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="overflow-hidden"
+          >
+            <div className="max-h-72 overflow-y-auto border-l-2 border-muted-foreground/15 pl-4 pt-1">
+              <div className="whitespace-pre-wrap text-[13px] italic leading-relaxed text-muted-foreground/60">
+                {content}
+                {streaming && <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-blue-400/50" />}
+              </div>
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -196,6 +382,7 @@ export interface ChatMessageBubbleProps {
   copied: boolean;
   avatarUrl: string | null;
   initials: string;
+  showReasoning?: boolean;
   onCopy: (text: string) => void;
   onFeedback: (msgId: string, rating: FeedbackRating) => void;
   onRegenerate: () => void;
@@ -211,6 +398,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   copied,
   avatarUrl,
   initials,
+  showReasoning = true,
   onCopy,
   onFeedback,
   onRegenerate,
@@ -236,13 +424,6 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
         </div>
       )}
 
-      {msg.role === "assistant" && msg.reasoning && (
-        <ReasoningBlock
-          content={msg.reasoning}
-          streaming={isLastAssistant && streaming}
-        />
-      )}
-
       {msg.role === "assistant" && !msg.deepResearch && stepsToShow?.length ? (
         <AgentSteps
           steps={stepsToShow}
@@ -259,11 +440,17 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
           <BotAvatar className="h-6 w-6 flex-shrink-0 md:h-7 md:w-7" />
         )}
         <div className="min-w-0 max-w-[85%] md:max-w-[80%]">
+          {msg.role === "assistant" && msg.reasoning && showReasoning && (
+            <ReasoningBlock
+              content={msg.reasoning}
+              streaming={isLastAssistant && streaming}
+            />
+          )}
           <div
             className={cn(
               "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
               msg.role === "user"
-                ? "rounded-br-sm bg-primary text-white"
+                ? "rounded-br-sm bg-primary text-white selection:bg-white/30 selection:text-white"
                 : "rounded-bl-sm bg-muted/50 text-foreground"
             )}
           >
@@ -279,42 +466,67 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                     />
                   ))}
                 </div>
-              ) : msg.content.includes("\n## ") ||
-                msg.content.startsWith("## ") ||
-                msg.content.includes("\n### ") ||
-                msg.content.startsWith("### ") ? (
-                <div className="text-sm leading-relaxed text-foreground/85">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ children }) => <p className="my-1.5">{processChildren(children, msg.citations)}</p>,
-                      strong: ({ children }) => <strong className="font-semibold text-foreground">{processChildren(children, msg.citations)}</strong>,
-                      em: ({ children }) => <em className="italic">{children}</em>,
-                      ul: ({ children }) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
-                      ol: ({ children }) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
-                      li: ({ children }) => <li className="my-0.5 leading-6">{processChildren(children, msg.citations)}</li>,
-                      h1: ({ children }) => <h1 className="mb-2 mt-4 text-base font-bold text-foreground">{processChildren(children, msg.citations)}</h1>,
-                      h2: ({ children }) => <h2 className="mb-2 mt-4 text-sm font-semibold text-foreground">{processChildren(children, msg.citations)}</h2>,
-                      h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-sm font-semibold text-foreground">{processChildren(children, msg.citations)}</h3>,
-                      h4: ({ children }) => <h4 className="mb-1 mt-2 text-xs font-semibold text-foreground/85">{processChildren(children, msg.citations)}</h4>,
-                      h5: ({ children }) => <h5 className="mb-1 mt-2 text-xs font-semibold text-foreground/75">{processChildren(children, msg.citations)}</h5>,
-                      blockquote: ({ children }) => <blockquote className="my-1.5 border-l-2 border-primary/40 pl-3 text-foreground/70">{processChildren(children, msg.citations)}</blockquote>,
-                      code: ({ children, ...props }) => {
-                        const isInline = !("data-language" in props);
-                        return isInline
-                          ? <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-xs text-foreground/90">{children}</code>
-                          : <code className="block">{children}</code>;
-                      },
-                      pre: ({ children }) => <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5">{children}</pre>,
-                      a: ({ href, children }) => <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">{children}</a>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <MarkdownContent content={msg.content} citations={msg.citations} />
-              )
+              ) : (() => {
+                const { textBefore, choices } = parseChoicesBlock(msg.content);
+                const displayContent = choices ? textBefore : msg.content;
+                const useReactMarkdown = displayContent.includes("\n## ") || displayContent.startsWith("## ") ||
+                  displayContent.includes("\n### ") || displayContent.startsWith("### ") ||
+                  displayContent.includes("```") ||
+                  /\|.+\|/.test(displayContent);
+                return (
+                  <>
+                    {useReactMarkdown ? (
+                      <div className="text-sm leading-relaxed text-foreground/85">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            p: ({ children }) => <p className="my-1.5">{processChildren(children, msg.citations)}</p>,
+                            strong: ({ children }) => <strong className="font-semibold text-foreground">{processChildren(children, msg.citations)}</strong>,
+                            em: ({ children }) => <em className="italic">{children}</em>,
+                            ul: ({ children }) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
+                            ol: ({ children }) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
+                            li: ({ children }) => <li className="my-0.5 leading-6">{processChildren(children, msg.citations)}</li>,
+                            h1: ({ children }) => <h1 className="mb-3 mt-6 text-xl font-bold text-foreground">{processChildren(children, msg.citations)}</h1>,
+                            h2: ({ children }) => <h2 className="mb-2.5 mt-5 text-lg font-bold text-foreground">{processChildren(children, msg.citations)}</h2>,
+                            h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{processChildren(children, msg.citations)}</h3>,
+                            h4: ({ children }) => <h4 className="mb-1.5 mt-3 text-sm font-semibold text-foreground/90">{processChildren(children, msg.citations)}</h4>,
+                            h5: ({ children }) => <h5 className="mb-1 mt-2.5 text-[13px] font-semibold text-foreground/80">{processChildren(children, msg.citations)}</h5>,
+                            blockquote: ({ children }) => <blockquote className="my-1.5 border-l-2 border-primary/40 pl-3 text-foreground/70">{processChildren(children, msg.citations)}</blockquote>,
+                            code: ({ children, className, ...props }) => {
+                              const isInline = !("data-language" in props) && !className;
+                              if (isInline) {
+                                return <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-xs text-foreground/90">{children}</code>;
+                              }
+                              const text = String(children).replace(/\n$/, "");
+                              if (className === "language-mermaid") {
+                                return <MermaidBlock code={text} />;
+                              }
+                              return <CodeBlock code={text} language={className} />;
+                            },
+                            pre: ({ children }) => <>{children}</>,
+                            table: ({ children }) => (
+                              <div className="my-3 overflow-x-auto rounded-lg border border-white/[0.08]">
+                                <table className="w-full border-collapse text-sm">{children}</table>
+                              </div>
+                            ),
+                            thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
+                            tbody: ({ children }) => <tbody className="divide-y divide-white/[0.06]">{children}</tbody>,
+                            tr: ({ children }) => <tr className="transition-colors hover:bg-white/[0.02]">{children}</tr>,
+                            th: ({ children }) => <th className="px-3 py-2 text-left text-xs font-semibold text-foreground/70">{children}</th>,
+                            td: ({ children }) => <td className="px-3 py-2 text-foreground/80">{children}</td>,
+                            a: ({ href, children }) => <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">{children}</a>,
+                          }}
+                        >
+                          {displayContent}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <MarkdownContent content={displayContent} citations={msg.citations} />
+                    )}
+                    {choices && <ChoiceCards choices={choices} onSelect={onFollowUp} />}
+                  </>
+                );
+              })()
             ) : (
               <p className="text-sm leading-relaxed">{msg.content}</p>
             )}

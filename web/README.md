@@ -158,10 +158,7 @@ web/
 
 ```env
 # 后端 API 地址
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-
-# 是否使用 Mock 数据（开发调试用，true/false）
-NEXT_PUBLIC_USE_MOCK=false
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 ```
 
 ---

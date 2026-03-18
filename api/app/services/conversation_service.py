@@ -208,22 +208,28 @@ class ConversationService:
                 })
                 yield f"data: {json.dumps(event)}\n\n"
 
+            elif event_type == "error":
+                full_content.append(event.get("content", ""))
+                yield f"data: {json.dumps(event)}\n\n"
+
             elif event_type == "done":
-                assistant_msg = Message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content="".join(full_content),
-                    citations=citations,
-                    agent_steps=agent_steps or None,
-                )
-                self.db.add(assistant_msg)
-                await self.db.flush()
+                content_text = "".join(full_content)
+                if content_text:
+                    assistant_msg = Message(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=content_text,
+                        citations=citations,
+                        agent_steps=agent_steps or None,
+                    )
+                    self.db.add(assistant_msg)
+                    await self.db.flush()
 
-                self._dispatch_post_chat_tasks(
-                    conversation_id, scene, user_memories
-                )
+                    self._dispatch_post_chat_tasks(
+                        conversation_id, scene, user_memories
+                    )
 
-                event = {**event, "message_id": str(assistant_msg.id)}
+                    event = {**event, "message_id": str(assistant_msg.id)}
                 yield f"data: {json.dumps(event)}\n\n"
 
             else:

@@ -36,6 +36,7 @@ export interface DrProgress {
   doneCitations: Array<{ title?: string; url?: string; type?: string }>;
   researchGoal?: string;
   evaluationCriteria?: string[];
+  reportTitle?: string;
   deliverable?: DrDeliverable;
 }
 

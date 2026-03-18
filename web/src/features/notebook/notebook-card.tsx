@@ -15,64 +15,15 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { deleteNotebook, publishNotebook, renameNotebook, unpublishNotebook } from "@/services/notebook-service";
+import { deleteNotebook, publishNotebook, unpublishNotebook, updateNotebook } from "@/services/notebook-service";
 import type { Notebook } from "@/types";
 import { formatDate } from "@/utils/format-date";
 import { useTranslations } from "next-intl";
-
-// ── Static config ─────────────────────────────────────────────────────────────
-
-const EMOJIS = [
-  "📓","📔","📒","📕","📗","📘","📙","🗒️","📋","📑",
-  "🗂️","📁","💡","🔬","✏️","🧠","🎯","🚀","💎","🌟",
-];
-
-const GRADIENTS = [
-  "from-amber-800/80 to-orange-700/80",
-  "from-blue-800/80 to-indigo-700/80",
-  "from-emerald-800/80 to-teal-700/80",
-  "from-violet-800/80 to-purple-700/80",
-  "from-rose-800/80 to-pink-700/80",
-  "from-sky-800/80 to-cyan-700/80",
-  "from-slate-700/80 to-gray-600/80",
-  "from-fuchsia-800/80 to-pink-700/80",
-];
-
-// Inline styles so Tailwind purge can't remove them
-const GRADIENT_STYLES: React.CSSProperties[] = [
-  { background: "linear-gradient(135deg,#92400e,#c2410c)" },
-  { background: "linear-gradient(135deg,#1e40af,#4338ca)" },
-  { background: "linear-gradient(135deg,#065f46,#0f766e)" },
-  { background: "linear-gradient(135deg,#5b21b6,#7c3aed)" },
-  { background: "linear-gradient(135deg,#9f1239,#be185d)" },
-  { background: "linear-gradient(135deg,#075985,#0e7490)" },
-  { background: "linear-gradient(135deg,#334155,#4b5563)" },
-  { background: "linear-gradient(135deg,#86198f,#9d174d)" },
-];
-
-function pick<T>(arr: T[], id: string): T {
-  const hash = id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return arr[hash % arr.length];
-}
-
-// ── localStorage helpers ──────────────────────────────────────────────────────
-
-interface NotebookMeta { icon: string; gradient: string }
-
-function loadMeta(id: string): NotebookMeta {
-  try {
-    const stored = localStorage.getItem(`notebook-meta:${id}`);
-    if (stored) {
-      const p = JSON.parse(stored) as Partial<NotebookMeta>;
-      return { icon: p.icon ?? pick(EMOJIS, id), gradient: p.gradient ?? pick(GRADIENTS, id) };
-    }
-  } catch { /* ignore */ }
-  return { icon: pick(EMOJIS, id), gradient: pick(GRADIENTS, id) };
-}
-
-function saveMeta(id: string, meta: NotebookMeta) {
-  try { localStorage.setItem(`notebook-meta:${id}`, JSON.stringify(meta)); } catch { /* ignore */ }
-}
+import {
+  NOTEBOOK_ICONS,
+  getNotebookIcon,
+  pickDefaultIcon,
+} from "./notebook-icons";
 
 // ── Hover dropdown (··· → rename / delete) ───────────────────────────────────
 
@@ -157,66 +108,53 @@ function NotebookMenu({
   );
 }
 
-// ── Edit dialog (name + icon + gradient) ─────────────────────────────────────
+// ── Edit dialog (name + icon) ────────────────────────────────────────────────
 
 function EditNotebookDialog({
   open,
   notebook,
-  currentIcon,
-  currentGradient,
   onClose,
   onSaved,
 }: {
   open: boolean;
   notebook: Notebook;
-  currentIcon: string;
-  currentGradient: string;
   onClose: () => void;
-  onSaved: (icon: string, gradient: string) => void;
+  onSaved: () => void;
 }) {
   const router = useRouter();
   const [name, setName] = useState(notebook.title);
-  const [icon, setIcon] = useState(currentIcon);
-  const [gradient, setGradient] = useState(currentGradient);
+  const [iconId, setIconId] = useState(() => notebook.coverEmoji || pickDefaultIcon(notebook.id));
   const [loading, setLoading] = useState(false);
   const tc = useTranslations("common");
 
-  // Sync when dialog opens
   useEffect(() => {
     if (open) {
       setName(notebook.title);
-      setIcon(currentIcon);
-      setGradient(currentGradient);
+      setIconId(notebook.coverEmoji || pickDefaultIcon(notebook.id));
     }
-  }, [open, notebook.title, currentIcon, currentGradient]);
+  }, [open, notebook]);
+
+  const PreviewIcon = getNotebookIcon(iconId);
 
   async function handleSave() {
     const title = name.trim();
     if (!title || loading) return;
     setLoading(true);
     try {
-      await renameNotebook(notebook.id, title);
-      saveMeta(notebook.id, { icon, gradient });
-      onSaved(icon, gradient);
+      await updateNotebook(notebook.id, { title, cover_emoji: iconId });
+      onSaved();
       router.refresh();
     } finally {
       setLoading(false);
     }
   }
 
-
   return (
     <Dialog open={open} title="编辑笔记本" onClose={onClose} className="max-w-md">
       <div className="space-y-4">
-        {/* Preview + name */}
         <div className="flex items-center gap-3">
-          <div
-            className={cn(
-              "flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-2xl",
-              gradient
-            )}
-          >
-            {icon}
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-muted/60">
+            <PreviewIcon size={28} />
           </div>
           <Input
             autoFocus
@@ -227,53 +165,31 @@ function EditNotebookDialog({
           />
         </div>
 
-        {/* Divider */}
         <div className="border-t border-border/30" />
 
-        {/* Emoji picker */}
         <div>
           <p className="mb-2 text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
             图标
           </p>
-          <div className="grid grid-cols-5 gap-1">
-            {EMOJIS.map((e) => (
-              <button
-                key={e}
-                type="button"
-                onClick={() => setIcon(e)}
-                className={cn(
-                  "flex h-11 w-full items-center justify-center rounded-xl text-xl transition-all",
-                  icon === e
-                    ? "bg-accent ring-1 ring-border scale-110"
-                    : "text-foreground/70 hover:bg-accent/60 hover:text-foreground"
-                )}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Gradient picker */}
-        <div>
-          <p className="mb-2 text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
-            颜色
-          </p>
-          <div className="flex gap-2">
-            {GRADIENTS.map((g, i) => (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setGradient(g)}
-                className={cn(
-                  "relative h-8 w-8 rounded-full transition-all duration-150",
-                  gradient === g
-                    ? "scale-110 ring-2 ring-white/60 ring-offset-2 ring-offset-background"
-                    : "opacity-70 hover:opacity-100 hover:scale-105"
-                )}
-                style={GRADIENT_STYLES[i]}
-              />
-            ))}
+          <div className="grid grid-cols-7 gap-1">
+            {NOTEBOOK_ICONS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setIconId(item.id)}
+                  className={cn(
+                    "flex h-11 w-full items-center justify-center rounded-xl transition-all",
+                    iconId === item.id
+                      ? "bg-accent ring-1 ring-primary/30 scale-110"
+                      : "hover:bg-accent/60"
+                  )}
+                >
+                  <Icon size={22} />
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -341,17 +257,12 @@ function DeleteNotebookDialog({
 
 export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook: Notebook }) {
   const router = useRouter();
-  const [icon, setIcon] = useState(() => pick(EMOJIS, notebook.id));
-  const [gradient, setGradient] = useState(() => pick(GRADIENTS, notebook.id));
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const t = useTranslations("notebook");
 
-  useEffect(() => {
-    const m = loadMeta(notebook.id);
-    setIcon(m.icon);
-    setGradient(m.gradient);
-  }, [notebook.id]);
+  const iconId = notebook.coverEmoji || pickDefaultIcon(notebook.id);
+  const Icon = getNotebookIcon(iconId);
 
   async function handleTogglePublish() {
     if (notebook.isPublic) {
@@ -365,7 +276,7 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block h-full">
-        <article className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg">
+        <article className="group relative flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg">
           <NotebookMenu
             isPublic={notebook.isPublic}
             onRename={() => setEditOpen(true)}
@@ -373,13 +284,13 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
             onTogglePublish={() => void handleTogglePublish()}
           />
 
-          {/* Gradient banner with icon */}
-          <div className={cn("flex h-20 items-end bg-gradient-to-br px-4 pb-0", gradient)}>
-            <div className="flex h-10 w-10 -mb-5 items-center justify-center rounded-xl bg-card text-xl shadow-md ring-2 ring-card">
-              {icon}
+          {/* Top area with icon */}
+          <div className="flex items-center gap-3 px-4 pt-5 pb-2">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/50">
+              <Icon size={28} />
             </div>
             {notebook.isPublic && (
-              <div className="mb-2 ml-auto flex items-center gap-1 rounded-full bg-white/20 px-2 py-0.5 text-[10px] text-white/90 backdrop-blur-sm">
+              <div className="ml-auto flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
                 <Globe size={9} />
                 公开
               </div>
@@ -387,7 +298,7 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
           </div>
 
           {/* Body */}
-          <div className="flex flex-1 flex-col px-4 pb-4 pt-7">
+          <div className="flex flex-1 flex-col px-4 pb-4 pt-1">
             <h3 className="line-clamp-1 text-sm font-semibold text-foreground">
               {notebook.title}
             </h3>
@@ -420,14 +331,11 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
         </article>
       </Link>
 
-      {/* Dialogs rendered OUTSIDE the <article> so CSS transforms don't break fixed positioning */}
       <EditNotebookDialog
         open={editOpen}
         notebook={notebook}
-        currentIcon={icon}
-        currentGradient={gradient}
         onClose={() => setEditOpen(false)}
-        onSaved={(i, g) => { setIcon(i); setGradient(g); setEditOpen(false); }}
+        onSaved={() => { setEditOpen(false); router.refresh(); }}
       />
       <DeleteNotebookDialog
         open={deleteOpen}
@@ -442,17 +350,12 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
 
 export const NotebookListRow = memo(function NotebookListRow({ notebook }: { notebook: Notebook }) {
   const router = useRouter();
-  const [icon, setIcon] = useState(() => pick(EMOJIS, notebook.id));
-  const [gradient, setGradient] = useState(() => pick(GRADIENTS, notebook.id));
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const t = useTranslations("notebook");
 
-  useEffect(() => {
-    const m = loadMeta(notebook.id);
-    setIcon(m.icon);
-    setGradient(m.gradient);
-  }, [notebook.id]);
+  const iconId = notebook.coverEmoji || pickDefaultIcon(notebook.id);
+  const Icon = getNotebookIcon(iconId);
 
   async function handleTogglePublish() {
     if (notebook.isPublic) {
@@ -466,9 +369,9 @@ export const NotebookListRow = memo(function NotebookListRow({ notebook }: { not
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block">
-        <article className="group relative flex cursor-pointer items-center gap-4 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:bg-accent hover:border-border/40">
-          <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br text-base", gradient)}>
-            {icon}
+        <article className="group relative flex cursor-pointer items-center gap-3.5 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:bg-accent hover:border-border/40">
+          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-muted/50">
+            <Icon size={20} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -505,10 +408,8 @@ export const NotebookListRow = memo(function NotebookListRow({ notebook }: { not
       <EditNotebookDialog
         open={editOpen}
         notebook={notebook}
-        currentIcon={icon}
-        currentGradient={gradient}
         onClose={() => setEditOpen(false)}
-        onSaved={(i, g) => { setIcon(i); setGradient(g); setEditOpen(false); }}
+        onSaved={() => { setEditOpen(false); router.refresh(); }}
       />
       <DeleteNotebookDialog
         open={deleteOpen}
@@ -527,7 +428,7 @@ export function NewNotebookCard({ onClick }: { onClick?: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex h-full w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50"
+      className="group flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50"
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-primary transition-all duration-200 group-hover:scale-110 group-hover:bg-primary/25">
         <Plus size={20} />

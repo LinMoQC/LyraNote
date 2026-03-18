@@ -107,7 +107,7 @@ export function TasksView() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-6 p-8">
+    <div className="flex h-full flex-col gap-6 p-8 dark:border border-border/40">
       {/* ── Toolbar ─────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">定时任务</h1>

@@ -16,6 +16,7 @@ class SetupInitRequest(BaseModel):
     username: str
     password: str
     display_name: str = ""
+    email: str = ""
     avatar_url: str = ""
 
     # ── AI ───────────────────────────────────────────────────────────────────

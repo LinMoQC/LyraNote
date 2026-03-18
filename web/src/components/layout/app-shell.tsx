@@ -82,7 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const setSidebarMobileOpen = useUiStore((s) => s.setSidebarMobileOpen);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden md:flex-row">
+    <div className="flex h-screen flex-col overflow-hidden bg-sidebar md:flex-row">
       <Suspense fallback={null}>
         <OAuthRedirectHandler />
       </Suspense>
@@ -102,8 +102,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* 侧边栏（移动端为 Drawer，桌面端为固定侧栏） */}
       <Sidebar />
 
-      {/* 主内容区 */}
-      <div className="flex-1 overflow-y-auto">
+      {/* 主内容区 — 凸起面板 */}
+      <div className="flex-1 overflow-y-auto md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border/10 md:bg-background md:shadow-xl">
         <WorkspaceErrorBoundary>{children}</WorkspaceErrorBoundary>
       </div>
 

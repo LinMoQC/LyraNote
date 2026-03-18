@@ -40,11 +40,11 @@ LLM_MODEL=gpt-4o-mini
 # Optional — enables Deep Research web search
 TAVILY_API_KEY=tvly-...
 
-# Debug mode: skips authentication, no Clerk setup required
+# Debug mode: skips authentication for local development
 DEBUG=true
 ```
 
-> **Tip:** Set `DEBUG=true` for local development to skip Clerk authentication entirely.
+> **Tip:** Set `DEBUG=true` for local development to skip authentication entirely.
 
 ### 3. Start the Application
 
@@ -96,7 +96,7 @@ Navigate to `http://localhost:3000` in your browser.
 | `OPENAI_API_KEY` | LLM API key |
 | `OPENAI_BASE_URL` | Override to use DeepSeek / Ollama |
 | `LLM_MODEL` | Default: `gpt-4o-mini` |
-| `DEBUG` | Set `true` to skip Clerk authentication |
+| `DEBUG` | Set `true` to skip authentication |
 
 ## Next Steps
 

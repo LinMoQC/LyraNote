@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 export interface SelectOption {
   value: string;
   label: string;
+  group?: string;
+  thinking?: boolean;
 }
 
 export function CustomSelect({
@@ -27,7 +29,9 @@ export function CustomSelect({
 }) {
   const tc = useTranslations("common");
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const selected = options.find((o) => o.value === value);
 
   useEffect(() => {
@@ -39,8 +43,53 @@ export function CustomSelect({
     return () => document.removeEventListener("mousedown", handle);
   }, [open]);
 
+  useEffect(() => {
+    if (open) {
+      setSearch("");
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  const filtered = search
+    ? options.filter((o) => o.label.toLowerCase().includes(search.toLowerCase()) || o.value.toLowerCase().includes(search.toLowerCase()))
+    : options;
+
+  const hasGroups = filtered.some((o) => o.group);
+  const groups: { name: string; items: SelectOption[] }[] = [];
+  if (hasGroups) {
+    for (const opt of filtered) {
+      const g = opt.group || "";
+      const existing = groups.find((gr) => gr.name === g);
+      if (existing) existing.items.push(opt);
+      else groups.push({ name: g, items: [opt] });
+    }
+  }
+
+  const renderOption = (opt: SelectOption) => {
+    const isSel = opt.value === value;
+    return (
+      <button
+        key={opt.value}
+        type="button"
+        onClick={() => { onChange(opt.value); setOpen(false); }}
+        className={cn(
+          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors",
+          isSel ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/50"
+        )}
+      >
+        <span className="flex-1 truncate">{opt.label}</span>
+        {opt.thinking && (
+          <span className="flex-shrink-0 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-400">
+            Thinking
+          </span>
+        )}
+        {isSel && <Check size={12} className="flex-shrink-0" />}
+      </button>
+    );
+  };
+
   return (
-    <div ref={ref} className={cn("relative min-w-[130px]", className)}>
+    <div ref={ref} className={cn("relative min-w-[180px]", className)}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -51,7 +100,14 @@ export function CustomSelect({
           open && "border-primary ring-1 ring-primary/20"
         )}
       >
-        <span className="truncate">{selected?.label ?? placeholder ?? tc("selectPlaceholder")}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate">{selected?.label ?? placeholder ?? tc("selectPlaceholder")}</span>
+          {selected?.thinking && (
+            <span className="flex-shrink-0 rounded bg-violet-500/15 px-1 py-px text-[9px] font-medium leading-tight text-violet-400">
+              Thinking
+            </span>
+          )}
+        </span>
         <m.span animate={{ rotate: open ? 180 : 0 }} transition={{ duration: 0.16 }} className="flex-shrink-0 text-muted-foreground">
           <ChevronDown size={13} />
         </m.span>
@@ -64,26 +120,36 @@ export function CustomSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.13 }}
-            className="absolute left-0 top-full z-50 mt-1.5 min-w-full overflow-hidden rounded-xl border border-border bg-card shadow-xl shadow-black/25"
+            className="absolute right-0 top-full z-50 mt-1.5 min-w-[240px] overflow-hidden rounded-xl border border-border bg-card shadow-xl shadow-black/25"
           >
-            <div className="max-h-52 overflow-y-auto py-1">
-              {options.map((opt) => {
-                const isSel = opt.value === value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => { onChange(opt.value); setOpen(false); }}
-                    className={cn(
-                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors",
-                      isSel ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/50"
-                    )}
-                  >
-                    <span>{opt.label}</span>
-                    {isSel && <Check size={12} className="flex-shrink-0" />}
-                  </button>
-                );
-              })}
+            {options.length > 8 && (
+              <div className="border-b border-border/50 px-2 py-1.5">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="搜索模型..."
+                  className="w-full bg-transparent px-1 text-xs text-foreground outline-none placeholder:text-muted-foreground/50"
+                />
+              </div>
+            )}
+            <div className="max-h-64 overflow-y-auto py-1">
+              {hasGroups
+                ? groups.map((g) => (
+                    <div key={g.name}>
+                      {g.name && (
+                        <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                          {g.name}
+                        </div>
+                      )}
+                      {g.items.map(renderOption)}
+                    </div>
+                  ))
+                : filtered.map(renderOption)}
+              {filtered.length === 0 && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">无匹配模型</div>
+              )}
             </div>
           </m.div>
         )}

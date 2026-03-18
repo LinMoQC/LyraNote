@@ -53,6 +53,7 @@ export interface SetupInitPayload {
   username: string
   password: string
   display_name?: string
+  email?: string
   avatar_url?: string
   // AI
   openai_api_key: string

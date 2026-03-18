@@ -27,6 +27,7 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
+    worker_hijack_root_logger=False,
     beat_schedule={
         "decay-stale-memories-daily": {
             "task": "decay_all_user_memories",
@@ -38,6 +39,45 @@ celery_app.conf.update(
         },
     },
 )
+
+from celery.signals import worker_process_init, after_setup_logger
+
+
+@after_setup_logger.connect
+def _on_setup_logger(**_kwargs):
+    """Override Celery's default logging with our unified formatter."""
+    from app.logging_config import setup_logging
+    setup_logging(debug=settings.debug)
+
+
+@worker_process_init.connect
+def _on_worker_init(**_kwargs):
+    """Runs in each forked worker process: load DB config (API keys etc.)."""
+    from app.logging_config import setup_logging
+    setup_logging(debug=settings.debug)
+    _load_db_settings_sync()
+
+
+def _load_db_settings_sync() -> None:
+    """Load persisted config (API keys etc.) from DB into in-memory settings."""
+    import asyncio as _asyncio
+    from sqlalchemy.ext.asyncio import create_async_engine as _cae
+    from sqlalchemy.ext.asyncio import async_sessionmaker as _asm, AsyncSession
+    from sqlalchemy.pool import NullPool
+
+    async def _load():
+        engine = _cae(settings.database_url, poolclass=NullPool)
+        factory = _asm(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as db:
+            from app.domains.setup.router import load_settings_from_db
+            await load_settings_from_db(db)
+        await engine.dispose()
+
+    loop = _asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_load())
+    finally:
+        loop.close()
 
 
 @asynccontextmanager

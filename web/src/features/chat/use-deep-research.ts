@@ -1,22 +1,23 @@
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
-import { startDeepResearch } from "@/services/ai-service";
-import { createConversation, saveMessage } from "@/services/conversation-service";
+import { useDeepResearchStore } from "@/store/use-deep-research-store";
 import { submitMessageFeedback } from "@/services/feedback-service";
 import { saveNote } from "@/services/note-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
-import type { DrProgress, DrDeliverable } from "@/features/chat/deep-research-progress";
+import type { DrProgress } from "@/features/chat/deep-research-progress";
 import type { useStreamLifecycle } from "@/features/chat/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import type { LocalMessage } from "./chat-types";
+import type { Dispatch, SetStateAction } from "react";
 
 export const DR_MESSAGES_KEY = "lyranote-dr-messages";
 
 interface UseDeepResearchOpts {
   globalNotebookId: string | undefined;
+  drMode: "quick" | "deep";
   streaming: boolean;
   streamLifecycle: ReturnType<typeof useStreamLifecycle>;
   streamAbortRef: React.MutableRefObject<AbortController | null>;
@@ -26,8 +27,11 @@ interface UseDeepResearchOpts {
   setActiveConvId: Dispatch<SetStateAction<string | null>>;
 }
 
+const getDrState = () => useDeepResearchStore.getState();
+
 export function useDeepResearch({
   globalNotebookId,
+  drMode,
   streaming,
   streamLifecycle,
   streamAbortRef,
@@ -39,214 +43,108 @@ export function useDeepResearch({
   const queryClient = useQueryClient();
   const t = useTranslations("deepResearch");
   const tc = useTranslations("common");
-  const [drProgress, setDrProgress] = useState<DrProgress | null>(null);
-  const drProgressRef = useRef<DrProgress | null>(null);
+
+  const drStore = useDeepResearchStore();
+
   const lastReportRef = useRef<{ title: string; tokens: string } | null>(null);
   const deliverableMessageIdRef = useRef<string | null>(null);
   const drPersistedRef = useRef(false);
+  const drQueryRef = useRef<string>("");
+
+  // Watch store: when isActive transitions false → handle completion
+  const prevIsActiveRef = useRef(drStore.isActive);
+  useEffect(() => {
+    const wasActive = prevIsActiveRef.current;
+    prevIsActiveRef.current = drStore.isActive;
+
+    if (wasActive && !drStore.isActive) {
+      const finalTokens = drStore.reportTokens;
+      const finalProgress = drStore.progress;
+      const convId = drStore.conversationId;
+
+      // If no report content, SSE was interrupted (e.g. page refresh or
+      // a reconnect cycle) — don't touch streaming state since it may
+      // belong to a normal chat that's currently in progress.
+      if (!finalTokens || !finalProgress) {
+        streamAbortRef.current = null;
+        return;
+      }
+
+      streamLifecycle.finish();
+      setStreaming(false);
+
+      lastReportRef.current = {
+        title: finalProgress.deliverable?.title ?? t("reportLabel"),
+        tokens: finalTokens,
+      };
+
+      // Store timeline in localStorage for the conversation
+      if (convId) {
+        const timelinePayload = JSON.stringify({
+          subQuestions: finalProgress.subQuestions,
+          learnings: finalProgress.learnings,
+          doneCitations: finalProgress.doneCitations,
+          mode: finalProgress.mode,
+          researchGoal: finalProgress.researchGoal,
+          evaluationCriteria: finalProgress.evaluationCriteria,
+          reportTitle: finalProgress.reportTitle,
+          deliverable: finalProgress.deliverable,
+        });
+        try {
+          localStorage.setItem(`lyranote-dr-timeline-${convId}`, timelinePayload);
+        } catch { /* ignore quota */ }
+      }
+
+      // Refresh messages from server (backend already saved user + assistant messages)
+      if (convId && globalNotebookId) {
+        queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+      }
+
+      getDrState().clear();
+      streamAbortRef.current = null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drStore.isActive]);
 
   const handleDeepResearch = useCallback(async (text: string) => {
     if (!text || streaming) return;
     setInput("");
+    drQueryRef.current = text;
 
     const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: "user", content: text, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
     setStreaming(true);
     streamLifecycle.start();
     streamAbortRef.current?.abort();
-    const abortController = new AbortController();
-    streamAbortRef.current = abortController;
 
     deliverableMessageIdRef.current = null;
 
-    let acc: DrProgress = {
-      status: "planning",
-      mode: "quick",
-      subQuestions: [],
-      learnings: [],
-      reportTokens: "",
-      doneCitations: [],
-      researchGoal: undefined,
-      evaluationCriteria: undefined,
-      deliverable: undefined,
-    };
-    drProgressRef.current = acc;
-    setDrProgress(acc);
-
-    const reportTokensRef = { value: "" };
-
     try {
-      await startDeepResearch(
-        text,
-        { notebookId: globalNotebookId ?? undefined, mode: "quick" },
-        (event) => {
-          if (event.type === "token") {
-            const d = event.data as { token?: string };
-            reportTokensRef.value += d.token ?? "";
-            const snapshot = reportTokensRef.value;
-            acc = { ...acc, reportTokens: snapshot };
-            drProgressRef.current = acc;
-            setDrProgress((prev) => prev ? { ...prev, reportTokens: snapshot } : null);
-            return;
-          }
+      await getDrState().start(text, globalNotebookId ?? undefined, drMode);
 
-          type RawCitation = { source_id?: string; title?: string; url?: string; excerpt?: string; type?: string };
-
-          if (event.type === "plan") {
-            const d = event.data as { sub_questions?: string[]; research_goal?: string; evaluation_criteria?: string[] };
-            if (d.sub_questions) {
-              acc = {
-                ...acc,
-                status: "searching",
-                subQuestions: d.sub_questions,
-                researchGoal: d.research_goal ?? acc.researchGoal,
-                evaluationCriteria: d.evaluation_criteria ?? acc.evaluationCriteria,
-              };
-            }
-          } else if (event.type === "searching") {
-            const d = event.data as { query?: string };
-            acc = { ...acc, status: "searching", currentSearch: d.query ?? "" };
-          } else if (event.type === "learning") {
-            const d = event.data as {
-              question?: string; content?: string; citations?: RawCitation[];
-              evidence_grade?: string; dimension?: string; counterpoint?: string;
-            };
-            const citations = (d.citations ?? []).map((c) => ({
-              source_id: c.source_id,
-              title: c.title,
-              url: c.url,
-              excerpt: c.excerpt,
-              type: c.type === "web" ? ("web" as const) : c.type === "internal" ? ("internal" as const) : undefined,
-            }));
-            acc = {
-              ...acc,
-              learnings: [
-                ...acc.learnings,
-                {
-                  question: d.question ?? "",
-                  content: d.content ?? "",
-                  citations,
-                  evidenceGrade: (d.evidence_grade as "strong" | "medium" | "weak" | undefined),
-                  dimension: (d.dimension as "concept" | "latest" | "evidence" | "controversy" | undefined),
-                  counterpoint: d.counterpoint,
-                },
-              ],
-              currentSearch: undefined,
-            };
-          } else if (event.type === "writing") {
-            acc = { ...acc, status: "writing", currentSearch: undefined };
-          } else if (event.type === "done") {
-            const d = event.data as { citations?: DrProgress["doneCitations"] };
-            acc = { ...acc, status: "done", doneCitations: d.citations ?? [] };
-          } else if (event.type === "deliverable") {
-            const d = event.data as {
-              title?: string; summary?: string; citation_count?: number;
-              next_questions?: string[]; evidence_strength?: string;
-              citation_table?: Array<{ conclusion: string; grade: string; source: string }>;
-            };
-            const deliverable: DrDeliverable = {
-              title: d.title ?? "",
-              summary: d.summary ?? "",
-              citationCount: d.citation_count ?? 0,
-              nextQuestions: d.next_questions ?? [],
-              evidenceStrength: (d.evidence_strength as "low" | "medium" | "high") ?? "low",
-              citationTable: d.citation_table ?? [],
-            };
-            acc = { ...acc, deliverable };
-          } else {
-            return;
-          }
-
-          drProgressRef.current = acc;
-          setDrProgress({ ...acc });
-        },
-        abortController.signal,
-      );
+      // Backend created the conversation — activate it immediately
+      const { conversationId } = getDrState();
+      if (conversationId) {
+        setActiveConvId(conversationId);
+        saveActiveConversation(conversationId);
+        drPersistedRef.current = true;
+        queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+      }
     } catch (error) {
       if (isAbortError(error)) return;
       const msg = getErrorMessage(error, t("requestFailed"));
       streamLifecycle.fail(msg);
       notifyError(msg);
-      acc = { ...acc, status: "done" };
-      drProgressRef.current = acc;
-      setDrProgress(acc);
-    } finally {
-      streamLifecycle.finish();
       setStreaming(false);
-
-      const finalTokens = reportTokensRef.value;
-      const combined: DrProgress = { ...acc, status: "done", reportTokens: finalTokens };
-
-      if (finalTokens) {
-        lastReportRef.current = {
-          title: combined.deliverable?.title ?? t("reportLabel"),
-          tokens: finalTokens,
-        };
-      }
-
-      drProgressRef.current = null;
-      setDrProgress(null);
-
-      if (finalTokens) {
-        const timelinePayload = JSON.stringify({
-          subQuestions: combined.subQuestions,
-          learnings: combined.learnings,
-          doneCitations: combined.doneCitations,
-          mode: combined.mode,
-          researchGoal: combined.researchGoal,
-          evaluationCriteria: combined.evaluationCriteria,
-          deliverable: combined.deliverable,
-        });
-
-        const msgId = `local-dr-${Date.now()}`;
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === msgId)) return prev;
-          return [
-            ...prev,
-            {
-              id: msgId,
-              role: "assistant" as const,
-              content: finalTokens,
-              timestamp: new Date(),
-              deepResearch: combined,
-            },
-          ];
-        });
-
-        if (globalNotebookId) {
-          createConversation(globalNotebookId, t("titlePrefix", { topic: text.slice(0, 40) }))
-            .then((conv) => {
-              setActiveConvId(conv.id);
-              saveActiveConversation(conv.id);
-              drPersistedRef.current = true;
-              try {
-                localStorage.removeItem(DR_MESSAGES_KEY);
-                localStorage.setItem(`lyranote-dr-timeline-${conv.id}`, timelinePayload);
-              } catch { /* ignore quota */ }
-              queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
-              return saveMessage(conv.id, "user", text).then(() =>
-                saveMessage(conv.id, "assistant", finalTokens)
-              );
-            })
-            .then((assistantRecord) => {
-              if (assistantRecord?.id) {
-                deliverableMessageIdRef.current = assistantRecord.id;
-                setMessages((prev) =>
-                  prev.map((m) => m.id === msgId ? { ...m, id: assistantRecord.id } : m)
-                );
-              }
-            })
-            .catch(() => {/* non-critical */});
-        }
-      }
-      streamAbortRef.current = null;
+      streamLifecycle.finish();
     }
-  }, [streaming, globalNotebookId, queryClient, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, t]);
+  }, [streaming, globalNotebookId, drMode, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, queryClient, t]);
 
   const handleSaveAsNote = useCallback(async (reportOverride?: string, titleOverride?: string) => {
     if (!globalNotebookId) throw new Error("No notebook");
-    const report = reportOverride ?? drProgressRef.current?.reportTokens ?? lastReportRef.current?.tokens;
-    const title = titleOverride ?? drProgressRef.current?.deliverable?.title ?? lastReportRef.current?.title ?? t("reportLabel");
+    const state = getDrState();
+    const report = reportOverride ?? state.reportTokens ?? lastReportRef.current?.tokens;
+    const title = titleOverride ?? state.progress?.deliverable?.title ?? lastReportRef.current?.title ?? t("reportLabel");
     if (!report) throw new Error("No report content");
     try {
       await saveNote({
@@ -272,6 +170,13 @@ export function useDeepResearch({
       await submitMessageFeedback(msgId, rating);
     } catch { /* non-critical */ }
   }, []);
+
+  const drProgress = drStore.isActive ? drStore.progress : null;
+
+  const setDrProgress: Dispatch<SetStateAction<DrProgress | null>> = useCallback(
+    (_: SetStateAction<DrProgress | null>) => {},
+    [],
+  );
 
   return {
     drProgress,

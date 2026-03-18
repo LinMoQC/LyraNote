@@ -297,7 +297,7 @@ export function KnowledgeView() {
   const { pullDistance, refreshing } = usePullToRefresh(scrollRef, handleRefresh);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col dark:border border-border/40">
       {/* Header */}
       <div className="flex-shrink-0 border-b border-border/30 px-4 pb-0 pt-6 md:px-8 md:pt-8">
         <div className="mb-6 flex items-center gap-4">

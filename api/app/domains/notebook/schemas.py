@@ -13,6 +13,8 @@ class NotebookUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     status: str | None = None
+    cover_emoji: str | None = None
+    cover_gradient: str | None = None
 
 
 class NotebookOut(BaseModel):

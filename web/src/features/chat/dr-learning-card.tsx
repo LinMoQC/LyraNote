@@ -40,7 +40,7 @@ export function LearningCard({ learning }: { learning: DrLearning }) {
         <div className="mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/15">
           <CheckCircle2 size={9} className="text-emerald-400" />
         </div>
-        <p className="line-clamp-2 flex-1 text-xs leading-relaxed text-foreground/80">{displayContent}</p>
+        <p className="line-clamp-5 flex-1 text-xs leading-relaxed text-foreground/80">{displayContent}</p>
         <button type="button" className="flex-shrink-0 text-muted-foreground/40 hover:text-muted-foreground/70">
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
         </button>

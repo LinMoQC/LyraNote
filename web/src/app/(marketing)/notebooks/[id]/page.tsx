@@ -13,12 +13,10 @@ import type { PublicNotebookDetail, PublicNote } from "@/types";
 import { formatDate } from "@/utils/format-date";
 import { ReadOnlyNote } from "@/app/(marketing)/notebooks/[id]/read-only-note";
 
-const DEFAULT_EMOJIS = ["📓", "📔", "📒", "📕", "📗", "📘", "📙", "🗒️", "📋", "📑"];
-
-function pickDefault<T>(arr: T[], id: string): T {
-  const hash = id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return arr[hash % arr.length];
-}
+import {
+  getNotebookIcon,
+  pickDefaultIcon,
+} from "@/features/notebook/notebook-icons";
 
 type TocItem = { id: string; title: string; level: number };
 
@@ -154,9 +152,8 @@ export default function PublicNotebookPage() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [handleScroll]);
 
-  const emoji = notebook
-    ? notebook.coverEmoji || pickDefault(DEFAULT_EMOJIS, notebook.id)
-    : "📓";
+  const iconId = notebook ? (notebook.coverEmoji || pickDefaultIcon(notebook.id)) : "book";
+  const NotebookIconComp = getNotebookIcon(iconId);
 
   return (
     <main className="relative min-h-screen bg-background">
@@ -216,8 +213,8 @@ export default function PublicNotebookPage() {
           >
             {/* Title area */}
             <m.header variants={fadeUp} className="mx-auto max-w-3xl pb-8 pt-12 text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-card text-3xl shadow-sm">
-                {emoji}
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50">
+                <NotebookIconComp size={36} />
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
                 {notebook.title}

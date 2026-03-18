@@ -56,6 +56,16 @@ export async function renameNotebook(id: string, title: string): Promise<Noteboo
   return mapNotebook(data)
 }
 
+export interface NotebookUpdatePayload {
+  title?: string
+  cover_emoji?: string
+}
+
+export async function updateNotebook(id: string, payload: NotebookUpdatePayload): Promise<Notebook> {
+  const data = await http.patch<Record<string, unknown>>(NOTEBOOKS.detail(id), payload)
+  return mapNotebook(data)
+}
+
 /**
  * 删除笔记本及其关联数据
  * @param id - 笔记本 ID

@@ -18,7 +18,7 @@ from app.domains.setup.schemas import (
 )
 from app.exceptions import ForbiddenError
 from app.models import AppConfig, User
-from app.schemas.response import ApiResponse, success
+from app.schemas.response import ApiResponse, not_configured, success
 
 router = APIRouter(tags=["setup"])
 
@@ -84,7 +84,9 @@ async def load_settings_from_db(db) -> None:
 @router.get("/setup/status", response_model=ApiResponse[SetupStatusOut])
 async def setup_status(db: DbDep):
     value = await _get_config(db, "is_configured")
-    return success(SetupStatusOut(configured=(value == "true")))
+    if value == "true":
+        return success(SetupStatusOut(configured=True))
+    return not_configured()
 
 
 @router.post("/setup/init", response_model=ApiResponse[SetupInitResponse], status_code=status.HTTP_201_CREATED)
@@ -103,7 +105,7 @@ async def setup_init(body: SetupInitRequest, response: Response, db: DbDep):
         password_hash=hash_password(body.password),
         name=body.display_name or body.username,
         avatar_url=body.avatar_url or None,
-        email=None,
+        email=body.email or None,
     )
     db.add(user)
     await db.flush()

@@ -27,10 +27,10 @@ export default function SignInPage() {
   const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
-    getSetupStatus().then(({ configured }) => {
-      if (!configured) router.replace("/setup")
+    getSetupStatus().catch(() => {
+      // code 1001 → HTTP client interceptor auto-redirects to /setup
     })
-  }, [router])
+  }, [])
 
   const schema = createLoginSchema(t)
   const {

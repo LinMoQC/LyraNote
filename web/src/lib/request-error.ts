@@ -26,17 +26,29 @@ export function authHeaderFromCookie(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/** API business code: system not yet initialized */
+export const CODE_NOT_CONFIGURED = 1001;
+
 /**
- * 处理 401 未授权响应：清除会话 cookie 并重定向到登录页
- * 仅在浏览器端且当前不在登录/初始化页面时触发
+ * 处理 code 1001（系统未初始化）：重定向到初始化向导页
+ * 仅在浏览器端且当前不在 /setup 页面时触发
+ */
+export function handleNotConfigured() {
+  if (typeof window === "undefined") return;
+  if (!window.location.pathname.startsWith("/setup")) {
+    window.location.href = "/setup";
+  }
+}
+
+/**
+ * 处理 401 未授权响应：重定向到 /login?expired=1
+ * middleware 检测到 expired 参数后会在服务端清除 httpOnly cookie
  */
 export function handleUnauthorized() {
   if (typeof window === "undefined") return;
   const pathname = window.location.pathname;
   if (!pathname.startsWith("/login") && !pathname.startsWith("/setup")) {
-    document.cookie =
-      "lyranote_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
-    window.location.href = "/login";
+    window.location.href = "/login?expired=1";
   }
 }
 

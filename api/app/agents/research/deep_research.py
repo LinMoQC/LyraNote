@@ -13,7 +13,9 @@ FastAPI router through graph.astream_events(version="v2").
 from __future__ import annotations
 
 import json
+import logging
 import operator
+import re
 from dataclasses import dataclass, field
 from typing import Annotated, TypedDict
 from uuid import UUID
@@ -31,6 +33,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 RAG_THRESHOLD = 0.50
 MAX_QUERIES_PER_DIM = 2     # cap queries per dimension to avoid runaway cost
 LEARNING_MAX_CHARS = 200
+
+
+@dataclass(frozen=True)
+class ModeConfig:
+    queries_per_dim: int
+    web_results: int
+    learning_max_chars: int
+    report_words: str
+    report_max_tokens: int
+
+
+MODES: dict[str, ModeConfig] = {
+    "quick": ModeConfig(queries_per_dim=2, web_results=4, learning_max_chars=200,
+                        report_words="2000-4000", report_max_tokens=8192),
+    "deep":  ModeConfig(queries_per_dim=4, web_results=8, learning_max_chars=400,
+                        report_words="4000-8000", report_max_tokens=16384),
+}
 
 DIMENSION_LABELS: dict[str, str] = {
     "concept": "概念定义",
@@ -53,8 +72,10 @@ class ResearchState(TypedDict):
     model: str
     tavily_api_key: str | None
     user_memories: list[dict]
+    mode: str               # "quick" | "deep"
 
     # ── plan_node output ───────────────────────────────────────────────────────
+    report_title: str
     research_goal: str
     evaluation_criteria: list[str]
     search_matrix: dict[str, list[str]]
@@ -103,44 +124,86 @@ def _strip_fences(raw: str) -> str:
     return raw.strip()
 
 
-import re
-
 _JSON_OBJ_RE = re.compile(r'\{[^{}]*\}', re.DOTALL)
 _FINDING_RE = re.compile(r'"finding"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
 _COUNTERPOINT_RE = re.compile(r'"counterpoint"\s*:\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
+_GREEDY_BOTH_RE = re.compile(
+    r'"finding"\s*:\s*"(.+)"\s*,\s*"counterpoint"\s*:\s*"(.*?)"', re.DOTALL
+)
+_GREEDY_FINDING_ONLY_RE = re.compile(
+    r'"finding"\s*:\s*"(.+)"', re.DOTALL
+)
 
 
-def _extract_finding(raw: str) -> tuple[str, str]:
+_extract_log = logging.getLogger(__name__ + ".extract")
+
+
+def _try_json_dict(text: str) -> dict | None:
+    """Parse *text* as JSON; if the result is a list, unwrap the first element."""
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if isinstance(parsed, list) and parsed:
+        parsed = parsed[0]
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _extract_finding(raw: str, max_chars: int = LEARNING_MAX_CHARS) -> tuple[str, str]:
     """Robustly extract finding & counterpoint from LLM output.
 
     Tries in order:
-      1. json.loads on the whole string
+      1. json.loads on the whole string (handles both object and array)
       2. json.loads on the first {...} found via regex
-      3. Regex extraction of "finding" value
-      4. Fallback to raw text (stripping any leading JSON syntax)
+      3. Strict regex (handles properly escaped quotes)
+      4. Greedy regex (handles unescaped internal quotes by backtracking)
+      5. Fallback to raw text (strip JSON delimiters)
     """
-    for candidate in (raw, None):
-        if candidate is None:
-            m = _JSON_OBJ_RE.search(raw)
-            if not m:
-                break
-            candidate = m.group(0)
-        try:
-            parsed = json.loads(candidate)
-            return (
-                str(parsed.get("finding", raw[:LEARNING_MAX_CHARS])),
-                str(parsed.get("counterpoint", "")),
-            )
-        except (json.JSONDecodeError, ValueError):
-            continue
+    if not raw or not raw.strip():
+        return "（无内容）", ""
 
+    # 1. Full-string JSON parse
+    d = _try_json_dict(raw)
+    if d:
+        finding = str(d.get("finding", "")).strip()
+        if finding:
+            return finding[:max_chars], str(d.get("counterpoint", "")).strip()
+
+    # 2. Regex-extracted {...} block
+    m = _JSON_OBJ_RE.search(raw)
+    if m:
+        d2 = _try_json_dict(m.group(0))
+        if d2:
+            finding = str(d2.get("finding", "")).strip()
+            if finding:
+                return finding[:max_chars], str(d2.get("counterpoint", "")).strip()
+
+    # 3. Strict regex (handles properly escaped quotes)
     fm = _FINDING_RE.search(raw)
-    if fm:
+    if fm and len(fm.group(1)) >= 20:
         cp = _COUNTERPOINT_RE.search(raw)
-        return fm.group(1), (cp.group(1) if cp else "")
+        return fm.group(1)[:max_chars], (cp.group(1) if cp else "")
 
-    cleaned = raw.lstrip('{" \t\n').removeprefix("finding").lstrip(':" \t\n')
-    return cleaned[:LEARNING_MAX_CHARS], ""
+    # 4. Greedy regex (handles unescaped internal quotes)
+    gm = _GREEDY_BOTH_RE.search(raw)
+    if gm and len(gm.group(1).strip()) >= 10:
+        return gm.group(1).strip()[:max_chars], gm.group(2).strip()
+    gm2 = _GREEDY_FINDING_ONLY_RE.search(raw)
+    if gm2:
+        val = gm2.group(1).strip().rstrip("} \t\n")
+        if len(val) >= 10:
+            return val[:max_chars], ""
+
+    # 5. Fallback — strip JSON delimiters and return whatever text remains
+    cleaned = raw.strip().lstrip('{[" \t\n').removeprefix("finding").lstrip(':" \t\n')
+    cleaned = cleaned.rstrip('}]" \t\n')
+    if len(cleaned) >= 5:
+        return cleaned[:max_chars], ""
+
+    # Absolute fallback — return sanitised raw text
+    _extract_log.warning("All extraction methods failed, raw=%r", raw[:300])
+    fallback = raw.strip()[:max_chars]
+    return fallback if fallback else "（提取失败）", ""
 
 
 def grade_evidence(citations: list[dict]) -> str:
@@ -195,33 +258,60 @@ async def web_search_sync(query: str, tavily_api_key: str, max_results: int = 4)
 
 # ── Research primitives ───────────────────────────────────────────────────────
 
-async def _plan(query: str, client: AsyncOpenAI, model: str) -> dict:
+async def _plan(query: str, client: AsyncOpenAI, model: str, queries_per_dim: int = 2) -> dict:
     """
     Generate a structured research plan with a 4-dimension search matrix.
-    Returns: {research_goal, evaluation_criteria, search_matrix}
+    Returns: {research_goal, evaluation_criteria, search_matrix, title}
     """
+    n = queries_per_dim
+    if n <= 2:
+        dim_desc = (
+            "- concept（2条）：一条关于核心定义与原理，一条关于分类体系或与相关概念的区别\n"
+            "- latest（2条）：一条关于最近一年的重大进展（含具体年份），一条关于技术/产业趋势\n"
+            "- evidence（2条）：一条关于权威性能评测/数据对比，一条关于实际应用案例与效果\n"
+            "- controversy（2条）：一条关于主要批评与已知局限，一条关于替代方案或竞争技术对比\n\n"
+        )
+        example_arr = '["查询1", "查询2"]'
+    else:
+        dim_desc = (
+            f"- concept（{n}条）：覆盖核心定义、基本原理、分类体系、与相关概念的深度对比\n"
+            f"- latest（{n}条）：覆盖近一年重大进展、技术趋势、产业应用动态、未来展望\n"
+            f"- evidence（{n}条）：覆盖权威评测、性能数据、实际案例、效果统计\n"
+            f"- controversy（{n}条）：覆盖主要批评、已知局限、替代方案、潜在风险\n\n"
+        )
+        example_arr = json.dumps([f"查询{i+1}" for i in range(n)], ensure_ascii=False)
+
     resp = await client.chat.completions.create(
         model=model,
         messages=[
             {
                 "role": "system",
                 "content": (
-                    "你是一位专业的研究规划师。将研究主题分解为结构化研究计划。\n"
-                    "只返回一个JSON对象，不含任何其他文字。格式：\n"
-                    '{"research_goal": "一句话描述研究目标",'
-                    '"evaluation_criteria": ["评价标准1", "评价标准2", "评价标准3"],'
+                    "你是一位资深研究规划师，擅长将模糊问题拆解为精准、深度的研究子问题。\n\n"
+                    "## 核心要求\n"
+                    "1. **深度拆解**：不要简单重复用户的问题，要从不同角度深入挖掘\n"
+                    "2. **具体化**：每个查询必须是精确的、可搜索的、包含明确方向的问题\n"
+                    "3. **多层次**：涵盖基础原理→应用实践→前沿进展→对比评价等不同深度\n\n"
+                    "## 每个维度的查询要求\n"
+                    + dim_desc
+                    + "## 输出格式\n"
+                    "只返回一个JSON对象，不含任何其他文字：\n"
+                    '{"title": "研究报告标题（学术风格，10-25字，不要直接复述用户问题，而是提炼出研究主题的本质，例如用户问\'什么是ReAct\'应生成\'ReAct框架：推理与行动的协同机制\'）",'
+                    '"research_goal": "一句话描述研究目标（需包含具体研究范围和预期产出）",'
+                    '"evaluation_criteria": ["标准1", "标准2", "标准3"],'
                     '"search_matrix": {'
-                    '"concept": ["概念定义类查询（1条）"],'
-                    '"latest": ["最新动态类查询（含年份，1条）"],'
-                    '"evidence": ["实证数据类查询（1条）"],'
-                    '"controversy": ["争议与反例类查询（1条）"]'
+                    f'"concept": {example_arr},'
+                    f'"latest": {example_arr},'
+                    f'"evidence": {example_arr},'
+                    f'"controversy": {example_arr}'
                     "}}"
                 ),
             },
             {"role": "user", "content": f"研究主题：{query}"},
         ],
-        temperature=0.3,
-        max_tokens=500,
+        temperature=0.4,
+        max_tokens=800 if n <= 2 else 1200,
+        response_format={"type": "json_object"},
     )
     raw = _strip_fences((resp.choices[0].message.content or "").strip())
     try:
@@ -230,18 +320,25 @@ async def _plan(query: str, client: AsyncOpenAI, model: str) -> dict:
         for dim in ("concept", "latest", "evidence", "controversy"):
             if dim not in matrix or not matrix[dim]:
                 matrix[dim] = [query]
-        # cap per dimension
-        result["search_matrix"] = {k: v[:MAX_QUERIES_PER_DIM] for k, v in matrix.items()}
+        result["search_matrix"] = {k: v[:n] for k, v in matrix.items()}
         return result
     except Exception:
+        topic = query
+        for prefix in ("请帮我", "帮我", "请", "深入研究一下", "研究一下", "深入研究", "研究",
+                        "详细介绍一下", "介绍一下", "介绍", "什么是", "了解一下", "了解",
+                        "分析一下", "分析"):
+            if topic.startswith(prefix) and len(topic) > len(prefix):
+                topic = topic[len(prefix):].strip()
+                break
         return {
-            "research_goal": f"研究：{query}",
+            "title": topic[:25],
+            "research_goal": f"研究：{topic}",
             "evaluation_criteria": ["数据时效性", "来源权威性", "跨来源一致性"],
             "search_matrix": {
-                "concept": [query],
-                "latest": [f"{query} 最新进展 2024"],
-                "evidence": [f"{query} 数据统计"],
-                "controversy": [f"{query} 批评与争议"],
+                "concept": [f"{topic} 核心定义与原理", f"{topic} 与相关概念的区别"],
+                "latest": [f"{topic} 2025年最新进展", f"{topic} 技术趋势与发展方向"],
+                "evidence": [f"{topic} 性能评测数据对比", f"{topic} 实际应用案例"],
+                "controversy": [f"{topic} 主要批评与局限性", f"{topic} 替代方案对比"],
             },
         }
 
@@ -276,6 +373,8 @@ async def _research_one(
     client: AsyncOpenAI,
     tavily_api_key: str | None,
     model: str,
+    max_web_results: int = 4,
+    learning_max_chars: int = LEARNING_MAX_CHARS,
 ) -> Learning:
     """Research a single (query, dimension) pair with RAG + optional web search."""
     from app.agents.rag.retrieval import retrieve_chunks
@@ -313,7 +412,7 @@ async def _research_one(
     # 2. Web search — always for latest/controversy; fallback for others
     if (not raw_context or dimension in WEB_FIRST_DIMS) and tavily_api_key:
         try:
-            web_results = await web_search_sync(query, tavily_api_key)
+            web_results = await web_search_sync(query, tavily_api_key, max_results=max_web_results)
             if web_results:
                 extra = "\n\n".join(
                     f"[网络来源{i+1}] {r['title']}\n{r['content']}"
@@ -337,17 +436,24 @@ async def _research_one(
 
     # 3. Extract learning with dimension-specific prompt
     system_prompt = _DIMENSION_PROMPTS.get(dimension, _DIMENSION_PROMPTS["concept"])
-    resp = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"查询：{query}\n\n资料：\n{raw_context[:3500]}"},
-        ],
-        temperature=0.3,
-        max_tokens=400,
-    )
-    raw = _strip_fences((resp.choices[0].message.content or "").strip())
-    content, counterpoint = _extract_finding(raw)
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"查询：{query}\n\n资料：\n{raw_context[:3500]}"},
+            ],
+            temperature=0.3,
+            max_tokens=400,
+            response_format={"type": "json_object"},
+        )
+        raw = _strip_fences((resp.choices[0].message.content or "").strip())
+        _extract_log.debug("_research_one raw LLM output for %r: %r", query, raw[:300])
+        content, counterpoint = _extract_finding(raw, max_chars=learning_max_chars)
+    except Exception as exc:
+        _extract_log.warning("LLM extraction call failed for %r: %s", query, exc)
+        content = raw_context[:learning_max_chars]
+        counterpoint = ""
 
     return Learning(
         sub_question=query,
@@ -366,6 +472,8 @@ async def _synthesize_report(
     model: str,
     evaluation_criteria: list[str] | None = None,
     user_memories: list[dict] | None = None,
+    report_words: str = "2000-4000",
+    report_max_tokens: int = 8192,
 ):
     """Stream the structured research report token by token."""
     criteria_str = "、".join(evaluation_criteria) if evaluation_criteria else "数据时效性、来源权威性"
@@ -382,31 +490,49 @@ async def _synthesize_report(
     system_content = (
         "你是一位专业研究报告撰写专家。根据研究发现，撰写结构清晰的中文研究报告。\n\n"
         f"评价标准：{criteria_str}\n\n"
-        "报告必须严格遵循以下结构（使用 ## 二级标题）：\n"
-        "## 背景\n"
-        "## 关键发现\n（每条发现后标注证据等级，格式：[证据：强/中/弱]）\n"
-        "## 争议与反例\n（汇总所有反例和风险点；如无则写'暂无明显争议'）\n"
-        "## 结论与建议\n"
-        "## 可行动清单\n（3-5条具体可执行行动项，使用有序列表）\n\n"
-        "字数700-1000字，使用 Markdown 格式，不要引用来源编号。"
+        "## 格式要求\n"
+        "- 使用带序号的 ## 二级标题来组织内容（如 ## 1. 标题），共4-6个章节\n"
+        "- 章节标题应根据研究主题自然命名，避免生硬套用模板\n"
+        "- 报告应包含：背景引入 → 核心发现 → 争议或局限 → 结论与建议，但具体章节名称和数量由你根据内容决定\n"
+        "- 关键发现处标注证据等级，格式：[证据：强/中/弱]\n"
+        "- 最后一个章节应包含3-5条具体可执行的行动建议（有序列表）\n\n"
+        f"字数{report_words}字，使用 Markdown 格式，不要引用来源编号。"
     )
     if user_memories:
         mem_lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in user_memories)
         system_content += f"\n\n用户背景信息（据此调整报告深度和侧重）：\n{mem_lines}"
 
-    stream = await client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": f"研究问题：{original_query}\n\n研究发现：\n{learnings_text}"},
-        ],
-        stream=True,
-        temperature=0.5,
-        max_tokens=4096,
-    )
-    async for chunk in stream:
-        if chunk.choices and chunk.choices[0].delta.content:
-            yield chunk.choices[0].delta.content
+    MAX_CONTINUATIONS = 3
+    messages = [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": f"研究问题：{original_query}\n\n研究发现：\n{learnings_text}"},
+    ]
+
+    for _round in range(1 + MAX_CONTINUATIONS):
+        accumulated = ""
+        finish_reason = None
+
+        stream = await client.chat.completions.create(
+            model=model,
+            messages=messages,
+            stream=True,
+            temperature=0.5,
+            max_tokens=report_max_tokens,
+        )
+        async for chunk in stream:
+            if chunk.choices:
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    accumulated += delta.content
+                    yield delta.content
+                if chunk.choices[0].finish_reason:
+                    finish_reason = chunk.choices[0].finish_reason
+
+        if finish_reason != "length":
+            break
+
+        messages.append({"role": "assistant", "content": accumulated})
+        messages.append({"role": "user", "content": "报告被截断了，请从截断处继续写完，不要重复已写内容。"})
 
 
 async def _generate_deliverable(
@@ -444,6 +570,7 @@ async def _generate_deliverable(
         ],
         temperature=0.3,
         max_tokens=700,
+        response_format={"type": "json_object"},
     )
     raw = _strip_fences((resp.choices[0].message.content or "").strip())
     try:
@@ -484,16 +611,20 @@ def create_research_graph(
     # ── Nodes ──────────────────────────────────────────────────────────────────
 
     async def plan_node(state: ResearchState) -> dict:
+        cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         await adispatch_custom_event("plan", {"status": "planning"})
-        plan_result = await _plan(state["query"], client, state["model"])
+        plan_result = await _plan(state["query"], client, state["model"], queries_per_dim=cfg.queries_per_dim)
         all_queries = [q for qs in plan_result["search_matrix"].values() for q in qs]
+        report_title = plan_result.get("title") or state["query"][:25]
         await adispatch_custom_event("plan", {
             "research_goal": plan_result["research_goal"],
             "sub_questions": all_queries,
             "search_matrix": plan_result["search_matrix"],
             "evaluation_criteria": plan_result["evaluation_criteria"],
+            "report_title": report_title,
         })
         return {
+            "report_title": report_title,
             "research_goal": plan_result["research_goal"],
             "evaluation_criteria": plan_result["evaluation_criteria"],
             "search_matrix": plan_result["search_matrix"],
@@ -501,6 +632,7 @@ def create_research_graph(
 
     async def search_node(state: dict) -> dict:
         """Handles a single (dimension, query) pair. Receives a Send payload (not ResearchState)."""
+        cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         query: str = state["query"]
         dimension: str = state["dimension"]
         await adispatch_custom_event("searching", {"query": query, "dimension": dimension})
@@ -513,6 +645,8 @@ def create_research_graph(
             client=client,
             tavily_api_key=tavily_api_key,
             model=state["model"],
+            max_web_results=cfg.web_results,
+            learning_max_chars=cfg.learning_max_chars,
         )
         await adispatch_custom_event("learning", {
             "question": query,
@@ -525,6 +659,7 @@ def create_research_graph(
         return {"learnings": [learning.to_dict()]}
 
     async def synthesis_node(state: ResearchState) -> dict:
+        cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         await adispatch_custom_event("writing", {})
         full_report = ""
         async for token in _synthesize_report(
@@ -534,6 +669,8 @@ def create_research_graph(
             state["model"],
             evaluation_criteria=state.get("evaluation_criteria"),
             user_memories=state.get("user_memories"),
+            report_words=cfg.report_words,
+            report_max_tokens=cfg.report_max_tokens,
         ):
             await adispatch_custom_event("token", {"token": token})
             full_report += token
@@ -550,9 +687,12 @@ def create_research_graph(
             client,
             state["model"],
         )
+        # Use plan-generated title as primary; deliverable title as fallback
+        report_title = state.get("report_title") or d.get("title") or state["query"][:25]
+        d["title"] = report_title
         evidence_strength = compute_evidence_strength(state["learnings"])
         await adispatch_custom_event("deliverable", {
-            "title": d.get("title", ""),
+            "title": report_title,
             "summary": d.get("summary", ""),
             "citation_count": d.get("citation_count", len(all_citations)),
             "next_questions": d.get("next_questions", []),
@@ -572,6 +712,7 @@ def create_research_graph(
                 "notebook_id": state["notebook_id"],
                 "user_id": state["user_id"],
                 "model": state["model"],
+                "mode": state.get("mode", "quick"),
             })
             for dimension, queries in state["search_matrix"].items()
             for query in queries

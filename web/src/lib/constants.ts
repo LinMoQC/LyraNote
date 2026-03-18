@@ -28,22 +28,45 @@ export const INTERNAL_API_BASE =
 export interface ModelOption {
   value: string
   label: string
+  group?: string
+  thinking?: boolean
 }
 
 /** 可选的大语言模型列表，用于设置页和初始化向导 */
 export const LLM_MODELS: ModelOption[] = [
-  { value: "gpt-5.4",                      label: "GPT-5.4" },
-  { value: "gpt-5.4-pro",                  label: "GPT-5.4 Pro" },
-  { value: "gpt-5.2-instant",              label: "GPT-5.2 Instant" },
-  { value: "gpt-4o",                       label: "GPT-4o" },
-  { value: "gpt-4o-mini",                  label: "GPT-4o Mini" },
-  { value: "claude-opus-4-6",              label: "Claude Opus 4.6" },
-  { value: "claude-sonnet-4-6",            label: "Claude Sonnet 4.6" },
-  { value: "claude-haiku-4-5",             label: "Claude Haiku 4.5" },
-  { value: "deepseek-chat",                label: "DeepSeek V3" },
-  { value: "deepseek-reasoner",            label: "DeepSeek R1" },
-  { value: "gemini-3.1-pro-preview",       label: "Gemini 3.1 Pro" },
-  { value: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite" },
+  // OpenAI
+  { value: "o3",                            label: "o3",                       group: "OpenAI",   thinking: true },
+  { value: "o3-mini",                       label: "o3 Mini",                  group: "OpenAI",   thinking: true },
+  { value: "o4-mini",                       label: "o4 Mini",                  group: "OpenAI",   thinking: true },
+  { value: "gpt-5.4",                       label: "GPT-5.4",                  group: "OpenAI" },
+  { value: "gpt-5.4-pro",                   label: "GPT-5.4 Pro",              group: "OpenAI" },
+  { value: "gpt-5.2-instant",               label: "GPT-5.2 Instant",          group: "OpenAI" },
+  { value: "gpt-4o",                        label: "GPT-4o",                   group: "OpenAI" },
+  { value: "gpt-4o-mini",                   label: "GPT-4o Mini",              group: "OpenAI" },
+  // Anthropic
+  { value: "claude-opus-4-6",               label: "Claude Opus 4.6",          group: "Anthropic" },
+  { value: "claude-sonnet-4-6",             label: "Claude Sonnet 4.6",        group: "Anthropic" },
+  { value: "claude-sonnet-4-5-20250514",    label: "Claude Sonnet 4.5",        group: "Anthropic", thinking: true },
+  { value: "claude-haiku-4-5",              label: "Claude Haiku 4.5",         group: "Anthropic" },
+  // DeepSeek
+  { value: "deepseek-chat",                 label: "DeepSeek V3",              group: "DeepSeek" },
+  { value: "deepseek-reasoner",             label: "DeepSeek R1",              group: "DeepSeek", thinking: true },
+  // Google
+  { value: "gemini-2.5-pro-preview-05-06",  label: "Gemini 2.5 Pro",           group: "Google",   thinking: true },
+  { value: "gemini-2.5-flash-preview-05-20",label: "Gemini 2.5 Flash",         group: "Google",   thinking: true },
+  { value: "gemini-3.1-pro-preview",        label: "Gemini 3.1 Pro",           group: "Google" },
+  { value: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash Lite",    group: "Google" },
+  // Qwen
+  { value: "qwen-max",                      label: "Qwen Max",                 group: "Qwen" },
+  { value: "qwen-plus",                     label: "Qwen Plus",                group: "Qwen" },
+  { value: "qwen-turbo",                    label: "Qwen Turbo",               group: "Qwen" },
+  { value: "qwq-plus",                      label: "QwQ Plus",                 group: "Qwen",     thinking: true },
+  // Meta
+  { value: "llama-4-maverick",              label: "Llama 4 Maverick",         group: "Meta" },
+  { value: "llama-4-scout",                 label: "Llama 4 Scout",            group: "Meta" },
+  // Mistral
+  { value: "mistral-large-latest",          label: "Mistral Large",            group: "Mistral" },
+  { value: "mistral-small-latest",          label: "Mistral Small",            group: "Mistral" },
 ]
 
 /** 可选的向量嵌入模型列表 */

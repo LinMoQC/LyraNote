@@ -13,10 +13,11 @@ import { AnimatePresence, m } from "framer-motion";
 import {
   ChevronDown,
   FlaskConical,
+  Lightbulb,
   MessageSquare,
+  Paperclip,
   Plus,
-  Sparkles,
-  Zap,
+  X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,6 +30,8 @@ import { http } from "@/lib/http-client";
 import { cn } from "@/lib/utils";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getSuggestions } from "@/services/ai-service";
+import { getConfig } from "@/services/config-service";
+import { LLM_MODELS } from "@/lib/constants";
 import { DeepResearchProgress } from "@/features/chat/deep-research-progress";
 import { useUiStore } from "@/store/use-ui-store";
 import { getConversationFeedback, submitMessageFeedback, type FeedbackRating } from "@/services/feedback-service";
@@ -54,6 +57,195 @@ import { ChatSidebarPanel } from "./chat-sidebar-panel";
 import { ChatMessageBubble } from "./chat-message-bubble";
 import { useDeepResearch, DR_MESSAGES_KEY } from "./use-deep-research";
 import { useChatStream } from "./use-chat-stream";
+import { useDeepResearchStore } from "@/store/use-deep-research-store";
+
+// ── ChatToolbar (ChatGPT-style "+" menu + active feature pills) ──────────────
+
+function ChatToolbar({
+  onFileClick,
+  isDeepResearch,
+  onToggleDeepResearch,
+  drMode,
+  onDrModeChange,
+  isThinkingModel,
+  thinkingEnabled,
+  onToggleThinking,
+}: {
+  onFileClick: () => void;
+  isDeepResearch: boolean;
+  onToggleDeepResearch: () => void;
+  drMode: "quick" | "deep";
+  onDrModeChange: (mode: "quick" | "deep") => void;
+  isThinkingModel: boolean;
+  thinkingEnabled: boolean;
+  onToggleThinking: () => void;
+}) {
+  const t = useTranslations("chat");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [drDropdownOpen, setDrDropdownOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const drRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handle = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (!drDropdownOpen) return;
+    const handle = (e: MouseEvent) => {
+      if (drRef.current && !drRef.current.contains(e.target as Node)) setDrDropdownOpen(false);
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [drDropdownOpen]);
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* "+" trigger */}
+      <div ref={menuRef} className="relative">
+        <button
+          type="button"
+          onClick={() => setMenuOpen((v) => !v)}
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-border/40 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Plus size={16} strokeWidth={1.5} />
+        </button>
+
+        <AnimatePresence>
+          {menuOpen && (
+            <m.div
+              initial={{ opacity: 0, y: 6, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.95 }}
+              transition={{ duration: 0.12 }}
+              className="absolute bottom-full left-0 z-50 mb-2 w-56 overflow-hidden rounded-2xl border border-border/40 bg-card shadow-xl"
+            >
+              <button
+                type="button"
+                onClick={() => { onFileClick(); setMenuOpen(false); }}
+                className="flex w-full items-center gap-3.5 px-4 py-3 text-left text-sm text-foreground/80 transition-colors hover:bg-accent/50"
+              >
+                <Paperclip size={16} className="text-muted-foreground/60" />
+                {t("addFile")}
+              </button>
+
+              <div className="mx-3 border-t border-border/20" />
+
+              <button
+                type="button"
+                onClick={() => { onToggleDeepResearch(); setMenuOpen(false); }}
+                className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-foreground/80 transition-colors hover:bg-accent/50"
+              >
+                <span className="flex items-center gap-3.5">
+                  <FlaskConical size={16} className="text-muted-foreground/60" />
+                  {t("deepResearchLabel")}
+                </span>
+                {isDeepResearch && <span className="text-primary">✓</span>}
+              </button>
+
+              {isThinkingModel && (
+                <>
+                  <div className="mx-3 border-t border-border/20" />
+                  <button
+                    type="button"
+                    onClick={() => { onToggleThinking(); setMenuOpen(false); }}
+                    className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-foreground/80 transition-colors hover:bg-accent/50"
+                  >
+                    <span className="flex items-center gap-3.5">
+                      <Lightbulb size={16} className="text-muted-foreground/60" />
+                      {t("thinkingModeLabel")}
+                    </span>
+                    {thinkingEnabled && <span className="text-primary">✓</span>}
+                  </button>
+                </>
+              )}
+            </m.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Deep Research pill: 默认显示 icon，hover 时同位置变为取消 X */}
+      {isDeepResearch && (
+        <div ref={drRef} className="group relative flex items-center rounded-full text-foreground/70 transition-colors hover:bg-sky-400/15 hover:text-sky-400">
+          <button
+            type="button"
+            onClick={onToggleDeepResearch}
+            className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full [&:hover_.cancel-hover-bg]:bg-sky-400/20"
+            title={t("switchToNormal")}
+          >
+            <span className="cancel-hover-bg pointer-events-none absolute inset-0 m-auto h-5 w-5 rounded-full transition-colors" aria-hidden />
+            <FlaskConical size={14} className="text-foreground/50 transition-opacity group-hover:pointer-events-none group-hover:opacity-0" />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <X size={14} className="text-foreground/50 opacity-0 transition-opacity group-hover:text-sky-400/80 group-hover:opacity-100" />
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDrDropdownOpen((v) => !v)}
+            className="flex flex-1 items-center gap-1.5 py-1.5 pl-0.5 pr-2.5 text-[13px] transition-colors min-w-0"
+          >
+            <span className="truncate">{t("deepResearchLabel")}</span>
+            <ChevronDown size={14} className={cn("flex-shrink-0 text-foreground/50 transition-transform group-hover:text-sky-400", drDropdownOpen && "rotate-180")} />
+          </button>
+
+          <AnimatePresence>
+            {drDropdownOpen && (
+              <m.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.12 }}
+                className="absolute bottom-full left-0 z-50 mb-1.5 w-48 overflow-hidden rounded-xl border border-border/40 bg-card py-2 shadow-xl"
+              >
+                <p className="px-3.5 py-1.5 text-xs font-medium text-muted-foreground/60">{t("drVersion")}</p>
+                <button
+                  type="button"
+                  onClick={() => { onDrModeChange("quick"); setDrDropdownOpen(false); }}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm text-foreground/90 transition-colors hover:bg-accent/50"
+                >
+                  {t("quickMode")}
+                  {drMode === "quick" && <span className="text-primary">✓</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onDrModeChange("deep"); setDrDropdownOpen(false); }}
+                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm text-foreground/90 transition-colors hover:bg-accent/50"
+                >
+                  {t("deepMode")}
+                  {drMode === "deep" && <span className="text-primary">✓</span>}
+                </button>
+              </m.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Thinking Mode pill — 与深度研究一致：外层 group，默认 icon、hover 时变 X；整颗可点关闭 */}
+      {isThinkingModel && thinkingEnabled && (
+        <button
+          type="button"
+          onClick={onToggleThinking}
+          className="group flex items-center rounded-full text-foreground/70 transition-colors hover:bg-sky-400/15 hover:text-sky-400"
+          title={t("thinkingOff")}
+        >
+          <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center [&_.cancel-hover-bg]:transition-colors group-hover:[&_.cancel-hover-bg]:bg-sky-400/20">
+            <span className="cancel-hover-bg pointer-events-none absolute inset-0 m-auto h-5 w-5 rounded-full" aria-hidden />
+            <Lightbulb size={14} className="text-foreground/50 transition-opacity group-hover:pointer-events-none group-hover:opacity-0" />
+            <span className="absolute inset-0 flex items-center justify-center">
+              <X size={14} className="text-foreground/50 opacity-0 transition-opacity group-hover:text-sky-400/80 group-hover:opacity-100" />
+            </span>
+          </span>
+          <span className="py-1.5 pl-0.5 pr-2.5 text-[13px]">{t("thinkingModeLabel")}</span>
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -96,6 +288,12 @@ export function ChatView() {
   const streamLifecycle = useStreamLifecycle();
 
   const [isDeepResearch, setIsDeepResearch] = useState(false);
+  const [drMode, setDrMode] = useState<"quick" | "deep">("quick");
+  const [thinkingEnabled, setThinkingEnabled] = useState(true);
+
+  const { data: appConfig } = useQuery({ queryKey: ["app-config"], queryFn: getConfig, staleTime: 60_000 });
+  const currentModelId = appConfig?.llm_model ?? "";
+  const isThinkingModel = LLM_MODELS.find((m) => m.value === currentModelId)?.thinking ?? false;
   const [noteCreatedAlert, setNoteCreatedAlert] = useState<{ id: string; title: string; notebookId?: string } | null>(null);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, FeedbackRating>>({});
   const [conversationOffset, setConversationOffset] = useState(0);
@@ -151,6 +349,7 @@ export function ChatView() {
   // ── Deep Research hook ──────────────────────────────────────────────────
   const dr = useDeepResearch({
     globalNotebookId,
+    drMode,
     streaming,
     streamLifecycle,
     streamAbortRef,
@@ -303,6 +502,9 @@ export function ChatView() {
       if (cached.length === 0) clearConversationMessages(conv.id);
     } catch (error) {
       notifyError(getErrorMessage(error, t("loadConvFailed")));
+      setActiveConvId(null);
+      saveActiveConversation(null);
+      setMessages([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId, streamLifecycle, chat, dr]);
@@ -378,20 +580,51 @@ export function ChatView() {
   }, []);
 
   useEffect(() => {
-    if (!globalNotebookId || conversationList.length === 0 || activeConvId) return;
+    if (!globalNotebookId || activeConvId) return;
     const targetId = restoredActiveConvId.current;
-    if (targetId) {
-      const matched = conversationList.find((item) => item.id === targetId);
-      if (!matched) return;
-      restoredActiveConvId.current = null;
-      handleSelectConv(matched);
-    }
-  }, [activeConvId, conversationList, globalNotebookId, handleSelectConv]);
+    if (!targetId) return;
+    restoredActiveConvId.current = null;
+    handleSelectConv({ id: targetId } as ConversationRecord);
+  }, [activeConvId, globalNotebookId, handleSelectConv]);
 
   // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, streaming]);
+
+  // Deep research store selectors
+  const drFocusRequested = useDeepResearchStore((s) => s.focusRequested);
+  const drConversationId = useDeepResearchStore((s) => s.conversationId);
+  useEffect(() => {
+    if (!drFocusRequested) return;
+    useDeepResearchStore.setState({ focusRequested: false });
+
+    const drState = useDeepResearchStore.getState();
+    if (!drState.isActive && !drState.progress) return;
+
+    setStreaming(false);
+    streamLifecycle.finish();
+    chat.setAgentSteps([]);
+
+    // Switch to the deep research conversation
+    if (drState.conversationId) {
+      setActiveConvId(drState.conversationId);
+      saveActiveConversation(drState.conversationId);
+      if (drState.query) {
+        const userMsg: LocalMessage = {
+          id: `local-dr-return-${Date.now()}`,
+          role: "user",
+          content: drState.query,
+          timestamp: new Date(),
+        };
+        setMessages([userMsg]);
+      }
+    } else {
+      setActiveConvId(null);
+      setMessages([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drFocusRequested]);
 
   // ── Feedback ────────────────────────────────────────────────────────────
   const handleFeedback = useCallback(async (messageId: string, rating: FeedbackRating) => {
@@ -492,7 +725,7 @@ export function ChatView() {
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full">
+    <div className="flex h-full dark:border border-border/40">
       <ChatSidebarPanel
         conversationList={conversationList}
         activeConvId={activeConvId}
@@ -540,6 +773,7 @@ export function ChatView() {
                   copied={copied}
                   avatarUrl={avatarUrl}
                   initials={initials}
+                  showReasoning={isThinkingModel && thinkingEnabled}
                   onCopy={copy}
                   onFeedback={handleFeedback}
                   onRegenerate={stableRegenerate}
@@ -549,7 +783,7 @@ export function ChatView() {
             </AnimatePresence>
 
             <AnimatePresence>
-              {dr.drProgress && (
+              {dr.drProgress && (!activeConvId || activeConvId === drConversationId) && (
                 <m.div
                   key="dr-progress-live"
                   initial={{ opacity: 0, y: 8 }}
@@ -627,46 +861,29 @@ export function ChatView() {
             }
             toolbarLeft={
               <>
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  title={tc("addSource")}
-                >
-                  <Plus size={13} />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      fileAttachments.addFiles(e.target.files);
-                    }
-                    e.target.value = "";
-                  }}
-                />
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/40 bg-muted/30 text-[11px] text-muted-foreground/50 sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1">
-                  <Sparkles size={10} className="text-primary/60" />
-                  <span className="hidden sm:inline">{t("globalKnowledge")}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsDeepResearch((v) => !v)}
-                  className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] transition-all sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1",
-                    isDeepResearch
-                      ? "border-amber-500/30 bg-amber-500/10 text-amber-300/90"
-                      : "border-border/40 bg-muted/30 text-muted-foreground/50 hover:border-border/60 hover:text-muted-foreground/70"
-                  )}
-                  title={isDeepResearch ? t("switchToNormal") : t("switchToDeepResearch")}
-                >
-                  <FlaskConical size={10} className={isDeepResearch ? "text-amber-400" : ""} />
-                  <span className="hidden sm:inline">{t("deepResearchLabel")}</span>
-                  {isDeepResearch && <Zap size={8} className="hidden text-amber-400 sm:block" />}
-                </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    fileAttachments.addFiles(e.target.files);
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <ChatToolbar
+                onFileClick={() => fileInputRef.current?.click()}
+                isDeepResearch={isDeepResearch}
+                onToggleDeepResearch={() => setIsDeepResearch((v) => !v)}
+                drMode={drMode}
+                onDrModeChange={setDrMode}
+                isThinkingModel={isThinkingModel}
+                thinkingEnabled={thinkingEnabled}
+                onToggleThinking={() => setThinkingEnabled((v) => !v)}
+              />
               </>
             }
             toolbarRight={

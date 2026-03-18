@@ -16,7 +16,7 @@ export default async function NotebookDetailPage({
   const messages = await getConversation();
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col dark:border border-border/40">
       <NotebookWorkspace
         notebookId={id}
         title={notebook.title}

@@ -126,8 +126,13 @@ export const AI = {
   WRITING_CONTEXT: "/ai/writing-context",
   /** POST - 行内润色 (SSE) */
   POLISH: "/ai/polish",
-  /** POST - 深度研究 (SSE) */
+  /** POST - 创建深度研究任务 */
   DEEP_RESEARCH: "/ai/deep-research",
+  /** GET - 深度研究任务状态 */
+  deepResearchStatus: (taskId: string) => `/ai/deep-research/${taskId}`,
+  /** GET - 深度研究事件流 (SSE) */
+  deepResearchEvents: (taskId: string, from?: number) =>
+    `/ai/deep-research/${taskId}/events${from ? `?from=${from}` : ""}`,
   /** GET - 笔记本的生成物列表 */
   artifacts: (notebookId: string) => `/notebooks/${notebookId}/artifacts`,
   /** POST - 触发生成内容物 */

@@ -85,7 +85,14 @@ class AgentEngine:
     async def _exec_call_llm(self, state: AgentState) -> AsyncGenerator[dict, None]:
         from app.providers.llm import chat_with_tools
 
-        response = await chat_with_tools(state.messages, self.tool_schemas)
+        try:
+            response = await chat_with_tools(state.messages, self.tool_schemas)
+        except Exception as exc:
+            logger.error("LLM call failed: %s", exc)
+            state.phase = "error"
+            yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
+            yield {"type": "done"}
+            return
         state.step_count += 1
 
         if response["finish_reason"] == "tool_calls":
@@ -327,12 +334,19 @@ class AgentEngine:
         token_count = 0
         ttft: float | None = None
 
-        async for chunk in chat_stream(clean):
-            if chunk.get("type") == "token":
-                token_count += 1
-                if ttft is None:
-                    ttft = time.monotonic() - t0
-            yield chunk
+        try:
+            async for chunk in chat_stream(clean):
+                if chunk.get("type") == "token":
+                    token_count += 1
+                    if ttft is None:
+                        ttft = time.monotonic() - t0
+                yield chunk
+        except Exception as exc:
+            logger.error("Stream answer failed: %s", exc)
+            yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
+            yield {"type": "done"}
+            state.phase = "error"
+            return
 
         elapsed = time.monotonic() - t0
         tps = token_count / elapsed if elapsed > 0 else 0

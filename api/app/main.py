@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Ensure pgvector extension is available (idempotent)
+    from app.logging_config import setup_logging
+    setup_logging(debug=settings.debug)
+
     from app.database import engine, AsyncSessionLocal
     from sqlalchemy import text
 

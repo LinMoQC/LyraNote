@@ -25,7 +25,7 @@ class MindMapSkill(SkillBase):
         config_schema={
             "type": "object",
             "properties": {
-                "default_depth": {"type": "integer", "enum": [2, 3], "default": 2},
+                "default_depth": {"type": "string", "enum": ["2", "3"], "default": "2"},
             },
         },
     )
@@ -42,9 +42,9 @@ class MindMapSkill(SkillBase):
                         "description": "思维导图的主题，若未指定则使用笔记本整体主题",
                     },
                     "depth": {
-                        "type": "integer",
+                        "type": "string",
                         "description": "思维导图层级深度，2=两层，3=三层（默认2）",
-                        "enum": [2, 3],
+                        "enum": ["2", "3"],
                     },
                 },
                 "required": [],

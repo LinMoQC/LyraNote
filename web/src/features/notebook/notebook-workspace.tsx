@@ -166,7 +166,7 @@ export function NotebookWorkspace({
   }, [editorInstance, notebookId, setWritingContext]);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full flex-col overflow-hidden dark:border border-border/40">
       <NotebookHeader
         title={title}
         sourcesOpen={sourcesOpen}

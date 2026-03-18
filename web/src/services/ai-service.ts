@@ -8,7 +8,7 @@ import { http } from "@/lib/http-client";
 import { AI, CONVERSATIONS, INSIGHTS, SOURCES } from "@/lib/api-routes";
 import { t } from "@/lib/i18n";
 import { mapArtifact } from "@/lib/api-mappers";
-import { getErrorMessage, isAbortError } from "@/lib/request-error";
+import { authHeaderFromCookie, getErrorMessage, isAbortError } from "@/lib/request-error";
 import { CreateConversationResponseSchema } from "@/schemas/chat-api";
 import type { Artifact, CitationData, Message } from "@/types";
 
@@ -53,7 +53,7 @@ export async function getInlineSuggestion(context: string): Promise<string> {
 
 /** 流式 Agent 事件（SSE 推送的各类事件） */
 export interface AgentEvent {
-  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created" | "speed" | "human_approve_required"
+  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created" | "speed" | "human_approve_required" | "error"
   content?: string
   tool?: string
   input?: Record<string, unknown>
@@ -182,6 +182,8 @@ export async function sendMessageStream(
           onAgentEvent
         ) {
           onAgentEvent(event)
+        } else if (event.type === "error" && event.content) {
+          onToken(event.content)
         } else if (event.type === "done" && onAgentEvent) {
           onAgentEvent(event)
         }
@@ -376,37 +378,69 @@ export async function markAllInsightsRead(): Promise<void> {
 
 /** 深度研究 SSE 事件 */
 export interface DeepResearchEvent {
-  type: "plan" | "searching" | "learning" | "writing" | "token" | "done" | "deliverable" | "error"
+  type: "plan" | "searching" | "learning" | "writing" | "token" | "done" | "deliverable" | "error" | "report_complete"
   data: Record<string, unknown>
 }
 
+/** 深度研究任务状态 */
+export interface DeepResearchTaskStatus {
+  task_id: string
+  conversation_id: string | null
+  status: "running" | "done" | "error"
+  query: string
+  mode: string
+  report: string | null
+  deliverable: Record<string, unknown> | null
+  timeline: Record<string, unknown> | null
+  error_message: string | null
+  created_at: string | null
+  completed_at: string | null
+  event_count: number
+  buffer_alive: boolean
+}
+
 /**
- * 启动深度研究流式任务
- * @description 通过 SSE 连接驱动多阶段研究流程（计划→搜索→学习→撰写），
- *              实时推送各阶段事件供 UI 展示进度。
- * @param query - 研究主题/问题
- * @param opts - 配置选项（笔记本 ID、研究模式）
- * @param onEvent - 事件回调函数
- * @param signal - AbortSignal 用于取消
+ * 创建深度研究后台任务
+ * @returns task_id
  */
-export async function startDeepResearch(
+export async function createDeepResearch(
   query: string,
   opts: { notebookId?: string; mode?: "quick" | "deep" },
-  onEvent: (e: DeepResearchEvent) => void,
-  signal?: AbortSignal,
-): Promise<void> {
-  if (signal?.aborted) {
-    throw new DOMException("Aborted", "AbortError");
-  }
-  const res = await http.stream(
+): Promise<{ taskId: string; conversationId: string }> {
+  const data = await http.post<{ task_id: string; conversation_id: string }>(
     AI.DEEP_RESEARCH,
     {
       query,
       notebook_id: opts.notebookId ?? null,
       mode: opts.mode ?? "quick",
     },
-    { signal },
   )
+  return { taskId: data.task_id, conversationId: data.conversation_id }
+}
+
+/**
+ * 订阅深度研究事件流 (SSE)
+ * @param taskId - 任务 ID
+ * @param onEvent - 事件回调
+ * @param signal - AbortSignal 用于取消
+ * @param fromIndex - 从第 N 个事件开始读取 (断点续传)
+ */
+export async function subscribeDeepResearch(
+  taskId: string,
+  onEvent: (e: DeepResearchEvent) => void,
+  signal?: AbortSignal,
+  fromIndex?: number,
+): Promise<void> {
+  if (signal?.aborted) {
+    throw new DOMException("Aborted", "AbortError");
+  }
+
+  const url = http.url(AI.deepResearchEvents(taskId, fromIndex))
+  const res = await fetch(url, {
+    credentials: "include",
+    headers: { ...authHeaderFromCookie() },
+    signal,
+  })
 
   if (!res.body) throw new Error(getErrorMessage(new Error("No response body")))
 
@@ -433,8 +467,28 @@ export async function startDeepResearch(
         onEvent(event)
       } catch (error) {
         if (isAbortError(error)) throw error;
-        // ignore malformed lines
       }
     }
   }
+}
+
+/**
+ * 查询深度研究任务状态（用于刷新后恢复）
+ */
+export async function getDeepResearchStatus(taskId: string): Promise<DeepResearchTaskStatus> {
+  return http.get<DeepResearchTaskStatus>(AI.deepResearchStatus(taskId))
+}
+
+/**
+ * 启动深度研究流式任务（兼容旧调用方式，内部使用新 API）
+ */
+export async function startDeepResearch(
+  query: string,
+  opts: { notebookId?: string; mode?: "quick" | "deep" },
+  onEvent: (e: DeepResearchEvent) => void,
+  signal?: AbortSignal,
+): Promise<{ taskId: string; conversationId: string }> {
+  const result = await createDeepResearch(query, opts)
+  await subscribeDeepResearch(result.taskId, onEvent, signal)
+  return result
 }
