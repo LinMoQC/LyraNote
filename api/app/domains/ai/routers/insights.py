@@ -3,28 +3,13 @@
 from uuid import UUID
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
+from app.domains.ai.schemas import InsightOut, InsightsListOut
 from app.schemas.response import ApiResponse, success
 
 router = APIRouter()
-
-
-class InsightOut(BaseModel):
-    id: str
-    insight_type: str
-    title: str
-    content: str | None
-    notebook_id: str | None
-    is_read: bool
-    created_at: str
-
-
-class InsightsListOut(BaseModel):
-    insights: list[InsightOut]
-    unread_count: int
 
 
 @router.get("/insights", response_model=ApiResponse[InsightsListOut])

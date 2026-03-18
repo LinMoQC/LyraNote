@@ -9,34 +9,18 @@ Endpoints:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
+from app.domains.feedback.schemas import FeedbackIn, FeedbackOut
 from app.exceptions import NotFoundError
 from app.models import Conversation, Message, MessageFeedback
 from app.schemas.response import ApiResponse, success
 
 router = APIRouter(tags=["feedback"])
-
-
-class FeedbackIn(BaseModel):
-    rating: Literal["like", "dislike"]
-    comment: str | None = None
-
-
-class FeedbackOut(BaseModel):
-    message_id: UUID
-    rating: str
-    comment: str | None
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"from_attributes": True}
 
 
 async def _load_owned_message(message_id: UUID, user_id: UUID, db: DbDep) -> Message:

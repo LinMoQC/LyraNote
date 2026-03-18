@@ -13,7 +13,6 @@ Endpoints:
 from uuid import UUID
 
 from fastapi import APIRouter, status
-from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
@@ -21,80 +20,18 @@ from app.exceptions import BadRequestError, NotFoundError
 from app.models import AgentEvaluation, AgentReflection, UserMemory
 from app.schemas.response import ApiResponse, success
 
+from .schemas import (
+    DiaryEntryOut,
+    EvaluationOut,
+    MemoryDocOut,
+    MemoryDocUpdate,
+    MemoryGroupedOut,
+    MemoryOut,
+    MemoryUpdate,
+    ReflectionOut,
+)
+
 router = APIRouter(tags=["memory"])
-
-
-# ---------------------------------------------------------------------------
-# Memory Doc schemas
-# ---------------------------------------------------------------------------
-
-class MemoryDocOut(BaseModel):
-    content_md: str
-    updated_at: str | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class MemoryDocUpdate(BaseModel):
-    content_md: str
-
-
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-
-class MemoryOut(BaseModel):
-    id: UUID
-    key: str
-    value: str
-    confidence: float
-    memory_type: str
-    access_count: int
-    last_accessed_at: str | None = None
-    expires_at: str | None = None
-
-    model_config = {"from_attributes": True}
-
-
-class MemoryGroupedOut(BaseModel):
-    preference: list[MemoryOut] = []
-    fact: list[MemoryOut] = []
-    skill: list[MemoryOut] = []
-
-
-class MemoryUpdate(BaseModel):
-    value: str
-
-
-class ReflectionOut(BaseModel):
-    id: UUID
-    conversation_id: UUID | None = None
-    scene: str | None = None
-    quality_score: float | None = None
-    what_worked: str | None = None
-    what_failed: str | None = None
-    memory_reinforced: list | None = None
-    created_at: str
-
-    model_config = {"from_attributes": True}
-
-
-class EvaluationOut(BaseModel):
-    id: UUID
-    conversation_id: UUID | None = None
-    overall_score: float | None = None
-    relevance_score: float | None = None
-    evidence_score: float | None = None
-    actionability_score: float | None = None
-    notes: str | None = None
-    created_at: str
-
-    model_config = {"from_attributes": True}
-
-
-class DiaryEntryOut(BaseModel):
-    date: str
-    content: str
 
 
 # ---------------------------------------------------------------------------

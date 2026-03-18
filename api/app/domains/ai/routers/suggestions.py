@@ -6,10 +6,15 @@ from datetime import datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 from sqlalchemy import func as sqla_func, select
 
 from app.dependencies import CurrentUser, DbDep
+from app.domains.ai.schemas import (
+    ContextGreetingOut,
+    GreetingSuggestion,
+    SourceSuggestionsOut,
+    SuggestionsOut,
+)
 from app.models import Chunk, Notebook, Note, Source, Conversation, NotebookSummary
 from app.schemas.response import ApiResponse, success
 from app.providers.llm import get_client, get_model
@@ -19,10 +24,6 @@ router = APIRouter()
 # ── Suggestions cache ─────────────────────────────────────────────────────────
 _suggestions_cache: dict[str, tuple[list[str], datetime, int]] = {}
 _CACHE_TTL = timedelta(hours=6)
-
-
-class SuggestionsOut(BaseModel):
-    suggestions: list[str]
 
 
 @router.get("/ai/suggestions", response_model=ApiResponse[SuggestionsOut])
@@ -138,17 +139,6 @@ async def get_suggestions(current_user: CurrentUser, db: DbDep):
 
 _greeting_cache: dict[str, tuple[dict, str, datetime]] = {}
 _GREETING_CACHE_TTL = timedelta(hours=1)
-
-
-class GreetingSuggestion(BaseModel):
-    label: str
-    prompt: str | None = None
-    action: str | None = None
-
-
-class ContextGreetingOut(BaseModel):
-    greeting: str
-    suggestions: list[GreetingSuggestion]
 
 
 @router.get(
@@ -275,11 +265,6 @@ async def get_context_greeting(notebook_id: UUID, current_user: CurrentUser, db:
 
 
 # ── Source suggestions ────────────────────────────────────────────────────────
-
-class SourceSuggestionsOut(BaseModel):
-    summary: str | None
-    questions: list[str]
-
 
 @router.get("/sources/{source_id}/suggestions", response_model=ApiResponse[SourceSuggestionsOut])
 async def get_source_suggestions(source_id: UUID, current_user: CurrentUser, db: DbDep):

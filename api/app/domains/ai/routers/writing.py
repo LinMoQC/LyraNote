@@ -5,10 +5,15 @@ from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
+from app.domains.ai.schemas import (
+    PolishRequest,
+    WritingContextChunk,
+    WritingContextOut,
+    WritingContextRequest,
+)
 from app.models import Chunk, Source
 from app.schemas.response import ApiResponse, success
 from app.providers.llm import get_client
@@ -17,11 +22,6 @@ router = APIRouter()
 
 
 # ── Text polish ───────────────────────────────────────────────────────────────
-
-class PolishRequest(BaseModel):
-    text: str
-    instruction: str = "优化语言表达，使文字更清晰流畅、逻辑更严密，保持原有语气和核心含义"
-
 
 @router.post("/ai/polish")
 async def polish_text(body: PolishRequest, current_user: CurrentUser):
@@ -60,22 +60,6 @@ async def polish_text(body: PolishRequest, current_user: CurrentUser):
 
 
 # ── Writing context ───────────────────────────────────────────────────────────
-
-class WritingContextRequest(BaseModel):
-    notebook_id: str
-    text_around_cursor: str
-
-
-class WritingContextChunk(BaseModel):
-    source_title: str
-    excerpt: str
-    score: float
-    chunk_id: str
-
-
-class WritingContextOut(BaseModel):
-    chunks: list[WritingContextChunk]
-
 
 @router.post("/ai/writing-context", response_model=ApiResponse[WritingContextOut])
 async def get_writing_context(body: WritingContextRequest, current_user: CurrentUser, db: DbDep):

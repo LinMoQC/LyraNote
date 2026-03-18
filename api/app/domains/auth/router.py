@@ -10,11 +10,17 @@ import uuid
 import httpx
 from fastapi import APIRouter, HTTPException, Response, status
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.config import settings
 from app.dependencies import CurrentUser, DbDep
+from app.domains.auth.schemas import (
+    LoginRequest,
+    PasswordUpdateRequest,
+    ProfileUpdateRequest,
+    TokenResponse,
+    UserOut,
+)
 from app.exceptions import BadRequestError, UnauthorizedError
 from app.models import User
 from app.schemas.response import ApiResponse, success
@@ -107,38 +113,6 @@ async def _upsert_oauth_user(
     await db.commit()
     await db.refresh(user)
     return user
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-
-
-class UserOut(BaseModel):
-    id: str
-    username: str | None
-    name: str | None
-    email: str | None
-    avatar_url: str | None = None
-    has_google: bool = False
-    has_github: bool = False
-
-    model_config = {"from_attributes": True}
-
-
-class ProfileUpdateRequest(BaseModel):
-    name: str | None = None
-    avatar_url: str | None = None
-
-
-class PasswordUpdateRequest(BaseModel):
-    old_password: str
-    new_password: str
 
 
 @router.post("/auth/login", response_model=ApiResponse[TokenResponse])

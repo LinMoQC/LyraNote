@@ -7,54 +7,23 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter
-from pydantic import BaseModel
-from sqlalchemy import select, func, delete
+from sqlalchemy import delete, func, select
 
 from app.dependencies import CurrentUser, DbDep
 from app.exceptions import NotFoundError
 from app.models import KnowledgeEntity, KnowledgeRelation, Source
 from app.schemas.response import ApiResponse, success
 
+from .schemas import (
+    EntityDetailOut,
+    GraphDataOut,
+    GraphLinkOut,
+    GraphNodeOut,
+    RebuildProgressOut,
+    RebuildStatusOut,
+)
+
 router = APIRouter(tags=["knowledge-graph"])
-
-
-# ── Response schemas ──────────────────────────────────────────────────────────
-
-class GraphNodeOut(BaseModel):
-    id: str
-    name: str
-    type: str
-    description: str | None = None
-    mention_count: int = 1
-
-class GraphLinkOut(BaseModel):
-    source: str
-    target: str
-    relation_type: str
-    description: str | None = None
-    weight: float = 1.0
-
-class GraphDataOut(BaseModel):
-    nodes: list[GraphNodeOut]
-    links: list[GraphLinkOut]
-
-class EntityDetailOut(BaseModel):
-    id: str
-    name: str
-    type: str
-    description: str | None = None
-    mention_count: int
-    source_title: str | None = None
-    relations: list[dict]
-
-class RebuildStatusOut(BaseModel):
-    status: str
-
-class RebuildProgressOut(BaseModel):
-    current: int = 0
-    total: int = 0
-    source_title: str = ""
-    status: str = "idle"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

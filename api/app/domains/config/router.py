@@ -5,17 +5,16 @@ without going through the setup wizard.
 """
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, status
-from pydantic import BaseModel
 from sqlalchemy import select
 
+from app.config import settings as app_settings
 from app.dependencies import CurrentUser, DbDep
 from app.exceptions import BadRequestError
 from app.models import AppConfig
 from app.schemas.response import ApiResponse, success
-from app.config import settings as app_settings
+
+from .schemas import ConfigOut, ConfigPatchRequest, TestEmailResult, TestLlmResult
 
 router = APIRouter(tags=["config"])
 
@@ -60,14 +59,6 @@ _SENSITIVE_KEYS = {
     "perplexity_api_key",
     "smtp_password",
 }
-
-
-class ConfigOut(BaseModel):
-    data: dict[str, str | None]
-
-
-class ConfigPatchRequest(BaseModel):
-    data: dict[str, Any]
 
 
 @router.get("/config", response_model=ApiResponse[ConfigOut])
@@ -124,11 +115,6 @@ async def update_config(body: ConfigPatchRequest, _current_user: CurrentUser, db
         reset_provider()
 
 
-class TestEmailResult(BaseModel):
-    ok: bool
-    message: str
-
-
 @router.post("/config/test-email", response_model=ApiResponse[TestEmailResult])
 async def test_email(_current_user: CurrentUser, db: DbDep):
     """Send a real test email using the current SMTP configuration."""
@@ -165,12 +151,6 @@ async def test_email(_current_user: CurrentUser, db: DbDep):
     if sent:
         return success(TestEmailResult(ok=True, message=f"测试邮件已发送至 {to}"))
     return success(TestEmailResult(ok=False, message="发送失败，请检查 SMTP 配置"))
-
-
-class TestLlmResult(BaseModel):
-    ok: bool
-    model: str
-    message: str
 
 
 @router.post("/config/test-llm", response_model=ApiResponse[TestLlmResult])

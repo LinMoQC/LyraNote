@@ -4,20 +4,13 @@ import json
 
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
-from typing import Literal
 
 from app.dependencies import CurrentUser, DbDep
+from app.domains.ai.schemas import DeepResearchRequest
 from app.config import settings
 from app.providers.llm import get_client
 
 router = APIRouter()
-
-
-class DeepResearchRequest(BaseModel):
-    query: str
-    notebook_id: str | None = None
-    mode: Literal["quick", "deep"] = "quick"
 
 
 @router.post("/ai/deep-research")

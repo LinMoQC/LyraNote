@@ -3,27 +3,14 @@
 from uuid import UUID
 
 from fastapi import APIRouter
-from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
+from app.domains.ai.schemas import CrossNotebookChunk, CrossNotebookOut
 from app.models import Chunk, Notebook, Source, NotebookSummary
 from app.schemas.response import ApiResponse, success
 
 router = APIRouter()
-
-
-class CrossNotebookChunk(BaseModel):
-    notebook_title: str
-    source_title: str
-    excerpt: str
-    score: float
-    chunk_id: str
-    notebook_id: str
-
-
-class CrossNotebookOut(BaseModel):
-    chunks: list[CrossNotebookChunk]
 
 
 @router.get(
