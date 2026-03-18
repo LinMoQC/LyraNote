@@ -27,13 +27,15 @@ export function authHeaderFromCookie(): Record<string, string> {
 }
 
 /**
- * 处理 401 未授权响应，将用户重定向到登录页
- * 仅在浏览器端且当前不在登录/初始化页面时触发跳转
+ * 处理 401 未授权响应：清除会话 cookie 并重定向到登录页
+ * 仅在浏览器端且当前不在登录/初始化页面时触发
  */
 export function handleUnauthorized() {
   if (typeof window === "undefined") return;
   const pathname = window.location.pathname;
   if (!pathname.startsWith("/login") && !pathname.startsWith("/setup")) {
+    document.cookie =
+      "lyranote_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     window.location.href = "/login";
   }
 }
