@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: lyranote
-      POSTGRES_PASSWORD: lyranote       # ⚠️ 生产必改，同步修改下方 api/worker 的 DATABASE_URL
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lyranote}
       POSTGRES_DB: lyranote
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -29,8 +29,8 @@ services:
     image: minio/minio:latest
     restart: unless-stopped
     environment:
-      MINIO_ROOT_USER: lyranote         # ⚠️ 生产必改，同步修改下方 STORAGE_S3_ACCESS_KEY
-      MINIO_ROOT_PASSWORD: lyranote123  # ⚠️ 生产必改，同步修改下方 STORAGE_S3_SECRET_KEY 及 minio-init
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-lyranote}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-lyranote123}
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
@@ -41,32 +41,27 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 lyranote lyranote123 &&
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-lyranote} ${MINIO_ROOT_PASSWORD:-lyranote123} &&
       mc mb -p local/lyranote || true
       "
-      # ⚠️ 改了 MINIO_ROOT_USER/PASSWORD 后，上面两行的 lyranote / lyranote123 也要同步修改
 
   api:
-    build:
-      context: ./api
+    image: ghcr.io/linmoqc/lyranote/api:main
     restart: unless-stopped
     env_file:
       - ./api/.env
     environment:
-      # ── 基础设施（Docker 内网）────────────────────────────────────
-      DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@db:5432/lyranote  # ⚠️ 改 db 密码后同步
+      DATABASE_URL: postgresql+asyncpg://lyranote:${POSTGRES_PASSWORD:-lyranote}@db:5432/lyranote
       REDIS_URL: redis://redis:6379/0
       STORAGE_S3_ENDPOINT_URL: http://minio:9000
-      STORAGE_S3_ACCESS_KEY: lyranote        # ⚠️ 与 MINIO_ROOT_USER 保持一致
-      STORAGE_S3_SECRET_KEY: lyranote123     # ⚠️ 与 MINIO_ROOT_PASSWORD 保持一致
+      STORAGE_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-lyranote}
+      STORAGE_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-lyranote123}
       STORAGE_S3_BUCKET: lyranote
       STORAGE_S3_REGION: us-east-1
-      # ── 对外地址（部署前替换为真实域名）──────────────────────────
-      APP_BASE_URL: https://your-domain.com    # 用于生成 OAuth 回调链接
+      APP_BASE_URL: ${APP_BASE_URL:-https://your-domain.com}
       API_PREFIX: /api/v1
-      FRONTEND_URL: https://your-domain.com   # 用于 CORS
-      CORS_ORIGINS: https://your-domain.com   # 允许跨域的来源
-      # ── 安全 ─────────────────────────────────────────────────────
+      FRONTEND_URL: ${FRONTEND_URL:-https://your-domain.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://your-domain.com}
       DEBUG: "false"
     volumes:
       - storage_data:/app/storage
@@ -86,26 +81,22 @@ services:
       retries: 10
 
   worker:
-    build:
-      context: ./api
+    image: ghcr.io/linmoqc/lyranote/api:main
     restart: unless-stopped
     env_file:
       - ./api/.env
     environment:
-      # ── 基础设施（Docker 内网）────────────────────────────────────
-      DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@db:5432/lyranote  # ⚠️ 改 db 密码后同步
+      DATABASE_URL: postgresql+asyncpg://lyranote:${POSTGRES_PASSWORD:-lyranote}@db:5432/lyranote
       REDIS_URL: redis://redis:6379/0
       STORAGE_S3_ENDPOINT_URL: http://minio:9000
-      STORAGE_S3_ACCESS_KEY: lyranote        # ⚠️ 与 MINIO_ROOT_USER 保持一致
-      STORAGE_S3_SECRET_KEY: lyranote123     # ⚠️ 与 MINIO_ROOT_PASSWORD 保持一致
+      STORAGE_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-lyranote}
+      STORAGE_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-lyranote123}
       STORAGE_S3_BUCKET: lyranote
       STORAGE_S3_REGION: us-east-1
-      # ── 对外地址（与 api 服务保持一致）────────────────────────────
-      APP_BASE_URL: https://your-domain.com
+      APP_BASE_URL: ${APP_BASE_URL:-https://your-domain.com}
       API_PREFIX: /api/v1
-      FRONTEND_URL: https://your-domain.com
-      CORS_ORIGINS: https://your-domain.com
-      # ── 安全 ─────────────────────────────────────────────────────
+      FRONTEND_URL: ${FRONTEND_URL:-https://your-domain.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://your-domain.com}
       DEBUG: "false"
     volumes:
       - storage_data:/app/storage
@@ -115,18 +106,13 @@ services:
     command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=4
 
   web:
-    build:
-      context: ./web
-      dockerfile: Dockerfile
-      args:
-        NEXT_PUBLIC_API_BASE_URL: /api/v1
+    image: ghcr.io/linmoqc/lyranote/web:main
     restart: unless-stopped
     env_file:
       - path: ./web/.env.local
         required: false
     environment:
       NEXT_PUBLIC_API_BASE_URL: /api/v1
-      # SSR 服务端请求走 Docker 内网，避免容器内相对路径解析失败
       INTERNAL_API_BASE_URL: http://api:8000/api/v1
       NODE_ENV: production
     depends_on:
