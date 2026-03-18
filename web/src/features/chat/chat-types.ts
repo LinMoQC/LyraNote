@@ -9,15 +9,23 @@ export interface MessageAttachment {
   previewUrl: string | null;
 }
 
+export interface StreamingMetrics {
+  ttft_ms: number;
+  tps: number;
+  tokens: number;
+}
+
 export interface LocalMessage {
   id: string;
   role: ChatRole;
   content: string;
+  reasoning?: string;
   timestamp: Date;
   citations?: CitationData[];
   agentSteps?: AgentStep[];
   deepResearch?: DrProgress;
   attachments?: MessageAttachment[];
+  speed?: StreamingMetrics;
 }
 
 export const CONVERSATIONS_PAGE_SIZE = 30;

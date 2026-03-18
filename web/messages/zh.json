@@ -112,6 +112,7 @@
     "aiDraft": "AI 草稿",
     "streamFailed": "请求失败，请重试。",
     "citationSources": "引用来源 · {count}",
+    "reasoning": "思考过程",
     "copied": "已复制",
     "copy": "复制",
     "suggestedPrompts": {
@@ -292,11 +293,21 @@
     },
     "memory": {
       "whatIsTitle": "什么是 AI 记忆？",
-      "whatIsDesc": "这是 AI 对你的长期了解，每次对话时都会读取这份文档。你可以写入个人背景、研究方向、重要偏好等信息，也可以让 AI 在对话中自动更新它。",
+      "whatIsDesc": "AI 会在对话中学习你的偏好、事实和技能。你可以在下方查看、编辑或删除任何记忆条目。",
       "lastUpdated": "上次更新：{date}",
       "globalDoc": "全局记忆文档",
       "globalDocDesc": "Markdown 格式，AI 每次对话都会读取",
-      "placeholder": "例：\n## 关于我\n- 软件工程师，专注 AI 方向\n- 正在研究大语言模型在知识管理中的应用\n\n## 偏好\n- 回答请简洁，使用列表格式\n- 中文为主"
+      "placeholder": "例：\n## 关于我\n- 软件工程师，专注 AI 方向\n- 正在研究大语言模型在知识管理中的应用\n\n## 偏好\n- 回答请简洁，使用列表格式\n- 中文为主",
+      "structuredTab": "结构化记忆",
+      "documentTab": "记忆文档",
+      "typePreference": "偏好",
+      "typeFact": "事实",
+      "typeSkill": "技能",
+      "noMemories": "暂无记忆。AI 会在对话中自动学习你的信息。",
+      "confidence": "置信度",
+      "accessCount": "使用次数",
+      "expiresAt": "过期时间",
+      "save": "保存"
     },
     "skills": {
       "title": "技能管理",

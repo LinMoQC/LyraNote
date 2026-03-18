@@ -159,6 +159,31 @@ def _merge_hybrid(
     return sorted(merged.values(), key=lambda x: x["score"], reverse=True)
 
 
+async def _rewrite_query(query: str) -> str:
+    """Rewrite a conversational query into a retrieval-friendly keyword phrase.
+
+    Inspired by LobeHub's query rewrite step that improves RAG recall by
+    transforming colloquial questions into concise search terms.
+    """
+    from app.providers.llm import chat
+
+    prompt = (
+        "将以下用户问题改写为适合向量检索的简洁关键词短语。"
+        "只输出改写结果，不要解释。如果问题已经足够简洁则原样返回。\n\n"
+        f"用户问题：{query}"
+    )
+    try:
+        result = await chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=100,
+        )
+        rewritten = result.strip()
+        return rewritten if rewritten else query
+    except Exception:
+        return query
+
+
 async def retrieve_chunks(
     query: str,
     notebook_id: str,
@@ -169,18 +194,19 @@ async def retrieve_chunks(
     user_id: UUID | None = None,
 ) -> list[dict]:
     """
-    Hybrid search: vector (0.7) + FTS (0.3) → merged → Top-K.
+    Hybrid search: query rewrite → vector (0.7) + FTS (0.3) → merged → Top-K.
 
     - global_search=False (default): restrict to chunks in `notebook_id`
     - global_search=True: search across ALL notebooks owned by `user_id`
     """
     from app.providers.embedding import embed_query
 
-    query_vec = await embed_query(query)
+    rewritten_query = await _rewrite_query(query)
+    query_vec = await embed_query(rewritten_query)
 
-    # Run vector and FTS searches
+    # Run vector and FTS searches (use rewritten query for better recall)
     vector_results = await _vector_search(query_vec, notebook_id, db, top_k, global_search, user_id)
-    fts_results = await _fts_search(query, notebook_id, db, top_k, global_search, user_id)
+    fts_results = await _fts_search(rewritten_query, notebook_id, db, top_k, global_search, user_id)
 
     if fts_results:
         # Hybrid merge

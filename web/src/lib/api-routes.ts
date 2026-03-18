@@ -185,6 +185,12 @@ export const SKILLS = {
 export const MEMORY = {
   /** GET / PATCH - 记忆文档 */
   DOC: "/memory/doc",
+  /** GET - 结构化记忆列表（按类型分组） */
+  LIST: "/memory",
+  /** PUT - 更新单条记忆 */
+  update: (id: string) => `/memory/${id}`,
+  /** DELETE - 删除单条记忆 */
+  delete: (id: string) => `/memory/${id}`,
 } as const;
 
 // ── 知识图谱 ──────────────────────────────────────────────────────────────────

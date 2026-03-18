@@ -11,6 +11,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { m } from "framer-motion";
 import {
+  Brain,
   Copy,
   FileText,
   RefreshCw,
@@ -101,6 +102,39 @@ function MarkdownContent({ content, citations }: { content: string; citations?: 
     return <p key={i} className="mb-1">{processChildren(parseBold(line), citations)}</p>;
   });
   return <div className="space-y-0.5 text-sm leading-relaxed">{rendered}</div>;
+}
+
+// ── ReasoningBlock ────────────────────────────────────────────────────────────
+
+function ReasoningBlock({ content, streaming }: { content: string; streaming?: boolean }) {
+  const t = useTranslations("chat");
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="mb-2">
+      <button
+        type="button"
+        onClick={() => setExpanded((o) => !o)}
+        className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-muted-foreground/80"
+      >
+        <Brain size={12} className={streaming ? "animate-pulse text-primary" : ""} />
+        <span>{t("reasoning")}</span>
+        <svg
+          width="10"
+          height="10"
+          viewBox="0 0 10 10"
+          className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+        >
+          <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.2" fill="none" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="mt-1 rounded-lg bg-muted/30 px-3 py-2 text-xs leading-relaxed text-muted-foreground/70">
+          <pre className="whitespace-pre-wrap font-sans">{content}</pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── ChatCitationFooter ────────────────────────────────────────────────────────
@@ -200,6 +234,13 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             onCopy={(text) => onCopy(text)}
           />
         </div>
+      )}
+
+      {msg.role === "assistant" && msg.reasoning && (
+        <ReasoningBlock
+          content={msg.reasoning}
+          streaming={isLastAssistant && streaming}
+        />
       )}
 
       {msg.role === "assistant" && !msg.deepResearch && stepsToShow?.length ? (
@@ -303,6 +344,14 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
 
           {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
             <ChatCitationFooter citations={msg.citations} />
+          )}
+
+          {msg.role === "assistant" && msg.speed && !(isLastAssistant && streaming) && (
+            <div className="mt-1 flex items-center gap-2.5 text-[10px] tabular-nums text-muted-foreground/35">
+              <span>TTFT {msg.speed.ttft_ms}ms</span>
+              <span>{msg.speed.tps} tok/s</span>
+              <span>{msg.speed.tokens} tokens</span>
+            </div>
           )}
 
           {msg.role === "assistant" && msg.content !== "" && !(isLastAssistant && streaming) && (
