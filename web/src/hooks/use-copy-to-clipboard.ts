@@ -5,7 +5,7 @@
  * @description 封装 navigator.clipboard API，提供复制操作和「已复制」状态反馈。
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 /**
  * 剪贴板复制 Hook
@@ -15,11 +15,11 @@ import { useState } from "react";
 export function useCopyToClipboard() {
   const [copied, setCopied] = useState(false);
 
-  const copy = async (value: string) => {
+  const copy = useCallback(async (value: string) => {
     await navigator.clipboard.writeText(value);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
-  };
+  }, []);
 
   return { copied, copy };
 }
