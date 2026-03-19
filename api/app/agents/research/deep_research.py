@@ -203,8 +203,10 @@ def _extract_finding(raw: str, max_chars: int = LEARNING_MAX_CHARS) -> tuple[str
         if len(val) >= 10:
             return val[:max_chars], ""
 
-    # 5. Fallback — return raw text as-is
-    fallback = raw.strip()[:max_chars]
+    # 5. Fallback — strip JSON scaffolding and return remaining text
+    cleaned = raw.strip().lstrip("{[").removeprefix('"finding"').lstrip('": \t\n')
+    cleaned = cleaned.rstrip('}]" \t\n')
+    fallback = (cleaned if len(cleaned) >= 5 else raw.strip())[:max_chars]
     if fallback:
         return fallback, ""
 
