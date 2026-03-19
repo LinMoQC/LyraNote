@@ -154,11 +154,13 @@ async function subscribeTo(
 
   const reportTokens = { value: get().reportTokens };
   let eventIdx = fromIndex;
+  let sawDoneEvent = false;
 
   try {
     await subscribeDeepResearch(
       taskId,
       (event) => {
+        if (event.type === "done") sawDoneEvent = true;
         eventIdx++;
         const current = get();
         if (!current.progress) return;
@@ -181,15 +183,13 @@ async function subscribeTo(
       return;
     }
 
-    const current = get();
-    if (current.progress && current.progress.status !== "done") {
-      set({
-        progress: { ...current.progress, status: "done" },
-        isActive: false,
-      });
-    } else {
+    // Non-abort exits can happen on transient SSE/network interruptions.
+    // Only treat as completed when we actually received a "done" event.
+    if (sawDoneEvent) {
       set({ isActive: false });
+      return;
     }
+    set({ isActive: false });
   }
 }
 

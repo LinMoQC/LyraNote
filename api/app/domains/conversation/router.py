@@ -80,7 +80,7 @@ async def save_message(
 ):
     svc = ConversationService(db, current_user.id)
     return success(await svc.save_message(
-        conversation_id, body.role, body.content, body.citations,
+        conversation_id, body.role, body.content, body.citations, body.reasoning,
     ))
 
 

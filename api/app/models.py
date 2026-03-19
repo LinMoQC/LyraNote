@@ -209,6 +209,8 @@ class Message(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(50))   # user | assistant
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # reasoning trace emitted by thinking models
+    reasoning: Mapped[str | None] = mapped_column(Text)
     # [{source_id, chunk_id, excerpt, source_title}]
     citations: Mapped[list | None] = mapped_column(JSONB)
     # [{type, content, tool, input}] — thought / tool_call / tool_result steps

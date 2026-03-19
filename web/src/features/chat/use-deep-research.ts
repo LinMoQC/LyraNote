@@ -5,18 +5,22 @@ import { useTranslations } from "next-intl";
 import { useDeepResearchStore } from "@/store/use-deep-research-store";
 import { submitMessageFeedback } from "@/services/feedback-service";
 import { saveNote } from "@/services/note-service";
+import { getMessages } from "@/services/conversation-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { DrProgress } from "@/features/chat/deep-research-progress";
 import type { useStreamLifecycle } from "@/features/chat/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import type { LocalMessage } from "./chat-types";
+import { MESSAGES_PAGE_SIZE } from "./chat-types";
+import { mapRecord, sortMessagesByTime } from "./chat-helpers";
 import type { Dispatch, SetStateAction } from "react";
 
 export const DR_MESSAGES_KEY = "lyranote-dr-messages";
 
 interface UseDeepResearchOpts {
   globalNotebookId: string | undefined;
+  activeConvId: string | null;
   drMode: "quick" | "deep";
   streaming: boolean;
   streamLifecycle: ReturnType<typeof useStreamLifecycle>;
@@ -31,6 +35,7 @@ const getDrState = () => useDeepResearchStore.getState();
 
 export function useDeepResearch({
   globalNotebookId,
+  activeConvId,
   drMode,
   streaming,
   streamLifecycle,
@@ -62,16 +67,15 @@ export function useDeepResearch({
       const finalProgress = drStore.progress;
       const convId = drStore.conversationId;
 
-      // If no report content, SSE was interrupted (e.g. page refresh or
-      // a reconnect cycle) — don't touch streaming state since it may
-      // belong to a normal chat that's currently in progress.
-      if (!finalTokens || !finalProgress) {
+      setStreaming(false);
+      streamLifecycle.finish();
+
+      // Incomplete transitions (e.g. reconnect/network interruption) should
+      // stop UI streaming but keep task state for reconnect.
+      if (!finalProgress || finalProgress.status !== "done" || !finalTokens) {
         streamAbortRef.current = null;
         return;
       }
-
-      streamLifecycle.finish();
-      setStreaming(false);
 
       lastReportRef.current = {
         title: finalProgress.deliverable?.title ?? t("reportLabel"),
@@ -100,11 +104,44 @@ export function useDeepResearch({
         queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
       }
 
-      getDrState().clear();
-      streamAbortRef.current = null;
+      const finalize = () => {
+        getDrState().clear();
+        streamAbortRef.current = null;
+      };
+
+      // If the user is currently on the same conversation, refresh messages
+      // immediately so the server-persisted deep-research assistant reply appears.
+      if (convId && activeConvId === convId) {
+        void getMessages(convId, { offset: 0, limit: MESSAGES_PAGE_SIZE })
+          .then((rows) => {
+            setMessages(sortMessagesByTime(rows.map(mapRecord)));
+          })
+          .catch(() => {
+            setMessages((prev) => {
+              const exists = prev.some(
+                (m) => m.role === "assistant" && m.content === finalTokens
+              );
+              if (exists) return prev;
+              return [
+                ...prev,
+                {
+                  id: `local-dr-${Date.now()}`,
+                  role: "assistant",
+                  content: finalTokens,
+                  timestamp: new Date(),
+                  deepResearch: finalProgress,
+                },
+              ];
+            });
+          })
+          .finally(finalize);
+        return;
+      }
+
+      finalize();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drStore.isActive]);
+  }, [drStore.isActive, activeConvId]);
 
   const handleDeepResearch = useCallback(async (text: string) => {
     if (!text || streaming) return;

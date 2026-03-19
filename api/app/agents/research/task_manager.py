@@ -46,16 +46,20 @@ class TaskBuffer:
     async def subscribe(self, from_index: int = 0) -> AsyncGenerator[dict, None]:
         idx = from_index
         while True:
+            next_event: dict | None = None
             async with self._cond:
                 while idx >= len(self.events) and not self.done:
                     await self._cond.wait()
 
-                while idx < len(self.events):
-                    yield self.events[idx]
+                if idx < len(self.events):
+                    next_event = self.events[idx]
                     idx += 1
-
-                if self.done and idx >= len(self.events):
+                elif self.done:
                     return
+
+            # Yield outside lock so slow subscribers don't block producers.
+            if next_event is not None:
+                yield next_event
 
 
 # Module-level registry of active task buffers

@@ -17,7 +17,7 @@ from sqlalchemy import select
 from app.dependencies import CurrentUser, DbDep
 from app.domains.ai.schemas import DeepResearchRequest
 from app.config import settings
-from app.models import ResearchTask, Conversation, Message
+from app.models import ResearchTask, Conversation, Message, Notebook
 from app.schemas.response import success
 from app.agents.research.task_manager import get_buffer, run_research_task
 
@@ -33,11 +33,26 @@ async def create_deep_research(
 ):
     """Create a background deep-research task. Returns immediately."""
     task_id = _uuid.uuid4()
-    nb_id = _uuid.UUID(body.notebook_id) if body.notebook_id else None
+    if not body.notebook_id:
+        raise HTTPException(400, "notebook_id is required")
+    try:
+        nb_id = _uuid.UUID(body.notebook_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid notebook_id")
+
+    nb_result = await db.execute(
+        select(Notebook).where(
+            Notebook.id == nb_id,
+            Notebook.user_id == current_user.id,
+        )
+    )
+    notebook = nb_result.scalar_one_or_none()
+    if notebook is None:
+        raise HTTPException(404, "Notebook not found")
 
     # Create conversation + user message immediately so the sidebar shows it
     conv = Conversation(
-        notebook_id=nb_id,
+        notebook_id=notebook.id,
         user_id=current_user.id,
         title=body.query[:60],
     )
@@ -55,7 +70,7 @@ async def create_deep_research(
     task = ResearchTask(
         id=task_id,
         user_id=current_user.id,
-        notebook_id=body.notebook_id,
+        notebook_id=str(notebook.id),
         conversation_id=conv.id,
         query=body.query,
         mode=body.mode,
@@ -75,7 +90,7 @@ async def create_deep_research(
         run_research_task(
             task_id=str(task_id),
             query=body.query,
-            notebook_id=body.notebook_id,
+            notebook_id=str(notebook.id),
             conversation_id=str(conv.id),
             user_id=str(current_user.id),
             mode=body.mode,

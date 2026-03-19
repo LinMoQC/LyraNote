@@ -62,6 +62,7 @@ export function mapRecord(m: MessageRecord): LocalMessage {
     id: m.id,
     role: m.role,
     content: m.content,
+    reasoning: m.reasoning ?? undefined,
     timestamp: new Date(m.created_at),
     citations: (m.citations as CitationData[] | null) ?? undefined,
     agentSteps: (m.agent_steps as unknown[] | null) as LocalMessage["agentSteps"],

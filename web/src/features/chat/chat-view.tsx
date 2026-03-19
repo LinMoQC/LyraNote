@@ -10,24 +10,16 @@ import { useAuth } from "@/features/auth/auth-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, m } from "framer-motion";
-import {
-  ChevronDown,
-  FlaskConical,
-  Lightbulb,
-  MessageSquare,
-  Paperclip,
-  Plus,
-  X,
-} from "lucide-react";
+import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatInputHandle } from "@/components/chat-input";
 
-import { ChatInput } from "@/components/chat-input";
+import { ChatInput, ChatToolbar, type ChatInputHandle } from "@/components/chat-input";
 import { AttachmentPreviewBar } from "@/components/chat-input/attachment-preview-bar";
 import { useFileAttachments } from "@/hooks/use-file-attachments";
 import { http } from "@/lib/http-client";
 import { cn } from "@/lib/utils";
+import { CHAT_TOOL_DEFS } from "@/lib/chat-tools";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getSuggestions } from "@/services/ai-service";
 import { getConfig } from "@/services/config-service";
@@ -41,12 +33,13 @@ import {
   getMessages,
   type ConversationRecord,
 } from "@/services/conversation-service";
-import { getGlobalNotebook } from "@/services/notebook-service";
+import { getGlobalNotebook, getNotebooks } from "@/services/notebook-service";
 import { clearConversationMessages, loadActiveConversation, loadConversationMessages, saveActiveConversation, saveConversationMessages } from "@/features/chat/chat-persistence";
 import { useStreamLifecycle } from "@/features/chat/use-stream-lifecycle";
 import { getErrorMessage } from "@/lib/request-error";
 import { notifyError } from "@/lib/notify";
 import { ChatInputContainer, ChatMessageList } from "@/features/chat/chat-layout";
+import type { Notebook } from "@/types";
 
 import { ChatAlerts } from "./chat-alerts";
 import { ChatEmptyState } from "./chat-empty-state";
@@ -59,194 +52,6 @@ import { useDeepResearch, DR_MESSAGES_KEY } from "./use-deep-research";
 import { useChatStream } from "./use-chat-stream";
 import { useDeepResearchStore } from "@/store/use-deep-research-store";
 
-// ── ChatToolbar (ChatGPT-style "+" menu + active feature pills) ──────────────
-
-function ChatToolbar({
-  onFileClick,
-  isDeepResearch,
-  onToggleDeepResearch,
-  drMode,
-  onDrModeChange,
-  isThinkingModel,
-  thinkingEnabled,
-  onToggleThinking,
-}: {
-  onFileClick: () => void;
-  isDeepResearch: boolean;
-  onToggleDeepResearch: () => void;
-  drMode: "quick" | "deep";
-  onDrModeChange: (mode: "quick" | "deep") => void;
-  isThinkingModel: boolean;
-  thinkingEnabled: boolean;
-  onToggleThinking: () => void;
-}) {
-  const t = useTranslations("chat");
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [drDropdownOpen, setDrDropdownOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
-  const drRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handle = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [menuOpen]);
-
-  useEffect(() => {
-    if (!drDropdownOpen) return;
-    const handle = (e: MouseEvent) => {
-      if (drRef.current && !drRef.current.contains(e.target as Node)) setDrDropdownOpen(false);
-    };
-    document.addEventListener("mousedown", handle);
-    return () => document.removeEventListener("mousedown", handle);
-  }, [drDropdownOpen]);
-
-  return (
-    <div className="flex items-center gap-2">
-      {/* "+" trigger */}
-      <div ref={menuRef} className="relative">
-        <button
-          type="button"
-          onClick={() => setMenuOpen((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-border/40 text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground"
-        >
-          <Plus size={16} strokeWidth={1.5} />
-        </button>
-
-        <AnimatePresence>
-          {menuOpen && (
-            <m.div
-              initial={{ opacity: 0, y: 6, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.95 }}
-              transition={{ duration: 0.12 }}
-              className="absolute bottom-full left-0 z-50 mb-2 w-56 overflow-hidden rounded-2xl border border-border/40 bg-card shadow-xl"
-            >
-              <button
-                type="button"
-                onClick={() => { onFileClick(); setMenuOpen(false); }}
-                className="flex w-full items-center gap-3.5 px-4 py-3 text-left text-sm text-foreground/80 transition-colors hover:bg-accent/50"
-              >
-                <Paperclip size={16} className="text-muted-foreground/60" />
-                {t("addFile")}
-              </button>
-
-              <div className="mx-3 border-t border-border/20" />
-
-              <button
-                type="button"
-                onClick={() => { onToggleDeepResearch(); setMenuOpen(false); }}
-                className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-foreground/80 transition-colors hover:bg-accent/50"
-              >
-                <span className="flex items-center gap-3.5">
-                  <FlaskConical size={16} className="text-muted-foreground/60" />
-                  {t("deepResearchLabel")}
-                </span>
-                {isDeepResearch && <span className="text-primary">✓</span>}
-              </button>
-
-              {isThinkingModel && (
-                <>
-                  <div className="mx-3 border-t border-border/20" />
-                  <button
-                    type="button"
-                    onClick={() => { onToggleThinking(); setMenuOpen(false); }}
-                    className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-foreground/80 transition-colors hover:bg-accent/50"
-                  >
-                    <span className="flex items-center gap-3.5">
-                      <Lightbulb size={16} className="text-muted-foreground/60" />
-                      {t("thinkingModeLabel")}
-                    </span>
-                    {thinkingEnabled && <span className="text-primary">✓</span>}
-                  </button>
-                </>
-              )}
-            </m.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Deep Research pill: 默认显示 icon，hover 时同位置变为取消 X */}
-      {isDeepResearch && (
-        <div ref={drRef} className="group relative flex items-center rounded-full text-foreground/70 transition-colors hover:bg-sky-400/15 hover:text-sky-400">
-          <button
-            type="button"
-            onClick={onToggleDeepResearch}
-            className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full [&:hover_.cancel-hover-bg]:bg-sky-400/20"
-            title={t("switchToNormal")}
-          >
-            <span className="cancel-hover-bg pointer-events-none absolute inset-0 m-auto h-5 w-5 rounded-full transition-colors" aria-hidden />
-            <FlaskConical size={14} className="text-foreground/50 transition-opacity group-hover:pointer-events-none group-hover:opacity-0" />
-            <span className="absolute inset-0 flex items-center justify-center">
-              <X size={14} className="text-foreground/50 opacity-0 transition-opacity group-hover:text-sky-400/80 group-hover:opacity-100" />
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setDrDropdownOpen((v) => !v)}
-            className="flex flex-1 items-center gap-1.5 py-1.5 pl-0.5 pr-2.5 text-[13px] transition-colors min-w-0"
-          >
-            <span className="truncate">{t("deepResearchLabel")}</span>
-            <ChevronDown size={14} className={cn("flex-shrink-0 text-foreground/50 transition-transform group-hover:text-sky-400", drDropdownOpen && "rotate-180")} />
-          </button>
-
-          <AnimatePresence>
-            {drDropdownOpen && (
-              <m.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={{ duration: 0.12 }}
-                className="absolute bottom-full left-0 z-50 mb-1.5 w-48 overflow-hidden rounded-xl border border-border/40 bg-card py-2 shadow-xl"
-              >
-                <p className="px-3.5 py-1.5 text-xs font-medium text-muted-foreground/60">{t("drVersion")}</p>
-                <button
-                  type="button"
-                  onClick={() => { onDrModeChange("quick"); setDrDropdownOpen(false); }}
-                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm text-foreground/90 transition-colors hover:bg-accent/50"
-                >
-                  {t("quickMode")}
-                  {drMode === "quick" && <span className="text-primary">✓</span>}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { onDrModeChange("deep"); setDrDropdownOpen(false); }}
-                  className="flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm text-foreground/90 transition-colors hover:bg-accent/50"
-                >
-                  {t("deepMode")}
-                  {drMode === "deep" && <span className="text-primary">✓</span>}
-                </button>
-              </m.div>
-            )}
-          </AnimatePresence>
-        </div>
-      )}
-
-      {/* Thinking Mode pill — 与深度研究一致：外层 group，默认 icon、hover 时变 X；整颗可点关闭 */}
-      {isThinkingModel && thinkingEnabled && (
-        <button
-          type="button"
-          onClick={onToggleThinking}
-          className="group flex items-center rounded-full text-foreground/70 transition-colors hover:bg-sky-400/15 hover:text-sky-400"
-          title={t("thinkingOff")}
-        >
-          <span className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center [&_.cancel-hover-bg]:transition-colors group-hover:[&_.cancel-hover-bg]:bg-sky-400/20">
-            <span className="cancel-hover-bg pointer-events-none absolute inset-0 m-auto h-5 w-5 rounded-full" aria-hidden />
-            <Lightbulb size={14} className="text-foreground/50 transition-opacity group-hover:pointer-events-none group-hover:opacity-0" />
-            <span className="absolute inset-0 flex items-center justify-center">
-              <X size={14} className="text-foreground/50 opacity-0 transition-opacity group-hover:text-sky-400/80 group-hover:opacity-100" />
-            </span>
-          </span>
-          <span className="py-1.5 pl-0.5 pr-2.5 text-[13px]">{t("thinkingModeLabel")}</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function ChatView() {
@@ -255,9 +60,14 @@ export function ChatView() {
   const { success: toastOk } = useToast();
   const t = useTranslations("chat");
   const tc = useTranslations("common");
+  const th = useTranslations("home");
+  const tn = useTranslations("notebooks");
   const setMobileHeaderRight = useUiStore((s) => s.setMobileHeaderRight);
 
   const [convSheetOpen, setConvSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
+  const [selectedNotebook, setSelectedNotebook] = useState<Notebook | null>(null);
 
   const avatarUrl = user?.avatar_url ?? null;
   const initials = (user?.name?.[0] ?? user?.username?.[0] ?? "U").toUpperCase();
@@ -331,6 +141,18 @@ export function ChatView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileAttachments = useFileAttachments();
 
+  const { data: notebooks = [] } = useQuery({
+    queryKey: ["notebooks"],
+    queryFn: getNotebooks,
+    enabled: menuOpen,
+    staleTime: 1000 * 60 * 5,
+  });
+  const toolItems = CHAT_TOOL_DEFS.map((tool) => ({
+    id: tool.hint,
+    label: th(tool.key),
+    icon: tool.icon,
+  }));
+
   // ── Global notebook ─────────────────────────────────────────────────────
   const { data: globalNotebook } = useQuery({
     queryKey: ["global-notebook"],
@@ -349,6 +171,7 @@ export function ChatView() {
   // ── Deep Research hook ──────────────────────────────────────────────────
   const dr = useDeepResearch({
     globalNotebookId,
+    activeConvId,
     drMode,
     streaming,
     streamLifecycle,
@@ -654,6 +477,29 @@ export function ChatView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.handleSend]);
 
+  const handleSubmit = useCallback(() => {
+    if (fileAttachments.isUploading) return;
+    const ids = fileAttachments.getServerIds();
+    if (ids.length > 0) chat.attachmentIdsRef.current = ids;
+    const hasAttachments = fileAttachments.attachments.length > 0;
+    if (hasAttachments) {
+      chat.attachmentPreviewsRef.current = fileAttachments.attachments.map((a) => ({
+        name: a.file.name,
+        type: a.file.type,
+        previewUrl: a.previewUrl,
+      }));
+      chat.attachmentMetaRef.current = fileAttachments.attachments
+        .filter((a) => a.serverId)
+        .map((a) => ({ name: a.file.name, type: a.file.type, file_id: a.serverId! }));
+    }
+    if (selectedToolId) chat.toolHintRef.current = selectedToolId;
+    const finalQuery = selectedNotebook
+      ? `[请在笔记本 ${selectedNotebook.title} 中搜索] ${input}`
+      : undefined;
+    chat.handleSend(finalQuery);
+    fileAttachments.clearAll(hasAttachments);
+  }, [fileAttachments, chat, selectedToolId, selectedNotebook, input]);
+
   // ── New chat ────────────────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveConvId(null);
@@ -671,6 +517,11 @@ export function ChatView() {
 
   // ── Auto-trigger from HomeQA (pending query was read from sessionStorage above) ──
   const autoTriggered = useRef(false);
+  const pendingAutoSendRef = useRef<{
+    query: string;
+    deepResearch: boolean;
+    drMode: "quick" | "deep";
+  } | null>(null);
 
   useEffect(() => {
     const payload = pendingChatPayload.current;
@@ -682,6 +533,9 @@ export function ChatView() {
     const toolParam = payload.tool;
     const attachmentsParam = payload.attachments;
     const notebookParam = payload.notebook;
+    const deepResearchParam = payload.deep_research;
+    const drModeParam = payload.dr_mode;
+    const thinkingParam = payload.thinking_enabled;
 
     // Force a clean new conversation
     setActiveConvId(null);
@@ -693,7 +547,10 @@ export function ChatView() {
     streamLifecycle.finish();
     try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
 
-    if (toolParam) chat.toolHintRef.current = toolParam;
+    if (toolParam) {
+      chat.toolHintRef.current = toolParam;
+      setSelectedToolId(toolParam);
+    }
     if (attachmentsParam) {
       const ids = attachmentsParam.split(",").filter(Boolean);
       chat.attachmentIdsRef.current = ids;
@@ -715,13 +572,53 @@ export function ChatView() {
         }
       } catch { /* ignore */ }
     }
+    const deepResearchEnabled = deepResearchParam === "1";
+    const resolvedDrMode = drModeParam === "deep" ? "deep" : "quick";
+    const resolvedThinking = thinkingParam ? thinkingParam === "1" : true;
+
+    setIsDeepResearch(deepResearchEnabled);
+    setDrMode(resolvedDrMode);
+    if (thinkingParam !== undefined) {
+      setThinkingEnabled(resolvedThinking);
+    }
     const finalQuery = notebookParam
       ? `[请在笔记本 ${notebookParam} 中搜索] ${q}`
       : q;
 
     setInput(finalQuery);
-    chat.handleSend(finalQuery);
-  }, [globalNotebookId, chat, dr, streamLifecycle, setInput, setActiveConvId, setMessages, setHasMoreMessages, setMessageOffset]);
+    pendingAutoSendRef.current = {
+      query: finalQuery,
+      deepResearch: deepResearchEnabled,
+      drMode: resolvedDrMode,
+    };
+  }, [
+    globalNotebookId,
+    chat,
+    dr,
+    streamLifecycle,
+    setInput,
+    setActiveConvId,
+    setMessages,
+    setHasMoreMessages,
+    setMessageOffset,
+    setIsDeepResearch,
+    setDrMode,
+    setThinkingEnabled,
+    setSelectedToolId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingAutoSendRef.current;
+    if (!pending || !globalNotebookId) return;
+    if (pending.deepResearch !== isDeepResearch) return;
+    if (pending.deepResearch && pending.drMode !== drMode) return;
+    pendingAutoSendRef.current = null;
+    if (pending.deepResearch) {
+      dr.handleDeepResearch(pending.query);
+    } else {
+      chat.handleSend(pending.query);
+    }
+  }, [dr, chat, globalNotebookId, isDeepResearch, drMode]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
@@ -748,7 +645,7 @@ export function ChatView() {
           onResetError={streamLifecycle.resetError}
         />
 
-        {messages.length > 0 || pendingChatPayload.current ? (
+        {messages.length > 0 || pendingChatPayload.current || pendingAutoSendRef.current ? (
           <ChatMessageList>
             {hasMoreMessages && activeConvId && (
               <div className="flex justify-center">
@@ -819,24 +716,7 @@ export function ChatView() {
             ref={chatInputRef}
             value={input}
             onChange={setInput}
-            onSubmit={() => {
-              if (fileAttachments.isUploading) return;
-              const ids = fileAttachments.getServerIds();
-              if (ids.length > 0) chat.attachmentIdsRef.current = ids;
-              const hasAttachments = fileAttachments.attachments.length > 0;
-              if (hasAttachments) {
-                chat.attachmentPreviewsRef.current = fileAttachments.attachments.map((a) => ({
-                  name: a.file.name,
-                  type: a.file.type,
-                  previewUrl: a.previewUrl,
-                }));
-                chat.attachmentMetaRef.current = fileAttachments.attachments
-                  .filter((a) => a.serverId)
-                  .map((a) => ({ name: a.file.name, type: a.file.type, file_id: a.serverId! }));
-              }
-              chat.handleSend();
-              fileAttachments.clearAll(hasAttachments);
-            }}
+            onSubmit={handleSubmit}
             placeholder={isDeepResearch ? t("deepResearchPlaceholder") : t("placeholder")}
             disabled={!globalNotebookId || fileAttachments.isUploading}
             streaming={streaming}
@@ -883,6 +763,17 @@ export function ChatView() {
                 isThinkingModel={isThinkingModel}
                 thinkingEnabled={thinkingEnabled}
                 onToggleThinking={() => setThinkingEnabled((v) => !v)}
+                onMenuOpenChange={setMenuOpen}
+                tools={toolItems}
+                selectedToolId={selectedToolId}
+                onToolSelect={setSelectedToolId}
+                toolsLabel={th("tools")}
+                notebooks={notebooks}
+                selectedNotebook={selectedNotebook}
+                onNotebookSelect={setSelectedNotebook}
+                notebookLabel={th("notebook")}
+                notebookEmptyLabel={tn("empty")}
+                clearNotebookLabel="清除笔记本限制"
               />
               </>
             }

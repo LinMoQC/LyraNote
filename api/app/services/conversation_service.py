@@ -85,6 +85,7 @@ class ConversationService:
         role: str,
         content: str,
         citations: list[dict] | None = None,
+        reasoning: str | None = None,
     ) -> Message:
         await self._get_owned(conversation_id)
         msg = Message(
@@ -92,6 +93,7 @@ class ConversationService:
             role=role,
             content=content,
             citations=citations,
+            reasoning=reasoning,
         )
         self.db.add(msg)
         await self.db.flush()
@@ -173,6 +175,7 @@ class ConversationService:
         scene_instruction = get_scene_instruction(scene)
 
         full_content: list[str] = []
+        full_reasoning: list[str] = []
         citations: list[dict] = []
         agent_steps: list[dict] = []
 
@@ -208,17 +211,25 @@ class ConversationService:
                 })
                 yield f"data: {json.dumps(event)}\n\n"
 
+            elif event_type == "reasoning":
+                chunk = event.get("content")
+                if chunk:
+                    full_reasoning.append(chunk)
+                yield f"data: {json.dumps(event)}\n\n"
+
             elif event_type == "error":
                 full_content.append(event.get("content", ""))
                 yield f"data: {json.dumps(event)}\n\n"
 
             elif event_type == "done":
                 content_text = "".join(full_content)
+                reasoning_text = "".join(full_reasoning).strip() or None
                 if content_text:
                     assistant_msg = Message(
                         conversation_id=conversation_id,
                         role="assistant",
                         content=content_text,
+                        reasoning=reasoning_text,
                         citations=citations,
                         agent_steps=agent_steps or None,
                     )
