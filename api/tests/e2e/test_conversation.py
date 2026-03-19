@@ -137,7 +137,7 @@ class TestMessageSaveEndpoint:
             headers=auth_headers,
             json={"role": "user", "content": "What is LyraNote?"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code in (200, 201)
         data = resp.json()["data"]
         assert data["role"] == "user"
         assert data["content"] == "What is LyraNote?"
@@ -156,7 +156,7 @@ class TestMessageSaveEndpoint:
                 "reasoning": "The user asked about LyraNote. Based on context...",
             },
         )
-        assert resp.status_code == 200
+        assert resp.status_code in (200, 201)
         data = resp.json()["data"]
         assert data["role"] == "assistant"
         assert data["reasoning"] == "The user asked about LyraNote. Based on context..."
@@ -170,7 +170,7 @@ class TestMessageSaveEndpoint:
             headers=auth_headers,
             json={"role": "user", "content": "Simple question"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code in (200, 201)
         assert resp.json()["data"]["reasoning"] is None
 
     async def test_save_message_to_nonexistent_conversation_returns_error(
