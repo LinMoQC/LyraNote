@@ -157,17 +157,22 @@ def _extract_finding(raw: str, max_chars: int = LEARNING_MAX_CHARS) -> tuple[str
       2. json.loads on the first {...} found via regex
       3. Strict regex (handles properly escaped quotes)
       4. Greedy regex (handles unescaped internal quotes by backtracking)
-      5. Fallback to raw text (strip JSON delimiters)
+      5. Fallback to raw text
     """
     if not raw or not raw.strip():
-        return "（无内容）", ""
+        return "", ""
 
     # 1. Full-string JSON parse
     d = _try_json_dict(raw)
     if d:
         finding = str(d.get("finding", "")).strip()
+        counterpoint = str(d.get("counterpoint", "")).strip()
         if finding:
-            return finding[:max_chars], str(d.get("counterpoint", "")).strip()
+            return finding, counterpoint
+        # JSON parsed but no "finding" key — fall back to raw
+        if counterpoint:
+            return raw.strip()[:max_chars], counterpoint
+        return raw.strip()[:max_chars], ""
 
     # 2. Regex-extracted {...} block
     m = _JSON_OBJ_RE.search(raw)
@@ -175,8 +180,12 @@ def _extract_finding(raw: str, max_chars: int = LEARNING_MAX_CHARS) -> tuple[str
         d2 = _try_json_dict(m.group(0))
         if d2:
             finding = str(d2.get("finding", "")).strip()
+            counterpoint = str(d2.get("counterpoint", "")).strip()
             if finding:
-                return finding[:max_chars], str(d2.get("counterpoint", "")).strip()
+                return finding, counterpoint
+            if counterpoint:
+                return raw.strip()[:max_chars], counterpoint
+            return raw.strip()[:max_chars], ""
 
     # 3. Strict regex (handles properly escaped quotes)
     fm = _FINDING_RE.search(raw)
@@ -194,16 +203,13 @@ def _extract_finding(raw: str, max_chars: int = LEARNING_MAX_CHARS) -> tuple[str
         if len(val) >= 10:
             return val[:max_chars], ""
 
-    # 5. Fallback — strip JSON delimiters and return whatever text remains
-    cleaned = raw.strip().lstrip('{[" \t\n').removeprefix("finding").lstrip(':" \t\n')
-    cleaned = cleaned.rstrip('}]" \t\n')
-    if len(cleaned) >= 5:
-        return cleaned[:max_chars], ""
-
-    # Absolute fallback — return sanitised raw text
-    _extract_log.warning("All extraction methods failed, raw=%r", raw[:300])
+    # 5. Fallback — return raw text as-is
     fallback = raw.strip()[:max_chars]
-    return fallback if fallback else "（提取失败）", ""
+    if fallback:
+        return fallback, ""
+
+    _extract_log.warning("All extraction methods failed, raw=%r", raw[:300])
+    return "", ""
 
 
 def grade_evidence(citations: list[dict]) -> str:
