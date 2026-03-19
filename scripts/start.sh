@@ -393,10 +393,13 @@ interactive_menu() {
     echo ""
     echo -e "  ${BOLD}${GREEN}1${NC}  🐳  Docker 模式启动    ${DIM}（推荐，一键启动全部服务）${NC}"
     echo -e "  ${BOLD}${GREEN}2${NC}  💻  本地模式启动       ${DIM}（本地调试，数据层用 Docker）${NC}"
-    echo -e "  ${BOLD}${YELLOW}3${NC}  📊  查看服务状态"
-    echo -e "  ${BOLD}${YELLOW}4${NC}  📋  查看日志"
-    echo -e "  ${BOLD}${YELLOW}5${NC}  🔨  重新构建镜像"
-    echo -e "  ${BOLD}${RED}6${NC}  ⏹   停止服务"
+    echo -e "  ${BOLD}${GREEN}3${NC}  🚀  生产模式启动       ${DIM}（ghcr.io 云端镜像，服务器部署）${NC}"
+    echo -e "  ${BOLD}${CYAN}4${NC}  ⚙️   初始化配置向导     ${DIM}（生成 .env，首次部署必须）${NC}"
+    echo -e "  ${BOLD}${YELLOW}5${NC}  📊  查看服务状态"
+    echo -e "  ${BOLD}${YELLOW}6${NC}  📋  查看日志"
+    echo -e "  ${BOLD}${YELLOW}7${NC}  🔨  重新构建镜像"
+    echo -e "  ${BOLD}${YELLOW}8${NC}  🔄  一键更新           ${DIM}（git pull + 拉新镜像 + 重启）${NC}"
+    echo -e "  ${BOLD}${RED}9${NC}  ⏹   停止服务"
     echo -e "  ${BOLD}0${NC}  ✕   退出"
     echo ""
     read -rp "  请输入选项: " choice
@@ -405,10 +408,13 @@ interactive_menu() {
     case "$choice" in
       1) start_docker;  _pause ;;
       2) start_local ;;
-      3) show_status;   _pause ;;
-      4) show_logs ;;
-      5) build_images;  _pause ;;
-      6) stop_docker;   _pause ;;
+      3) bash "$LYRA_SCRIPTS/start.sh" prod;  _pause ;;
+      4) bash "$LYRA_SCRIPTS/start.sh" init;  _pause ;;
+      5) show_status;   _pause ;;
+      6) show_logs ;;
+      7) build_images;  _pause ;;
+      8) bash "$LYRA_SCRIPTS/start.sh" update; _pause ;;
+      9) stop_docker;   _pause ;;
       0) echo -e "  ${DIM}再见！${NC}"; echo ""; exit 0 ;;
       *) warn "无效选项，请重试"; sleep 1 ;;
     esac
@@ -430,6 +436,30 @@ case "${1:-}" in
   logs)     show_logs ;;
   status)   show_status ;;
   build)    build_images ;;
+  prod)
+    info "生产模式启动（ghcr.io 云端镜像）..."
+    cd "$ROOT_DIR"
+    if [ ! -f ".env" ]; then
+      warn ".env 不存在，请先运行 ./lyra init 进行初始化配置。"
+      exit 1
+    fi
+    docker compose -f docker-compose.prod.yml pull
+    docker compose -f docker-compose.prod.yml up -d
+    log "生产环境已启动"
+    ;;
+  init)
+    # 委托给 lyra 脚本的 cmd_init（需要 lyra 可执行）
+    "$ROOT_DIR/lyra" init
+    ;;
+  update)
+    info "更新到最新版本..."
+    cd "$ROOT_DIR"
+    git pull
+    docker compose -f docker-compose.prod.yml pull web api worker
+    docker compose -f docker-compose.prod.yml up -d
+    docker image prune -f
+    log "更新完成"
+    ;;
   *)
     echo ""
     echo -e "  用法: ${BOLD}$0 [命令]${NC}"
