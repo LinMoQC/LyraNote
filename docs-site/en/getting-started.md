@@ -22,37 +22,24 @@ cd LyraNote
 ### 2. Configure Environment Variables
 
 ```bash
-cp api/.env.example api/.env
-cp web/.env.example web/.env.local
+./lyra init
 ```
 
-Open `api/.env` and set the required values:
+The interactive wizard walks you through all required settings and auto-generates `api/.env` — no manual copying or editing needed.
 
-```bash
-# Required
-OPENAI_API_KEY=sk-...
-SECRET_KEY=your-random-secret-key
-
-# Optional — switch to a different LLM provider
-OPENAI_BASE_URL=https://api.deepseek.com   # or Ollama endpoint
-LLM_MODEL=gpt-4o-mini
-
-# Optional — enables Deep Research web search
-TAVILY_API_KEY=tvly-...
-
-# Debug mode: skips authentication for local development
-DEBUG=true
-```
-
-> **Tip:** Set `DEBUG=true` for local development to skip authentication entirely.
+> AI-related config (API keys, models, etc.) can also be set after first login via the Setup Wizard in the UI.
 
 ### 3. Start the Application
 
 Use the built-in `lyra` CLI to start all services:
 
 ```bash
-./lyra start
+./lyra docker   # Docker Compose mode (recommended)
+# or
+./lyra local    # Local process mode (hot reload)
 ```
+
+> Run `./lyra` with no arguments to open the interactive menu.
 
 This launches:
 
@@ -65,15 +52,7 @@ This launches:
 | Next.js Web | Frontend on port `3000` |
 | Celery Worker | Background task processor |
 
-### 4. Run Database Migrations
-
-On first start, apply the database schema:
-
-```bash
-docker compose exec api alembic upgrade head
-```
-
-### 5. Open LyraNote
+### 4. Open LyraNote
 
 Navigate to `http://localhost:3000` in your browser.
 
@@ -81,11 +60,15 @@ Navigate to `http://localhost:3000` in your browser.
 
 | Command | Description |
 |---|---|
-| `./lyra start` | Start all services |
-| `./lyra dev` | Start in development mode (hot reload) |
-| `./lyra stop` | Stop all services |
-| `./lyra logs` | Tail logs from all containers |
-| `./lyra status` | Check container health |
+| `lyra` or `./lyra` | Interactive menu |
+| `lyra init` | Config wizard — generates `.env` |
+| `lyra docker` | Start all services via Docker Compose |
+| `lyra local` | Local process mode (hot reload) |
+| `lyra stop` | Stop all services |
+| `lyra logs` | Tail container logs |
+| `lyra status` | Check service health |
+| `lyra prod` | Production mode (cloud images) |
+| `lyra update` | One-click update (git pull + restart) |
 
 ## Minimum Required Environment Variables
 

@@ -153,13 +153,13 @@
 Best for hot-reload debugging. The data layer (PostgreSQL + Redis) is managed by Docker; the application layer runs as local processes.
 
 ```bash
-cp api/.env.example api/.env
-# Edit api/.env: set JWT_SECRET at minimum
-
-./start.sh local
+git clone https://github.com/LinMoQC/LyraNote.git
+cd LyraNote
+./lyra init     # interactive setup wizard — generates api/.env
+./lyra local    # start local dev mode
 ```
 
-The script automatically: detects/starts database containers → creates a Python venv → installs dependencies → runs DB migrations → starts FastAPI, Celery Worker, and Next.js Dev Server in parallel.
+The CLI automatically: detects/starts database containers → creates a Python venv → installs dependencies → runs DB migrations → starts FastAPI, Celery Worker, and Next.js Dev Server in parallel.
 
 Press `Ctrl+C` to stop local processes; database containers are unaffected.
 
@@ -172,16 +172,8 @@ Runs everything — frontend, backend, worker, and all infrastructure — in con
 **1. Configure environment variables**
 
 ```bash
-cp api/.env.example api/.env
+./lyra init     # interactive wizard — generates api/.env with all required values
 ```
-
-Open `api/.env` and fill in the required variables:
-
-| Variable | Description | Required |
-|---|---|---|
-| `JWT_SECRET` | JWT signing key (`openssl rand -hex 32`) | ✅ |
-| `GOOGLE_CLIENT_ID/SECRET` | Google OAuth login | Optional |
-| `GITHUB_CLIENT_ID/SECRET` | GitHub OAuth login | Optional |
 
 > Infrastructure connection strings (`DATABASE_URL`, `REDIS_URL`, `STORAGE_S3_*`) are already injected by the compose file — no need to set them in `.env`.
 
@@ -190,7 +182,7 @@ Open `api/.env` and fill in the required variables:
 **2. Start (development)**
 
 ```bash
-./start.sh          # uses docker-compose.yml
+./lyra docker   # start all services via Docker Compose
 ```
 
 Once running:
@@ -199,41 +191,22 @@ Once running:
 - **API Docs**: `http://localhost:8000/docs`
 
 ```bash
-./start.sh logs     # tail live logs
-./start.sh stop     # stop all services
+./lyra logs     # tail live logs
+./lyra stop     # stop all services
 ```
 
 **3. Deploy to production server**
 
 Use `docker-compose.prod.yml` which adds Nginx, disables debug, and omits exposed ports for the database/cache services.
 
-Copy the env files:
-
 ```bash
-cp api/.env.example api/.env
-cp web/.env.local.example web/.env.local
+./lyra init     # select "production server" mode — generates root .env with domain + passwords
+./lyra prod     # pull cloud images and start production stack
 ```
 
-Open `docker-compose.prod.yml` and replace the three domain placeholders:
+> The `init` wizard automatically generates a random `JWT_SECRET`, `POSTGRES_PASSWORD`, and `MINIO_ROOT_PASSWORD`, and writes them into the root `.env` consumed by `docker-compose.prod.yml`.
 
-```yaml
-APP_BASE_URL: https://your-domain.com
-FRONTEND_URL: https://your-domain.com
-CORS_ORIGINS: https://your-domain.com
-```
-
-Also change the default passwords in the same file before first deploy:
-
-| Location | Variable | Action |
-|---|---|---|
-| `db.environment` | `POSTGRES_PASSWORD` | Change + update `DATABASE_URL` accordingly |
-| `minio.environment` | `MINIO_ROOT_PASSWORD` | Change + update `STORAGE_S3_SECRET_KEY` + `minio-init` |
-
-Then deploy:
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --build
-```
+Then open `https://your-domain.com` and complete the Setup Wizard.
 
 Open `https://your-domain.com` and complete the Setup Wizard.
 
@@ -246,14 +219,7 @@ Deploy the backend via Docker Compose on your server, and the frontend separatel
 **Backend (server)**
 
 ```bash
-cp api/.env.example api/.env
-cp web/.env.local.example web/.env.local
-# Fill in JWT_SECRET and optionally OAuth keys
-
-# Edit docker-compose.prod.yml:
-#   - Set your domain in APP_BASE_URL / FRONTEND_URL / CORS_ORIGINS
-#   - Change db/minio default passwords
-
+./lyra init     # generates root .env (choose "production server" mode)
 docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
 ```
 
@@ -293,14 +259,30 @@ In Docker Compose mode, infrastructure connection strings are injected by the co
 
 ---
 
-## ⌨️ Quick Start (Manual)
+## ⌨️ Quick Start
+
+**Option A — install globally once, then use `lyra` anywhere:**
+
+```bash
+npm install -g lyra-cli   # installs the lyra command globally
+# or: cd scripts/lyra-cli && npm link
+
+lyra init     # interactive wizard — generates .env
+lyra docker   # start all services (Docker Compose)
+lyra status   # check service health
+lyra logs     # tail live logs
+lyra stop     # stop everything
+```
+
+**Option B — no install, run directly from the repo root:**
 
 ```bash
 git clone https://github.com/LinMoQC/LyraNote.git
 cd LyraNote
-cp api/.env.example api/.env
-./start.sh
+./lyra          # interactive menu (uses Node.js, no npm install needed)
 ```
+
+> **Requires Node.js ≥ 18** and Docker. Run `node --version` to verify.
 
 ---
 
