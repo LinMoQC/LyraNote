@@ -321,21 +321,29 @@ stop_docker() {
   echo ""
   read -rp "  请选择 [1]: " choice
 
+  # 停止开发模式和生产模式的容器（哪个在跑停哪个）
+  _stop_all_compose() {
+    local cmd="$1"
+    docker compose $cmd 2>/dev/null || true
+    docker compose -f docker-compose.prod.yml $cmd 2>/dev/null || true
+  }
+
   case "${choice:-1}" in
-    1) docker compose stop;   log "服务已停止（数据保留）" ;;
-    2) docker compose down;   log "容器已删除（volume 保留）" ;;
+    1) _stop_all_compose "stop";            log "服务已停止（数据保留）" ;;
+    2) _stop_all_compose "down";            log "容器已删除（volume 保留）" ;;
     3)
       echo ""
       read -rp "  ${RED}确认清除所有数据？${NC} 输入 'yes' 确认: " confirm
       if [ "$confirm" = "yes" ]; then
-        docker compose down -v --remove-orphans
+        docker compose down -v --remove-orphans 2>/dev/null || true
+        docker compose -f docker-compose.prod.yml down -v --remove-orphans 2>/dev/null || true
         log "所有容器和数据已清除"
       else
         info "已取消"
       fi
       ;;
-    0) info "已取消"; exit 0 ;;
-    *) warn "无效选项"; exit 1 ;;
+    0) info "已取消"; return 0 ;;
+    *) warn "无效选项" ;;
   esac
 }
 
@@ -378,7 +386,7 @@ _print_access_info() {
   echo -e "  ${BOLD}API 文档${NC}    ${CYAN}http://localhost:8000/docs${NC}"
   echo -e "  ${BOLD}MinIO 控制台${NC} ${CYAN}http://localhost:9001${NC}  ${DIM}(lyranote / lyranote123)${NC}"
   echo ""
-  echo -e "  ${DIM}查看日志：./start.sh logs    停止服务：./start.sh stop${NC}"
+  echo -e "  ${DIM}查看日志：./lyra logs    停止服务：./lyra stop${NC}"
   echo ""
 }
 
@@ -406,15 +414,15 @@ interactive_menu() {
     echo ""
 
     case "$choice" in
-      1) start_docker;  _pause ;;
+      1) start_docker;           _pause ;;
       2) start_local ;;
-      3) bash "$LYRA_SCRIPTS/start.sh" prod;  _pause ;;
-      4) bash "$LYRA_SCRIPTS/start.sh" init;  _pause ;;
-      5) show_status;   _pause ;;
+      3) bash "$0" prod;         _pause ;;
+      4) bash "$0" init;         _pause ;;
+      5) show_status;            _pause ;;
       6) show_logs ;;
-      7) build_images;  _pause ;;
-      8) bash "$LYRA_SCRIPTS/start.sh" update; _pause ;;
-      9) stop_docker;   _pause ;;
+      7) build_images;           _pause ;;
+      8) bash "$0" update;       _pause ;;
+      9) stop_docker;            _pause ;;
       0) echo -e "  ${DIM}再见！${NC}"; echo ""; exit 0 ;;
       *) warn "无效选项，请重试"; sleep 1 ;;
     esac
@@ -448,8 +456,85 @@ case "${1:-}" in
     log "生产环境已启动"
     ;;
   init)
-    # 委托给 lyra 脚本的 cmd_init（需要 lyra 可执行）
-    "$ROOT_DIR/lyra" init
+    # 内联 init 向导，避免循环调用 lyra → start.sh → lyra
+    cd "$ROOT_DIR"
+    echo ""
+    echo -e "  ${BOLD}${CYAN}LyraNote 初始化向导${NC}"
+    echo -e "  ${DIM}生成根目录 .env 文件（生产模式所用配置）${NC}"
+    echo ""
+    _ask_yn() {
+      local prompt="$1" default="${2:-y}"
+      read -rp "$(echo -e "  ${CYAN}?${NC} $prompt ${DIM}[$default]${NC}: ")" REPLY
+      REPLY="${REPLY:-$default}"
+      [[ "$REPLY" =~ ^[Yy]$ ]]
+    }
+    _ask_field() {
+      local prompt="$1" default="$2"
+      if [ -n "$default" ]; then
+        read -rp "$(echo -e "  ${CYAN}?${NC} $prompt ${DIM}[$default]${NC}: ")" REPLY
+        REPLY="${REPLY:-$default}"
+      else
+        read -rp "$(echo -e "  ${CYAN}?${NC} $prompt: ")" REPLY
+      fi
+    }
+    _ask_secret_field() {
+      read -rsp "$(echo -e "  ${CYAN}?${NC} $1 ${DIM}(输入不显示)${NC}: ")" REPLY; echo ""
+    }
+
+    _ask_field "前端域名 (e.g. https://lyra.example.com)" "https://your-domain.com"
+    local frontend_url="$REPLY"
+    _ask_field "API 域名 (留空与前端相同)" ""
+    local app_base_url="${REPLY:-$frontend_url}"
+
+    _ask_secret_field "PostgreSQL 密码（留空自动生成）"
+    local pg_pass="$REPLY"
+    [ -z "$pg_pass" ] && pg_pass="$(openssl rand -hex 16 2>/dev/null || echo "lyranote_$(date +%s)")"
+
+    _ask_secret_field "MinIO 密码（留空自动生成）"
+    local minio_pass="$REPLY"
+    [ -z "$minio_pass" ] && minio_pass="$(openssl rand -hex 16 2>/dev/null || echo "minio_$(date +%s)")"
+
+    local jwt_secret
+    jwt_secret="$(openssl rand -hex 32 2>/dev/null || date +%s%N | sha256sum | cut -c1-64)"
+    echo -e "  ${DIM}自动生成 JWT_SECRET: ${jwt_secret:0:16}...${NC}"
+
+    _ask_field "Google Client ID (留空跳过)" ""
+    local google_id="$REPLY"
+    _ask_secret_field "Google Client Secret"
+    local google_secret="$REPLY"
+    _ask_field "GitHub Client ID (留空跳过)" ""
+    local github_id="$REPLY"
+    _ask_secret_field "GitHub Client Secret"
+    local github_secret="$REPLY"
+
+    cat > "$ROOT_DIR/.env" <<ENVEOF
+# 由 ./lyra init 生成 $(date)
+
+POSTGRES_PASSWORD=$pg_pass
+
+MINIO_ROOT_USER=lyranote
+MINIO_ROOT_PASSWORD=$minio_pass
+
+APP_BASE_URL=$app_base_url
+FRONTEND_URL=$frontend_url
+CORS_ORIGINS=$frontend_url
+
+JWT_SECRET=$jwt_secret
+JWT_EXPIRE_DAYS=30
+
+GOOGLE_CLIENT_ID=$google_id
+GOOGLE_CLIENT_SECRET=$google_secret
+GITHUB_CLIENT_ID=$github_id
+GITHUB_CLIENT_SECRET=$github_secret
+
+MEMORY_MODE=server
+DEBUG=false
+API_PREFIX=/api/v1
+ENVEOF
+    log "生产环境变量已写入 ${BOLD}.env${NC}"
+    echo ""
+    echo -e "  下一步：${CYAN}./lyra prod${NC}  启动生产环境"
+    echo ""
     ;;
   update)
     info "更新到最新版本..."
