@@ -1,6 +1,6 @@
 "use client";
 
-import { Send, Square } from "lucide-react";
+import { ArrowUp, Square } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -154,16 +154,15 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       <div>
         <div
           className={cn(
-            "relative rounded-2xl border bg-card transition-all",
-            shadow && "shadow-xl shadow-black/5 dark:shadow-black/30",
+            "relative rounded-3xl border bg-card transition-all",
+            shadow && "shadow-lg shadow-black/5 dark:shadow-black/20",
             accentBorder ??
-              "border-border/50 focus-within:border-primary/35 focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.08)]",
-            isCompact && "bg-background",
+              "border-border/40 focus-within:border-border/60",
+            isCompact && "rounded-2xl bg-background",
           )}
         >
-          <div className="absolute inset-x-0 top-0 h-px overflow-hidden rounded-t-2xl bg-gradient-to-r from-transparent via-white/8 to-transparent" />
           {aboveInput && (
-            <div className={isCompact ? "px-3 pt-3" : "px-4 pt-4"}>
+            <div className={isCompact ? "px-3 pt-3" : "px-4 pt-3"}>
               {aboveInput}
             </div>
           )}
@@ -177,10 +176,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             rows={1}
             disabled={disabled || streaming}
             className={cn(
-              "no-scrollbar w-full resize-none bg-transparent text-foreground placeholder:text-muted-foreground/35 focus:outline-none disabled:opacity-60",
+              "no-scrollbar w-full resize-none bg-transparent text-foreground placeholder:text-muted-foreground/40 focus:outline-none disabled:opacity-60",
               isCompact
                 ? "px-3.5 pb-1.5 text-[13px] leading-5"
-                : "px-5 pb-2 text-sm",
+                : "px-5 pb-1 text-[15px] leading-6",
               aboveInput ? "pt-2" : isCompact ? "pt-3" : "pt-4",
             )}
             style={{ maxHeight: resolvedMaxHeight }}
@@ -188,33 +187,33 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           <div
             className={cn(
               "flex items-center justify-between",
-              isCompact ? "px-2.5 pb-2 pt-0.5" : "px-4 pb-3 pt-1",
+              isCompact ? "px-2.5 pb-2 pt-0.5" : "px-3 pb-3 pt-0.5",
             )}
           >
             <div className="flex items-center gap-2">{toolbarLeft}</div>
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
               {toolbarRight}
               <button
                 type="button"
                 onClick={handleSendClick}
                 disabled={!streaming && !canSend}
                 className={cn(
-                  "flex items-center justify-center rounded-xl transition-all",
-                  isCompact ? "h-7 w-7" : "h-8 w-8",
+                  "flex items-center justify-center rounded-full transition-all",
+                  isCompact ? "h-8 w-8" : "h-9 w-9",
                   streaming
-                    ? "bg-amber-500 text-white shadow-md shadow-amber-500/30 hover:bg-amber-500/90"
+                    ? "bg-foreground text-background hover:bg-foreground/80"
                     : canSend
-                      ? "bg-primary text-primary-foreground shadow-md shadow-primary/30 hover:bg-primary/90 active:scale-95"
-                      : "cursor-not-allowed bg-muted/50 text-muted-foreground/25",
+                      ? "bg-foreground text-background hover:bg-foreground/80 active:scale-95"
+                      : "cursor-not-allowed bg-muted/60 text-muted-foreground/30",
                 )}
                 title={
                   streaming ? (cancelTitle ?? "Cancel") : (sendTitle ?? "Send")
                 }
               >
                 {streaming ? (
-                  <Square size={isCompact ? 9 : 10} />
+                  <Square size={isCompact ? 11 : 13} fill="currentColor" />
                 ) : (
-                  <Send size={isCompact ? 11 : 14} />
+                  <ArrowUp size={isCompact ? 16 : 20} strokeWidth={2.5} />
                 )}
               </button>
             </div>

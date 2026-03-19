@@ -6,9 +6,11 @@
  *              通过 React Context 向子组件分发认证数据。
  */
 
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { http } from "@/lib/http-client"
 import { AUTH } from "@/lib/api-routes"
+
+const AUTH_SKIP_PATHS = ["/login", "/setup"]
 
 /** 已登录用户的基本信息 */
 interface AuthUser {
@@ -47,6 +49,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
+  const initialLoadDone = useRef(false)
+
   const fetchUser = useCallback(async () => {
     try {
       const data = await http.get<AuthUser>(AUTH.ME, { skipToast: true })
@@ -59,6 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (initialLoadDone.current) return
+    initialLoadDone.current = true
+    const onAuthPage = AUTH_SKIP_PATHS.some((p) => window.location.pathname.startsWith(p))
+    if (onAuthPage) {
+      setIsLoading(false)
+      return
+    }
     fetchUser()
   }, [fetchUser])
 

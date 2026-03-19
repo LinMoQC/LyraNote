@@ -257,6 +257,7 @@ export default function SetupPage() {
       await setupInit({
         username: accountData.username,
         password: accountData.password,
+        email: accountData.email,
         avatar_url: accountData.avatar_url,
         openai_api_key: aiData.openai_api_key,
         openai_base_url: aiData.openai_base_url || DEFAULT_BASE_URL,
@@ -367,6 +368,10 @@ export default function SetupPage() {
                     <Input type="password" autoComplete="new-password" {...accountForm.register("confirmPassword")} />
                   </Field>
 
+                  <Field label="邮箱（可选）" error={accountForm.formState.errors.email?.message} hint="用于账号恢复和通知">
+                    <Input type="email" placeholder="you@example.com" autoComplete="email" {...accountForm.register("email")} />
+                  </Field>
+
                   <Field
                     label="头像链接（可选）"
                     error={accountForm.formState.errors.avatar_url?.message}
@@ -437,7 +442,16 @@ export default function SetupPage() {
                       <Select defaultValue={DEFAULT_LLM_MODEL} onValueChange={(v) => aiForm.setValue("llm_model", v)}>
                         <SelectContent>
                           {LLM_MODELS.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                            <SelectItem key={m.value} value={m.value}>
+                              <span className="flex items-center gap-1.5">
+                                {m.label}
+                                {m.thinking && (
+                                  <span className="rounded-md bg-violet-500/15 px-1 py-0.5 text-[9px] font-medium text-violet-400">
+                                    Thinking
+                                  </span>
+                                )}
+                              </span>
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -666,7 +680,7 @@ export default function SetupPage() {
                     />
                   </Field>
 
-                  <div className="rounded-xl border border-border bg-muted/20">
+                  <div className={["rounded-xl border bg-muted/20", personalityForm.formState.errors.custom_system_prompt ? "border-destructive/60" : "border-border"].join(" ")}>
                     <button
                       type="button"
                       className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-medium text-muted-foreground"
@@ -678,7 +692,7 @@ export default function SetupPage() {
                       <span>{t("customPromptTitle")}</span>
                       <span className="opacity-50">{t("expandPrompt")}</span>
                     </button>
-                    <div style={{ display: "none" }} className="border-t border-border px-4 pb-3 pt-3">
+                    <div style={{ display: personalityForm.formState.errors.custom_system_prompt ? "block" : "none" }} className="border-t border-border px-4 pb-3 pt-3">
                       <textarea
                         placeholder={t("customPromptPlaceholder")}
                         rows={4}
@@ -686,6 +700,9 @@ export default function SetupPage() {
                         {...personalityForm.register("custom_system_prompt")}
                       />
                       <p className="mt-1 text-[11px] text-muted-foreground/60">{t("customPromptHint")}</p>
+                      {personalityForm.formState.errors.custom_system_prompt && (
+                        <p className="mt-1 text-[11px] text-destructive">{personalityForm.formState.errors.custom_system_prompt.message}</p>
+                      )}
                     </div>
                   </div>
 

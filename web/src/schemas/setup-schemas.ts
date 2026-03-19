@@ -19,6 +19,7 @@ export function createAccountSchema(t: (key: string) => string) {
       username: z.string().min(2, t("validation.usernameMin")),
       password: z.string().min(6, t("validation.passwordMin")),
       confirmPassword: z.string(),
+      email: z.string().email(t("validation.invalidEmail")).optional().or(z.literal("")),
       avatar_url: z.string().url(t("validation.invalidImageUrl")).optional().or(z.literal("")),
     })
     .refine((d) => d.password === d.confirmPassword, {
@@ -54,9 +55,9 @@ export function createAiSchema(t: (key: string) => string) {
 export function createPersonalitySchema(t: (key: string) => string) {
   return z.object({
     ai_name: z.string().min(1, t("validation.nameRequired")).max(20, t("validation.nameMaxLength")),
-    user_occupation: z.string().max(50).optional(),
-    user_preferences: z.string().max(200).optional(),
-    custom_system_prompt: z.string().max(1000).optional(),
+    user_occupation: z.string().max(100).optional(),
+    user_preferences: z.string().max(500).optional(),
+    custom_system_prompt: z.string().max(5000).optional(),
   });
 }
 

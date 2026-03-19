@@ -14,8 +14,10 @@ import axios, { AxiosError, type AxiosInstance } from "axios";
 import { INTERNAL_API_BASE } from "@/lib/constants";
 import { notifyError } from "@/lib/notify";
 import {
+  CODE_NOT_CONFIGURED,
   authHeaderFromCookie,
   getErrorMessage,
+  handleNotConfigured,
   handleUnauthorized,
 } from "@/lib/request-error";
 import { t } from "@/lib/i18n";
@@ -77,6 +79,12 @@ class HttpClient {
           "code" in body &&
           "data" in body
         ) {
+          if (body.code === CODE_NOT_CONFIGURED) {
+            handleNotConfigured();
+            return Promise.reject(
+              new AxiosError("系统未初始化", String(CODE_NOT_CONFIGURED), res.config, res.request)
+            );
+          }
           if (body.code !== 0) {
             const err = new AxiosError(
               body.message ?? t("errors.requestFailed", "Request failed"),
@@ -251,6 +259,10 @@ class HttpClient {
       "data" in payload
     ) {
       const envelope = payload as ApiEnvelope<T>;
+      if (envelope.code === CODE_NOT_CONFIGURED) {
+        handleNotConfigured();
+        throw new Error("系统未初始化");
+      }
       if (envelope.code !== 0) {
         throw new Error(
           envelope.message ?? t("errors.requestFailed", "Request failed")

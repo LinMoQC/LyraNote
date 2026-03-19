@@ -47,7 +47,7 @@ class SearchKnowledgeSkill(SkillBase):
         }
 
     async def execute(self, args: dict, ctx) -> str:
-        from app.agents.retrieval import retrieve_chunks
+        from app.agents.rag.retrieval import retrieve_chunks
 
         query = args.get("query", "")
         chunks = await retrieve_chunks(

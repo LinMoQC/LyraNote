@@ -19,7 +19,7 @@ export default async function AppHomePage() {
   const displayName: string | null = null; // resolved client-side via useAuth()
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center px-4 md:px-8">
+    <div className="flex min-h-full flex-col items-center justify-center px-4 md:px-8 dark:border border-border/40">
 
       {/* 桌面端居中内容区 */}
       <div className="hidden w-full max-w-2xl space-y-8 md:block">

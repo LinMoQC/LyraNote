@@ -21,6 +21,7 @@ export const MessageRecordSchema = z.object({
   conversation_id: z.string().uuid(),
   role: z.enum(CHAT_ROLES),
   content: z.string(),
+  reasoning: z.string().nullable().optional(),
   citations: z.array(z.unknown()).nullable(),
   agent_steps: z.array(z.unknown()).nullable(),
   attachments: z.array(z.object({

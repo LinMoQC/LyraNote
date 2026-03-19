@@ -9,7 +9,30 @@ Anthropic natively.  Switching providers requires only changing the
 
 from collections.abc import AsyncGenerator
 
+from openai import AsyncOpenAI
+
 from app.providers.provider_factory import get_provider
+
+
+def get_client() -> AsyncOpenAI:
+    """Return the underlying AsyncOpenAI client from the active provider.
+
+    Escape hatch for scenarios that need the raw client (e.g. LangGraph,
+    streaming with custom parameters).  Prefer ``chat`` / ``chat_stream``
+    for normal usage.
+    """
+    from app.config import settings
+
+    return AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url or None,
+    )
+
+
+def get_model() -> str:
+    """Return the configured default model name."""
+    from app.config import settings
+    return settings.llm_model
 
 
 async def chat(

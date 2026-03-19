@@ -17,6 +17,10 @@ from pydantic import BaseModel
 
 T = TypeVar("T")
 
+# Business-level status codes (inside the envelope, NOT HTTP status codes)
+CODE_SUCCESS = 0
+CODE_NOT_CONFIGURED = 1001
+
 
 class ApiResponse(BaseModel, Generic[T]):
     code: int = 0
@@ -29,6 +33,11 @@ class ApiResponse(BaseModel, Generic[T]):
 def success(data: Any = None, message: str = "success") -> ApiResponse:
     """Factory for a successful response envelope."""
     return ApiResponse(code=0, message=message, data=data)
+
+
+def not_configured(message: str = "系统未初始化") -> ApiResponse:
+    """Response indicating the system has not been initialized yet."""
+    return ApiResponse(code=CODE_NOT_CONFIGURED, message=message)
 
 
 def fail(status_code: int, message: str) -> JSONResponse:

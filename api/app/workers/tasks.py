@@ -27,6 +27,7 @@ celery_app.conf.update(
     timezone="UTC",
     enable_utc=True,
     task_track_started=True,
+    worker_hijack_root_logger=False,
     beat_schedule={
         "decay-stale-memories-daily": {
             "task": "decay_all_user_memories",
@@ -38,6 +39,45 @@ celery_app.conf.update(
         },
     },
 )
+
+from celery.signals import worker_process_init, after_setup_logger
+
+
+@after_setup_logger.connect
+def _on_setup_logger(**_kwargs):
+    """Override Celery's default logging with our unified formatter."""
+    from app.logging_config import setup_logging
+    setup_logging(debug=settings.debug)
+
+
+@worker_process_init.connect
+def _on_worker_init(**_kwargs):
+    """Runs in each forked worker process: load DB config (API keys etc.)."""
+    from app.logging_config import setup_logging
+    setup_logging(debug=settings.debug)
+    _load_db_settings_sync()
+
+
+def _load_db_settings_sync() -> None:
+    """Load persisted config (API keys etc.) from DB into in-memory settings."""
+    import asyncio as _asyncio
+    from sqlalchemy.ext.asyncio import create_async_engine as _cae
+    from sqlalchemy.ext.asyncio import async_sessionmaker as _asm, AsyncSession
+    from sqlalchemy.pool import NullPool
+
+    async def _load():
+        engine = _cae(settings.database_url, poolclass=NullPool)
+        factory = _asm(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as db:
+            from app.domains.setup.router import load_settings_from_db
+            await load_settings_from_db(db)
+        await engine.dispose()
+
+    loop = _asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(_load())
+    finally:
+        loop.close()
 
 
 @asynccontextmanager
@@ -78,7 +118,7 @@ def _run_async(coro):
 @celery_app.task(name="ingest_source", bind=True, max_retries=3)
 def ingest_source(self, source_id: str, chunk_size: int = 512, chunk_overlap: int = 64):
     async def _run():
-        from app.agents.ingestion import ingest
+        from app.agents.rag.ingestion import ingest
 
         async with _task_db() as db:
             try:
@@ -95,7 +135,7 @@ def ingest_source(self, source_id: str, chunk_size: int = 512, chunk_overlap: in
 def extract_knowledge_graph(self, source_id: str):
     """Extract knowledge entities and relations from a source after ingestion."""
     async def _run():
-        from app.agents.knowledge_graph import extract_entities_and_relations
+        from app.agents.kg.knowledge_graph import extract_entities_and_relations
 
         async with _task_db() as db:
             try:
@@ -137,7 +177,7 @@ def rebuild_knowledge_graph_task(self, notebook_id: str, user_id: str | None = N
         )
 
     async def _run():
-        from app.agents.knowledge_graph import rebuild_notebook_graph
+        from app.agents.kg.knowledge_graph import rebuild_notebook_graph
 
         async with _task_db() as db:
             try:
@@ -158,7 +198,6 @@ def generate_notebook_summary(self, notebook_id: str, content_text: str):
         import logging
         from uuid import UUID
 
-        from openai import AsyncOpenAI
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
         from app.models import NotebookSummary
@@ -168,7 +207,8 @@ def generate_notebook_summary(self, notebook_id: str, content_text: str):
         if not content_text or len(content_text.strip()) < 50:
             return
 
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from app.providers.llm import get_client
+        client = get_client()
         prompt = (
             "你是一位专业的笔记助手。请根据以下笔记内容，用中文生成：\n"
             "1. 一段 2-3 句话的简明摘要（summary_md）\n"
@@ -266,7 +306,6 @@ def initialize_user_preferences(
         import logging
         from uuid import UUID
 
-        from openai import AsyncOpenAI
         from sqlalchemy import select
 
         from app.models import Notebook, Note
@@ -314,10 +353,8 @@ def initialize_user_preferences(
                 )
 
                 try:
-                    client = AsyncOpenAI(
-                        api_key=settings.openai_api_key,
-                        base_url=settings.openai_base_url or None,
-                    )
+                    from app.providers.llm import get_client as _get_client
+                    client = _get_client()
                     resp = await client.chat.completions.create(
                         model=settings.llm_model or "gpt-4o-mini",
                         messages=[{"role": "user", "content": prompt}],
@@ -370,7 +407,7 @@ def index_note(self, note_id: str):
 
         from sqlalchemy import select
 
-        from app.agents.ingestion import _chunk_text
+        from app.agents.rag.ingestion import _chunk_text
         from app.models import Chunk, Note
         from app.providers.embedding import embed_texts
 
@@ -440,7 +477,7 @@ def generate_artifact_task(self, artifact_id: str):
 
         from sqlalchemy import select
 
-        from app.agents.composer import generate_artifact
+        from app.agents.writing.composer import generate_artifact
         from app.models import Artifact, Chunk, Source
 
         async with _task_db() as db:
@@ -605,7 +642,6 @@ def execute_scheduled_task(self, task_id: str):
         from datetime import datetime, timezone
         from uuid import UUID
 
-        from openai import AsyncOpenAI
         from sqlalchemy import select
 
         from app.config import settings
@@ -669,10 +705,8 @@ def execute_scheduled_task(self, task_id: str):
                     "briefing": "简报格式，要点列表，适合快速浏览",
                 }
 
-                client = AsyncOpenAI(
-                    api_key=settings.openai_api_key,
-                    base_url=settings.openai_base_url or None,
-                )
+                from app.providers.llm import get_client as _get_llm_client
+                client = _get_llm_client()
 
                 prompt = (
                     f"你是一位专业的资讯编辑。请根据以下搜索结果，"

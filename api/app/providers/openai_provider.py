@@ -10,13 +10,21 @@ import json
 from collections.abc import AsyncGenerator
 
 from openai import AsyncOpenAI
+from httpx import Timeout
 
 from app.providers.base import BaseLLMProvider
+
+_HTTP_TIMEOUT = Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
 
 
 class OpenAIProvider(BaseLLMProvider):
     def __init__(self, api_key: str, base_url: str, default_model: str) -> None:
-        self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
+        self._client = AsyncOpenAI(
+            api_key=api_key,
+            base_url=base_url,
+            timeout=_HTTP_TIMEOUT,
+            max_retries=2,
+        )
         self._default_model = default_model
 
     async def chat(

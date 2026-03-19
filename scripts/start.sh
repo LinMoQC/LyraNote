@@ -34,7 +34,25 @@ check_command() {
 }
 
 _tcp_ready() {
-  (echo > /dev/tcp/"$1"/"$2") &>/dev/null
+  nc -z "$1" "$2" &>/dev/null
+}
+
+_check_port() {
+  local port=$1 name=$2
+  if lsof -i ":$port" -sTCP:LISTEN -t &>/dev/null; then
+    local pid
+    pid=$(lsof -i ":$port" -sTCP:LISTEN -t | head -1)
+    local pname
+    pname=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
+    warn "$name 端口 $port 被占用 (PID $pid - $pname)"
+    read -rp "  是否终止该进程？[y/N] " ans
+    if [[ "$ans" =~ ^[Yy]$ ]]; then
+      kill -9 "$pid" && log "已终止 PID $pid"
+      sleep 1
+    else
+      error "端口 $port 被占用，无法启动 $name"
+    fi
+  fi
 }
 
 _wait_tcp() {
@@ -138,6 +156,9 @@ start_docker() {
 
   cd "$ROOT_DIR"
 
+  _check_port 8000 "API"
+  _check_port 3000 "Web"
+
   info "构建镜像（仅变化时重建）..."
   docker compose build --quiet
 
@@ -235,8 +256,13 @@ start_local() {
 
   section "Python 环境"
   if [ ! -d "$API_DIR/.venv" ]; then
-    info "创建虚拟环境 (Python 3.12)..."
-    PYENV_VERSION=3.12.0 pyenv exec python -m venv "$API_DIR/.venv"
+    info "创建虚拟环境..."
+    if command -v pyenv &>/dev/null; then
+      PYENV_VERSION=3.12.0 pyenv exec python -m venv "$API_DIR/.venv" 2>/dev/null || \
+      python3 -m venv "$API_DIR/.venv"
+    else
+      python3 -m venv "$API_DIR/.venv"
+    fi
   fi
   VENV_PYTHON="$API_DIR/.venv/bin/python"
   info "安装/更新依赖..."
@@ -255,6 +281,9 @@ start_local() {
   log "前端依赖已就绪"
 
   section "启动应用进程"
+  _check_port 8000 "FastAPI"
+  _check_port 3000 "Next.js"
+
   cd "$API_DIR"
   info "FastAPI (port 8000)..."
   "$API_DIR/.venv/bin/uvicorn" app.main:app --host 0.0.0.0 --port 8000 --reload &

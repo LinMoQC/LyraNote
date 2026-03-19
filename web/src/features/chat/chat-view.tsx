@@ -10,25 +10,20 @@ import { useAuth } from "@/features/auth/auth-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, m } from "framer-motion";
-import {
-  ChevronDown,
-  FlaskConical,
-  MessageSquare,
-  Plus,
-  Sparkles,
-  Zap,
-} from "lucide-react";
+import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ChatInputHandle } from "@/components/chat-input";
 
-import { ChatInput } from "@/components/chat-input";
+import { ChatInput, ChatToolbar, type ChatInputHandle } from "@/components/chat-input";
 import { AttachmentPreviewBar } from "@/components/chat-input/attachment-preview-bar";
 import { useFileAttachments } from "@/hooks/use-file-attachments";
 import { http } from "@/lib/http-client";
 import { cn } from "@/lib/utils";
+import { CHAT_TOOL_DEFS } from "@/lib/chat-tools";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { getSuggestions } from "@/services/ai-service";
+import { getConfig } from "@/services/config-service";
+import { LLM_MODELS } from "@/lib/constants";
 import { DeepResearchProgress } from "@/features/chat/deep-research-progress";
 import { useUiStore } from "@/store/use-ui-store";
 import { getConversationFeedback, submitMessageFeedback, type FeedbackRating } from "@/services/feedback-service";
@@ -38,12 +33,13 @@ import {
   getMessages,
   type ConversationRecord,
 } from "@/services/conversation-service";
-import { getGlobalNotebook } from "@/services/notebook-service";
+import { getGlobalNotebook, getNotebooks } from "@/services/notebook-service";
 import { clearConversationMessages, loadActiveConversation, loadConversationMessages, saveActiveConversation, saveConversationMessages } from "@/features/chat/chat-persistence";
 import { useStreamLifecycle } from "@/features/chat/use-stream-lifecycle";
 import { getErrorMessage } from "@/lib/request-error";
 import { notifyError } from "@/lib/notify";
 import { ChatInputContainer, ChatMessageList } from "@/features/chat/chat-layout";
+import type { Notebook } from "@/types";
 
 import { ChatAlerts } from "./chat-alerts";
 import { ChatEmptyState } from "./chat-empty-state";
@@ -54,6 +50,7 @@ import { ChatSidebarPanel } from "./chat-sidebar-panel";
 import { ChatMessageBubble } from "./chat-message-bubble";
 import { useDeepResearch, DR_MESSAGES_KEY } from "./use-deep-research";
 import { useChatStream } from "./use-chat-stream";
+import { useDeepResearchStore } from "@/store/use-deep-research-store";
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -63,9 +60,14 @@ export function ChatView() {
   const { success: toastOk } = useToast();
   const t = useTranslations("chat");
   const tc = useTranslations("common");
+  const th = useTranslations("home");
+  const tn = useTranslations("notebooks");
   const setMobileHeaderRight = useUiStore((s) => s.setMobileHeaderRight);
 
   const [convSheetOpen, setConvSheetOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
+  const [selectedNotebook, setSelectedNotebook] = useState<Notebook | null>(null);
 
   const avatarUrl = user?.avatar_url ?? null;
   const initials = (user?.name?.[0] ?? user?.username?.[0] ?? "U").toUpperCase();
@@ -96,6 +98,12 @@ export function ChatView() {
   const streamLifecycle = useStreamLifecycle();
 
   const [isDeepResearch, setIsDeepResearch] = useState(false);
+  const [drMode, setDrMode] = useState<"quick" | "deep">("quick");
+  const [thinkingEnabled, setThinkingEnabled] = useState(true);
+
+  const { data: appConfig } = useQuery({ queryKey: ["app-config"], queryFn: getConfig, staleTime: 60_000 });
+  const currentModelId = appConfig?.llm_model ?? "";
+  const isThinkingModel = LLM_MODELS.find((m) => m.value === currentModelId)?.thinking ?? false;
   const [noteCreatedAlert, setNoteCreatedAlert] = useState<{ id: string; title: string; notebookId?: string } | null>(null);
   const [feedbackMap, setFeedbackMap] = useState<Record<string, FeedbackRating>>({});
   const [conversationOffset, setConversationOffset] = useState(0);
@@ -133,6 +141,18 @@ export function ChatView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileAttachments = useFileAttachments();
 
+  const { data: notebooks = [] } = useQuery({
+    queryKey: ["notebooks"],
+    queryFn: getNotebooks,
+    enabled: menuOpen,
+    staleTime: 1000 * 60 * 5,
+  });
+  const toolItems = CHAT_TOOL_DEFS.map((tool) => ({
+    id: tool.hint,
+    label: th(tool.key),
+    icon: tool.icon,
+  }));
+
   // ── Global notebook ─────────────────────────────────────────────────────
   const { data: globalNotebook } = useQuery({
     queryKey: ["global-notebook"],
@@ -151,6 +171,8 @@ export function ChatView() {
   // ── Deep Research hook ──────────────────────────────────────────────────
   const dr = useDeepResearch({
     globalNotebookId,
+    activeConvId,
+    drMode,
     streaming,
     streamLifecycle,
     streamAbortRef,
@@ -303,6 +325,9 @@ export function ChatView() {
       if (cached.length === 0) clearConversationMessages(conv.id);
     } catch (error) {
       notifyError(getErrorMessage(error, t("loadConvFailed")));
+      setActiveConvId(null);
+      saveActiveConversation(null);
+      setMessages([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvId, streamLifecycle, chat, dr]);
@@ -378,20 +403,51 @@ export function ChatView() {
   }, []);
 
   useEffect(() => {
-    if (!globalNotebookId || conversationList.length === 0 || activeConvId) return;
+    if (!globalNotebookId || activeConvId) return;
     const targetId = restoredActiveConvId.current;
-    if (targetId) {
-      const matched = conversationList.find((item) => item.id === targetId);
-      if (!matched) return;
-      restoredActiveConvId.current = null;
-      handleSelectConv(matched);
-    }
-  }, [activeConvId, conversationList, globalNotebookId, handleSelectConv]);
+    if (!targetId) return;
+    restoredActiveConvId.current = null;
+    handleSelectConv({ id: targetId } as ConversationRecord);
+  }, [activeConvId, globalNotebookId, handleSelectConv]);
 
   // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, streaming]);
+
+  // Deep research store selectors
+  const drFocusRequested = useDeepResearchStore((s) => s.focusRequested);
+  const drConversationId = useDeepResearchStore((s) => s.conversationId);
+  useEffect(() => {
+    if (!drFocusRequested) return;
+    useDeepResearchStore.setState({ focusRequested: false });
+
+    const drState = useDeepResearchStore.getState();
+    if (!drState.isActive && !drState.progress) return;
+
+    setStreaming(false);
+    streamLifecycle.finish();
+    chat.setAgentSteps([]);
+
+    // Switch to the deep research conversation
+    if (drState.conversationId) {
+      setActiveConvId(drState.conversationId);
+      saveActiveConversation(drState.conversationId);
+      if (drState.query) {
+        const userMsg: LocalMessage = {
+          id: `local-dr-return-${Date.now()}`,
+          role: "user",
+          content: drState.query,
+          timestamp: new Date(),
+        };
+        setMessages([userMsg]);
+      }
+    } else {
+      setActiveConvId(null);
+      setMessages([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drFocusRequested]);
 
   // ── Feedback ────────────────────────────────────────────────────────────
   const handleFeedback = useCallback(async (messageId: string, rating: FeedbackRating) => {
@@ -421,6 +477,29 @@ export function ChatView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.handleSend]);
 
+  const handleSubmit = useCallback(() => {
+    if (fileAttachments.isUploading) return;
+    const ids = fileAttachments.getServerIds();
+    if (ids.length > 0) chat.attachmentIdsRef.current = ids;
+    const hasAttachments = fileAttachments.attachments.length > 0;
+    if (hasAttachments) {
+      chat.attachmentPreviewsRef.current = fileAttachments.attachments.map((a) => ({
+        name: a.file.name,
+        type: a.file.type,
+        previewUrl: a.previewUrl,
+      }));
+      chat.attachmentMetaRef.current = fileAttachments.attachments
+        .filter((a) => a.serverId)
+        .map((a) => ({ name: a.file.name, type: a.file.type, file_id: a.serverId! }));
+    }
+    if (selectedToolId) chat.toolHintRef.current = selectedToolId;
+    const finalQuery = selectedNotebook
+      ? `[请在笔记本 ${selectedNotebook.title} 中搜索] ${input}`
+      : undefined;
+    chat.handleSend(finalQuery);
+    fileAttachments.clearAll(hasAttachments);
+  }, [fileAttachments, chat, selectedToolId, selectedNotebook, input]);
+
   // ── New chat ────────────────────────────────────────────────────────────
   const handleNewChat = () => {
     setActiveConvId(null);
@@ -438,6 +517,11 @@ export function ChatView() {
 
   // ── Auto-trigger from HomeQA (pending query was read from sessionStorage above) ──
   const autoTriggered = useRef(false);
+  const pendingAutoSendRef = useRef<{
+    query: string;
+    deepResearch: boolean;
+    drMode: "quick" | "deep";
+  } | null>(null);
 
   useEffect(() => {
     const payload = pendingChatPayload.current;
@@ -449,6 +533,9 @@ export function ChatView() {
     const toolParam = payload.tool;
     const attachmentsParam = payload.attachments;
     const notebookParam = payload.notebook;
+    const deepResearchParam = payload.deep_research;
+    const drModeParam = payload.dr_mode;
+    const thinkingParam = payload.thinking_enabled;
 
     // Force a clean new conversation
     setActiveConvId(null);
@@ -460,7 +547,10 @@ export function ChatView() {
     streamLifecycle.finish();
     try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
 
-    if (toolParam) chat.toolHintRef.current = toolParam;
+    if (toolParam) {
+      chat.toolHintRef.current = toolParam;
+      setSelectedToolId(toolParam);
+    }
     if (attachmentsParam) {
       const ids = attachmentsParam.split(",").filter(Boolean);
       chat.attachmentIdsRef.current = ids;
@@ -482,17 +572,57 @@ export function ChatView() {
         }
       } catch { /* ignore */ }
     }
+    const deepResearchEnabled = deepResearchParam === "1";
+    const resolvedDrMode = drModeParam === "deep" ? "deep" : "quick";
+    const resolvedThinking = thinkingParam ? thinkingParam === "1" : true;
+
+    setIsDeepResearch(deepResearchEnabled);
+    setDrMode(resolvedDrMode);
+    if (thinkingParam !== undefined) {
+      setThinkingEnabled(resolvedThinking);
+    }
     const finalQuery = notebookParam
       ? `[请在笔记本 ${notebookParam} 中搜索] ${q}`
       : q;
 
     setInput(finalQuery);
-    chat.handleSend(finalQuery);
-  }, [globalNotebookId, chat, dr, streamLifecycle, setInput, setActiveConvId, setMessages, setHasMoreMessages, setMessageOffset]);
+    pendingAutoSendRef.current = {
+      query: finalQuery,
+      deepResearch: deepResearchEnabled,
+      drMode: resolvedDrMode,
+    };
+  }, [
+    globalNotebookId,
+    chat,
+    dr,
+    streamLifecycle,
+    setInput,
+    setActiveConvId,
+    setMessages,
+    setHasMoreMessages,
+    setMessageOffset,
+    setIsDeepResearch,
+    setDrMode,
+    setThinkingEnabled,
+    setSelectedToolId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingAutoSendRef.current;
+    if (!pending || !globalNotebookId) return;
+    if (pending.deepResearch !== isDeepResearch) return;
+    if (pending.deepResearch && pending.drMode !== drMode) return;
+    pendingAutoSendRef.current = null;
+    if (pending.deepResearch) {
+      dr.handleDeepResearch(pending.query);
+    } else {
+      chat.handleSend(pending.query);
+    }
+  }, [dr, chat, globalNotebookId, isDeepResearch, drMode]);
 
   // ── Render ──────────────────────────────────────────────────────────────
   return (
-    <div className="flex h-full">
+    <div className="flex h-full dark:border border-border/40">
       <ChatSidebarPanel
         conversationList={conversationList}
         activeConvId={activeConvId}
@@ -515,7 +645,7 @@ export function ChatView() {
           onResetError={streamLifecycle.resetError}
         />
 
-        {messages.length > 0 || pendingChatPayload.current ? (
+        {messages.length > 0 || pendingChatPayload.current || pendingAutoSendRef.current ? (
           <ChatMessageList>
             {hasMoreMessages && activeConvId && (
               <div className="flex justify-center">
@@ -540,6 +670,7 @@ export function ChatView() {
                   copied={copied}
                   avatarUrl={avatarUrl}
                   initials={initials}
+                  showReasoning={isThinkingModel && thinkingEnabled}
                   onCopy={copy}
                   onFeedback={handleFeedback}
                   onRegenerate={stableRegenerate}
@@ -549,7 +680,7 @@ export function ChatView() {
             </AnimatePresence>
 
             <AnimatePresence>
-              {dr.drProgress && (
+              {dr.drProgress && (!activeConvId || activeConvId === drConversationId) && (
                 <m.div
                   key="dr-progress-live"
                   initial={{ opacity: 0, y: 8 }}
@@ -585,24 +716,7 @@ export function ChatView() {
             ref={chatInputRef}
             value={input}
             onChange={setInput}
-            onSubmit={() => {
-              if (fileAttachments.isUploading) return;
-              const ids = fileAttachments.getServerIds();
-              if (ids.length > 0) chat.attachmentIdsRef.current = ids;
-              const hasAttachments = fileAttachments.attachments.length > 0;
-              if (hasAttachments) {
-                chat.attachmentPreviewsRef.current = fileAttachments.attachments.map((a) => ({
-                  name: a.file.name,
-                  type: a.file.type,
-                  previewUrl: a.previewUrl,
-                }));
-                chat.attachmentMetaRef.current = fileAttachments.attachments
-                  .filter((a) => a.serverId)
-                  .map((a) => ({ name: a.file.name, type: a.file.type, file_id: a.serverId! }));
-              }
-              chat.handleSend();
-              fileAttachments.clearAll(hasAttachments);
-            }}
+            onSubmit={handleSubmit}
             placeholder={isDeepResearch ? t("deepResearchPlaceholder") : t("placeholder")}
             disabled={!globalNotebookId || fileAttachments.isUploading}
             streaming={streaming}
@@ -627,46 +741,40 @@ export function ChatView() {
             }
             toolbarLeft={
               <>
-                <button
-                  className="flex h-7 w-7 items-center justify-center rounded-full bg-accent/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  title={tc("addSource")}
-                >
-                  <Plus size={13} />
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      fileAttachments.addFiles(e.target.files);
-                    }
-                    e.target.value = "";
-                  }}
-                />
-                <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border/40 bg-muted/30 text-[11px] text-muted-foreground/50 sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1">
-                  <Sparkles size={10} className="text-primary/60" />
-                  <span className="hidden sm:inline">{t("globalKnowledge")}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsDeepResearch((v) => !v)}
-                  className={cn(
-                    "flex h-7 w-7 items-center justify-center rounded-full border text-[11px] transition-all sm:w-auto sm:gap-1.5 sm:px-2.5 sm:py-1",
-                    isDeepResearch
-                      ? "border-amber-500/30 bg-amber-500/10 text-amber-300/90"
-                      : "border-border/40 bg-muted/30 text-muted-foreground/50 hover:border-border/60 hover:text-muted-foreground/70"
-                  )}
-                  title={isDeepResearch ? t("switchToNormal") : t("switchToDeepResearch")}
-                >
-                  <FlaskConical size={10} className={isDeepResearch ? "text-amber-400" : ""} />
-                  <span className="hidden sm:inline">{t("deepResearchLabel")}</span>
-                  {isDeepResearch && <Zap size={8} className="hidden text-amber-400 sm:block" />}
-                </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files.length > 0) {
+                    fileAttachments.addFiles(e.target.files);
+                  }
+                  e.target.value = "";
+                }}
+              />
+              <ChatToolbar
+                onFileClick={() => fileInputRef.current?.click()}
+                isDeepResearch={isDeepResearch}
+                onToggleDeepResearch={() => setIsDeepResearch((v) => !v)}
+                drMode={drMode}
+                onDrModeChange={setDrMode}
+                isThinkingModel={isThinkingModel}
+                thinkingEnabled={thinkingEnabled}
+                onToggleThinking={() => setThinkingEnabled((v) => !v)}
+                onMenuOpenChange={setMenuOpen}
+                tools={toolItems}
+                selectedToolId={selectedToolId}
+                onToolSelect={setSelectedToolId}
+                toolsLabel={th("tools")}
+                notebooks={notebooks}
+                selectedNotebook={selectedNotebook}
+                onNotebookSelect={setSelectedNotebook}
+                notebookLabel={th("notebook")}
+                notebookEmptyLabel={tn("empty")}
+                clearNotebookLabel="清除笔记本限制"
+              />
               </>
             }
             toolbarRight={

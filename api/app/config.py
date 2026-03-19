@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
 
-    # Auth (local JWT — replaces Clerk)
+    # Auth (local JWT)
     # Set a fixed secret in .env for production; empty = random per-process (dev only)
     jwt_secret: str = ""
     jwt_expire_days: int = 30

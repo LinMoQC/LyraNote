@@ -20,35 +20,10 @@ import { getPublicNotebooks } from "@/services/public-service";
 import type { PublicNotebook } from "@/types";
 import { formatDate } from "@/utils/format-date";
 
-const GRADIENT_STYLES: Record<string, React.CSSProperties> = {
-  "from-amber-800/80 to-orange-700/80": { background: "linear-gradient(135deg,#92400e,#c2410c)" },
-  "from-blue-800/80 to-indigo-700/80": { background: "linear-gradient(135deg,#1e40af,#4338ca)" },
-  "from-emerald-800/80 to-teal-700/80": { background: "linear-gradient(135deg,#065f46,#0f766e)" },
-  "from-violet-800/80 to-purple-700/80": { background: "linear-gradient(135deg,#5b21b6,#7c3aed)" },
-  "from-rose-800/80 to-pink-700/80": { background: "linear-gradient(135deg,#9f1239,#be185d)" },
-  "from-sky-800/80 to-cyan-700/80": { background: "linear-gradient(135deg,#075985,#0e7490)" },
-  "from-slate-700/80 to-gray-600/80": { background: "linear-gradient(135deg,#334155,#4b5563)" },
-  "from-fuchsia-800/80 to-pink-700/80": { background: "linear-gradient(135deg,#86198f,#9d174d)" },
-};
-
-const DEFAULT_GRADIENTS = Object.keys(GRADIENT_STYLES);
-const DEFAULT_EMOJIS = ["📓", "📔", "📒", "📕", "📗", "📘", "📙", "🗒️", "📋", "📑"];
-
-function pickDefault<T>(arr: T[], id: string): T {
-  const hash = id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return arr[hash % arr.length];
-}
-
-function getGradientStyle(notebook: PublicNotebook): React.CSSProperties {
-  if (notebook.coverGradient && GRADIENT_STYLES[notebook.coverGradient]) {
-    return GRADIENT_STYLES[notebook.coverGradient];
-  }
-  return GRADIENT_STYLES[pickDefault(DEFAULT_GRADIENTS, notebook.id)];
-}
-
-function getEmoji(notebook: PublicNotebook): string {
-  return notebook.coverEmoji || pickDefault(DEFAULT_EMOJIS, notebook.id);
-}
+import {
+  getNotebookIcon,
+  pickDefaultIcon,
+} from "@/features/notebook/notebook-icons";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 24 },
@@ -68,21 +43,20 @@ const FEATURES = [
 
 function NotebookCard({ notebook }: { notebook: PublicNotebook }) {
   const t = useTranslations("marketing");
+  const iconId = notebook.coverEmoji || pickDefaultIcon(notebook.id);
+  const Icon = getNotebookIcon(iconId);
 
   return (
     <m.div variants={fadeUp}>
       <Link href={`/notebooks/${notebook.id}`} className="block h-full">
         <article className="group relative flex h-full cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/60 bg-card transition-all duration-300 hover:border-border hover:shadow-lg hover:-translate-y-0.5">
-          <div
-            className="flex items-end px-5 pb-0 h-24"
-            style={getGradientStyle(notebook)}
-          >
-            <div className="flex -mb-5 items-center justify-center rounded-xl bg-background shadow-md ring-2 ring-background h-11 w-11 text-xl">
-              {getEmoji(notebook)}
+          <div className="flex items-center gap-3 px-5 pt-5 pb-2">
+            <div className="flex items-center justify-center rounded-2xl bg-muted/50 h-11 w-11">
+              <Icon size={26} />
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col px-5 pb-5 pt-8">
+          <div className="flex flex-1 flex-col px-5 pb-5 pt-1">
             <h3 className="line-clamp-1 text-sm font-semibold text-foreground">
               {notebook.title}
             </h3>

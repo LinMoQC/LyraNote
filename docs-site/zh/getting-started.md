@@ -40,11 +40,11 @@ LLM_MODEL=gpt-4o-mini
 # 可选 — 启用深度研究网络搜索
 TAVILY_API_KEY=tvly-...
 
-# 调试模式：跳过鉴权，无需配置 Clerk
+# 调试模式：跳过鉴权
 DEBUG=true
 ```
 
-> **提示**：本地开发时设置 `DEBUG=true` 可跳过 Clerk 鉴权，直接使用。
+> **提示**：本地开发时设置 `DEBUG=true` 可跳过鉴权，直接使用。
 
 ### 3. 启动应用
 
@@ -96,7 +96,7 @@ docker compose exec api alembic upgrade head
 | `OPENAI_API_KEY` | LLM API 密钥 |
 | `OPENAI_BASE_URL` | 可切换为 DeepSeek / Ollama 地址 |
 | `LLM_MODEL` | 默认：`gpt-4o-mini` |
-| `DEBUG` | 设为 `true` 跳过 Clerk 鉴权 |
+| `DEBUG` | 设为 `true` 跳过鉴权 |
 
 ## 下一步
 

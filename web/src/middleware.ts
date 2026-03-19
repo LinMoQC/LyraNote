@@ -22,6 +22,15 @@ export default function middleware(req: NextRequest) {
   }
 
   const session = req.cookies.get("lyranote_session")?.value
+  const expired = req.nextUrl.searchParams.has("expired")
+
+  // 401 triggered: server-side clear httpOnly cookie, then redirect to clean /login
+  if (expired && session) {
+    const clean = new URL(LOGIN_PATH, req.url)
+    const response = NextResponse.redirect(clean)
+    response.cookies.delete("lyranote_session")
+    return response
+  }
 
   // Logged-in user visiting login or setup → redirect to app
   if (session && (pathname.startsWith(LOGIN_PATH) || pathname.startsWith(SETUP_PATH))) {

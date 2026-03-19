@@ -40,8 +40,6 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    # clerk_id kept for backward-compat; new installs use username+password auth
-    clerk_id: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(255))
@@ -211,6 +209,8 @@ class Message(Base):
     conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"))
     role: Mapped[str] = mapped_column(String(50))   # user | assistant
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # reasoning trace emitted by thinking models
+    reasoning: Mapped[str | None] = mapped_column(Text)
     # [{source_id, chunk_id, excerpt, source_title}]
     citations: Mapped[list | None] = mapped_column(JSONB)
     # [{type, content, tool, input}] — thought / tool_call / tool_result steps
@@ -597,6 +597,31 @@ class KnowledgeRelation(Base):
         foreign_keys=[target_entity_id], back_populates="incoming_relations"
     )
     source: Mapped["Source | None"] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# Research Task (background deep-research with refresh recovery)
+# ---------------------------------------------------------------------------
+
+class ResearchTask(Base):
+    __tablename__ = "research_tasks"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    notebook_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    conversation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
+    )
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    mode: Mapped[str] = mapped_column(String(20), default="quick")
+    # running | done | error
+    status: Mapped[str] = mapped_column(String(20), default="running")
+    report: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deliverable_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    timeline_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = now_col()
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ---------------------------------------------------------------------------

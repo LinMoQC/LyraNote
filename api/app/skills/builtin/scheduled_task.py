@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from app.skills.base import SkillBase, SkillMeta
 
 if TYPE_CHECKING:
-    from app.agents.tools import ToolContext
+    from app.agents.core.tools import ToolContext
 
 
 class ScheduledTaskSkill(SkillBase):

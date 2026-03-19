@@ -1,4 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { DrFloatingIndicator } from "@/features/chat/dr-floating-indicator";
 
 export default function WorkspaceLayout({
   children,
@@ -11,6 +12,7 @@ export default function WorkspaceLayout({
     <AppShell>
       {children}
       {modal}
+      <DrFloatingIndicator />
     </AppShell>
   );
 }

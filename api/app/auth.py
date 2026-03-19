@@ -1,6 +1,5 @@
 """
 Local password auth + JWT (HS256).
-Replaces the previous Clerk JWKS-based verification.
 """
 
 from __future__ import annotations

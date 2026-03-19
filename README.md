@@ -290,7 +290,6 @@ In Docker Compose mode, infrastructure connection strings are injected by the co
 | Variable | Description |
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | Backend API base URL (only needed for Vercel deployments) |
-| `NEXT_PUBLIC_USE_MOCK` | Use mock data for development (`true`/`false`) |
 
 ---
 

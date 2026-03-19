@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from app.skills.base import SkillBase, SkillMeta
 
 if TYPE_CHECKING:
-    from app.agents.tools import ToolContext
+    from app.agents.core.tools import ToolContext
 
 
 class UpdateMemoryDocSkill(SkillBase):
@@ -48,7 +48,7 @@ class UpdateMemoryDocSkill(SkillBase):
 
     async def execute(self, args: dict, ctx: "ToolContext") -> str:
         import asyncio
-        from app.agents.file_memory import write_memory_doc, sync_memory_doc_to_db
+        from app.agents.memory.file_storage import write_memory_doc, sync_memory_doc_to_db
 
         content_md: str = args.get("content_md", "").strip()
         if not content_md:

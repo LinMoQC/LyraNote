@@ -285,7 +285,7 @@ EOF
     log "生产环境变量已写入 ${BOLD}.env${NC}"
 
     echo ""
-    log "api/.env 已生成"
+    log "配置完成"
     echo ""
     echo -e "  ${BOLD}${GREEN}✔ 初始化完成！${NC}"
     echo ""

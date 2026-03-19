@@ -35,6 +35,7 @@ class MessageSave(BaseModel):
     """Persist a pre-generated message without triggering AI."""
     role: str  # "user" | "assistant"
     content: str
+    reasoning: str | None = None
     citations: list | None = None
 
 
@@ -50,6 +51,7 @@ class MessageOut(BaseModel):
     conversation_id: UUID
     role: str
     content: str
+    reasoning: str | None = None
     citations: list | None
     agent_steps: list | None = None
     attachments: list | None = None

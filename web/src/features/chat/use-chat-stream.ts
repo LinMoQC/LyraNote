@@ -49,6 +49,7 @@ export function useChatStream({
   const [agentSteps, setAgentSteps] = useState<AgentEvent[]>([]);
   const agentStepsRef = useRef<AgentEvent[]>([]);
   const assistantContentRef = useRef("");
+  const reasoningContentRef = useRef("");
 
   const toolHintRef = useRef<string | null>(null);
   const attachmentIdsRef = useRef<string[]>([]);
@@ -92,6 +93,7 @@ export function useChatStream({
     setAgentSteps([]);
     agentStepsRef.current = [];
     assistantContentRef.current = "";
+    reasoningContentRef.current = "";
 
     try {
       const usedConvId = await sendMessageStream(
@@ -125,6 +127,15 @@ export function useChatStream({
             assistantIdRef.current = event.message_id;
             setMessages((prev) =>
               prev.map((m) => m.id === curId ? { ...m, id: event.message_id! } : m)
+            );
+            return;
+          }
+          if (event.type === "reasoning" && event.content) {
+            reasoningContentRef.current += event.content;
+            const curId = assistantIdRef.current;
+            const snap = reasoningContentRef.current;
+            setMessages((prev) =>
+              prev.map((m) => m.id === curId ? { ...m, reasoning: snap } : m)
             );
             return;
           }
