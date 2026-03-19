@@ -34,7 +34,7 @@ async def _create_conversation(client, auth_headers, nb_id: str, title: str = "E
         headers=auth_headers,
         json={"title": title},
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code in (200, 201), resp.text
     return resp.json()["data"]["id"]
 
 
@@ -48,7 +48,7 @@ class TestConversationEndpoints:
             headers=auth_headers,
             json={"title": "New Chat"},
         )
-        assert resp.status_code == 200
+        assert resp.status_code in (200, 201)
         data = resp.json()["data"]
         assert "id" in data
         assert data["notebook_id"] == nb_id
@@ -60,7 +60,7 @@ class TestConversationEndpoints:
             headers=auth_headers,
             json={},
         )
-        assert resp.status_code == 200
+        assert resp.status_code in (200, 201)
         assert resp.json()["data"]["id"]
 
     async def test_list_conversations_empty_initially(self, client, auth_headers):

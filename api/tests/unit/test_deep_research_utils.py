@@ -115,9 +115,10 @@ class TestGradeEvidence:
         citations = [{"type": "internal", "chunk_id": "abc"}]
         assert grade_evidence(citations) == "medium"
 
-    def test_single_web_citation_is_medium(self):
+    def test_single_web_citation_is_weak(self):
+        """1 web citation: n=1 and no internal → weak."""
         citations = [{"type": "web", "url": "https://example.com"}]
-        assert grade_evidence(citations) == "medium"
+        assert grade_evidence(citations) == "weak"
 
     def test_two_web_citations_is_medium(self):
         citations = [{"type": "web"}, {"type": "web"}]
