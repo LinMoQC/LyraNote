@@ -112,8 +112,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
     restart: unless-stopped
