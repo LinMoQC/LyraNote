@@ -20,7 +20,8 @@
     "docker:stop": "./lyra stop",
     "docker:logs": "./lyra logs",
     "docker:status": "./lyra status",
-    "commit": "gitmoji -c"
+    "commit": "gitmoji -c",
+    "setup": "echo 'Run: cd packages/cli && pnpm link --global' && echo 'Then: lyra --help'"
   },
   "repository": {
     "type": "git",
