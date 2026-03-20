@@ -22,37 +22,24 @@ cd LyraNote
 ### 2. 配置环境变量
 
 ```bash
-cp api/.env.example api/.env
-cp web/.env.example web/.env.local
+./lyra init
 ```
 
-打开 `api/.env` 并填入必要配置：
+交互式向导会引导你填写所有必要配置，自动生成 `api/.env`，无需手动复制和编辑。
 
-```bash
-# 必填
-OPENAI_API_KEY=sk-...
-SECRET_KEY=你的随机密钥
-
-# 可选 — 切换 LLM 提供商
-OPENAI_BASE_URL=https://api.deepseek.com   # 或 Ollama 地址
-LLM_MODEL=gpt-4o-mini
-
-# 可选 — 启用深度研究网络搜索
-TAVILY_API_KEY=tvly-...
-
-# 调试模式：跳过鉴权
-DEBUG=true
-```
-
-> **提示**：本地开发时设置 `DEBUG=true` 可跳过鉴权，直接使用。
+> AI 相关配置（API Key、模型等）也可以在首次登录后通过 Setup Wizard 在界面上完成配置。
 
 ### 3. 启动应用
 
 使用内置的 `lyra` CLI 一键启动所有服务：
 
 ```bash
-./lyra start
+./lyra docker   # Docker Compose 模式（推荐）
+# 或
+./lyra local    # 本地进程模式（热重载调试）
 ```
+
+> 也可以直接运行 `./lyra` 进入交互式菜单。
 
 启动的服务列表：
 
@@ -65,15 +52,7 @@ DEBUG=true
 | Next.js Web | 前端，端口 `3000` |
 | Celery Worker | 后台任务处理器 |
 
-### 4. 执行数据库迁移
-
-首次启动后，需应用数据库 Schema：
-
-```bash
-docker compose exec api alembic upgrade head
-```
-
-### 5. 打开 LyraNote
+### 4. 打开 LyraNote
 
 在浏览器中访问 `http://localhost:3000`。
 
@@ -81,11 +60,15 @@ docker compose exec api alembic upgrade head
 
 | 命令 | 描述 |
 |---|---|
-| `./lyra start` | 启动所有服务 |
-| `./lyra dev` | 以开发模式启动（热重载） |
-| `./lyra stop` | 停止所有服务 |
-| `./lyra logs` | 查看所有容器日志 |
-| `./lyra status` | 检查容器健康状态 |
+| `lyra` 或 `./lyra` | 交互式菜单 |
+| `lyra init` | 配置向导，生成 `.env` |
+| `lyra docker` | Docker Compose 启动全部服务 |
+| `lyra local` | 本地进程模式（热重载） |
+| `lyra stop` | 停止所有服务 |
+| `lyra logs` | 查看容器日志 |
+| `lyra status` | 检查服务健康状态 |
+| `lyra prod` | 生产模式启动（云端镜像） |
+| `lyra update` | 一键更新（git pull + 重启） |
 
 ## 最小必填环境变量
 
