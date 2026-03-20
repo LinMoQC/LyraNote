@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 # lyra — LyraNote CLI 入口（由 Node.js 驱动）
-exec node "$(dirname "$0")/scripts/lyra-cli/bin/lyra.js" "$@"
+exec node "$(dirname "$0")/packages/cli/bin/lyra.js" "$@"

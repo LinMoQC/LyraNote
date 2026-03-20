@@ -32,6 +32,11 @@ program
   .action(() => dispatch('local'));
 
 program
+  .command('dev')
+  .description('本地开发模式（local 的别名）')
+  .action(() => dispatch('local'));
+
+program
   .command('prod')
   .description('生产模式启动（ghcr.io 云端镜像）')
   .action(() => dispatch('prod'));

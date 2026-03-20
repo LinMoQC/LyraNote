@@ -54,12 +54,12 @@ services:
 
   api:
     build:
-      context: ./api
+      context: ./apps/api
     restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
-      - ./api/.env
+      - ./apps/api/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@db:5432/lyranote
       REDIS_URL: redis://redis:6379/0
@@ -89,10 +89,10 @@ services:
 
   worker:
     build:
-      context: ./api
+      context: ./apps/api
     restart: unless-stopped
     env_file:
-      - ./api/.env
+      - ./apps/api/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@db:5432/lyranote
       REDIS_URL: redis://redis:6379/0
@@ -112,7 +112,7 @@ services:
 
   web:
     build:
-      context: ./web
+      context: ./apps/web
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_BASE_URL: http://localhost:8000/api/v1
@@ -120,7 +120,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - path: ./web/.env.local
+      - path: ./apps/web/.env.local
         required: false
     environment:
       # SSR 服务端请求走 Docker 内网，避免容器内 localhost ECONNREFUSED
