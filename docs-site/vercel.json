@@ -1,9 +1,0 @@
-{
-  "buildCommand": "npm run build",
-  "outputDirectory": ".vitepress/dist",
-  "framework": null,
-  "installCommand": "npm install",
-  "redirects": [
-    { "source": "/", "destination": "/en/", "permanent": false }
-  ]
-}

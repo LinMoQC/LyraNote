@@ -50,7 +50,7 @@ jobs:
       - name: Build and push API image
         uses: docker/build-push-action@v6
         with:
-          context: ./api
+          context: ./apps/api
           push: true
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
@@ -71,7 +71,7 @@ jobs:
       - name: Build and push Web image
         uses: docker/build-push-action@v6
         with:
-          context: ./web
+          context: ./apps/web
           push: true
           tags: ${{ steps.meta-web.outputs.tags }}
           labels: ${{ steps.meta-web.outputs.labels }}

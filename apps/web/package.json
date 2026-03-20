@@ -1,5 +1,5 @@
 {
-  "name": "lyranote-web",
+  "name": "@lyranote/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {

@@ -1,9 +1,10 @@
 {
-  "name": "LyraNote",
+  "name": "lyranote",
   "version": "1.0.0",
   "type": "module",
-  "description": "<div align=\"center\">   <img width=\"120\" alt=\"LyraNote Logo\" src=\"./web/public/lyra.png\">",
+  "description": "LyraNote — AI-powered note-taking and knowledge management",
   "private": true,
+  "packageManager": "pnpm@10.6.2",
   "scripts": {
     "prepare": "husky",
     "lyra": "./lyra",
@@ -12,10 +13,12 @@
     "stop": "./lyra stop",
     "logs": "./lyra logs",
     "status": "./lyra status",
-    "typecheck": "cd web && pnpm exec tsc --noEmit",
-    "docs:dev": "cd docs-site && pnpm run dev",
-    "docs:build": "cd docs-site && pnpm run build",
-    "docs:preview": "cd docs-site && pnpm run preview",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "docs:dev": "turbo run dev --filter=@lyranote/docs",
+    "docs:build": "turbo run build --filter=@lyranote/docs",
+    "docs:preview": "pnpm --filter=@lyranote/docs run preview",
     "commit": "gitmoji -c"
   },
   "repository": {
@@ -23,8 +26,8 @@
     "url": "git@github-linmoqc:LinMoQC/LyraNote.git"
   },
   "lint-staged": {
-    "web/src/**/*.{ts,tsx}": [
-      "bash -c 'cd web && pnpm exec tsc --noEmit'"
+    "apps/web/src/**/*.{ts,tsx}": [
+      "bash -c 'cd apps/web && pnpm exec tsc --noEmit'"
     ]
   },
   "keywords": [],
@@ -36,6 +39,7 @@
     "commitlint-config-gitmoji": "^2.3.1",
     "gitmoji-cli": "^9.7.0",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0"
+    "lint-staged": "^16.4.0",
+    "turbo": "latest"
   }
 }

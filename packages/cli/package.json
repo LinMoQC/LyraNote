@@ -1,5 +1,5 @@
 {
-  "name": "lyra-cli",
+  "name": "@lyranote/cli",
   "version": "1.0.0",
   "description": "LyraNote 项目管理 CLI —— Docker/本地/生产一键启停",
   "type": "module",
