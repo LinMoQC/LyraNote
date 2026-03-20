@@ -198,6 +198,9 @@ importers:
       ora:
         specifier: ^8.2.0
         version: 8.2.0
+      react:
+        specifier: ^19.0.0
+        version: 19.2.4
 
 packages:
 
