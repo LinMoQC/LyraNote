@@ -214,6 +214,10 @@ class AgentEngine:
             else:
                 yield {"type": "tool_result", "content": result[:300]}
 
+            for elem in self.tool_ctx.ui_elements:
+                yield {"type": "ui_element", **elem}
+            self.tool_ctx.ui_elements.clear()
+
             state.tool_results.append(result)
             state.messages.append({
                 "role": "tool",
@@ -365,6 +369,13 @@ class AgentEngine:
                     "role": "assistant",
                     "content": "好的，我已阅读参考资料，请继续。",
                 })
+
+        # After compression + filtering, the original query may have been lost.
+        # Ensure it is always the last user message so the AI knows what to answer.
+        if state.query:
+            last_msg = clean[-1] if clean else None
+            if not last_msg or last_msg.get("role") != "user" or last_msg.get("content") != state.query:
+                clean.append({"role": "user", "content": state.query})
 
         t0 = time.monotonic()
         token_count = 0

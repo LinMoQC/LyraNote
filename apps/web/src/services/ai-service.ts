@@ -53,12 +53,13 @@ export async function getInlineSuggestion(context: string): Promise<string> {
 
 /** 流式 Agent 事件（SSE 推送的各类事件） */
 export interface AgentEvent {
-  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created" | "speed" | "human_approve_required" | "error"
+  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created" | "speed" | "human_approve_required" | "error" | "ui_element"
   content?: string
   tool?: string
   input?: Record<string, unknown>
   citations?: CitationData[]
   data?: Record<string, unknown>
+  element_type?: string
   note_id?: string
   note_title?: string
   notebook_id?: string

@@ -30,6 +30,7 @@ class ToolContext:
     mind_map_data: dict | None = None  # Set by generate_mind_map skill
     created_note_id: str | None = None       # Set by create_note_draft skill
     created_note_title: str | None = None    # Set by create_note_draft skill
+    ui_elements: list[dict] = field(default_factory=list)  # Flushed to SSE after each tool_result
 
 
 # ---------------------------------------------------------------------------

@@ -98,6 +98,15 @@ class WebSearchSkill(SkillBase):
                 }
             )
 
+            ctx.ui_elements.append({
+                "element_type": "web-card",
+                "data": {
+                    "title":   title,
+                    "url":     url,
+                    "snippet": content[:120],
+                }
+            })
+
             result_parts.append(
                 f"[结果{i}] 《{title}》（相关度 {score:.0%}）\n"
                 f"链接：{url}\n"

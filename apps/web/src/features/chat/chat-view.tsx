@@ -43,6 +43,7 @@ import type { Notebook } from "@/types";
 
 import { ChatAlerts } from "./chat-alerts";
 import { ChatEmptyState } from "./chat-empty-state";
+import { ArtifactPanel, type ArtifactPayload } from "./genui";
 import type { LocalMessage } from "./chat-types";
 import { CONVERSATIONS_PAGE_SIZE, MESSAGES_PAGE_SIZE } from "./chat-types";
 import { isLocalAssistantDraft, isServerMessageId, mapRecord, sameConversationIds, sortMessagesByTime } from "./chat-helpers";
@@ -69,6 +70,7 @@ export function ChatView() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [selectedNotebook, setSelectedNotebook] = useState<Notebook | null>(null);
+  const [artifactState, setArtifactState] = useState<ArtifactPayload | null>(null);
 
   const avatarUrl = user?.avatar_url ?? null;
   const initials = (user?.name?.[0] ?? user?.username?.[0] ?? "U").toUpperCase();
@@ -676,6 +678,7 @@ export function ChatView() {
                   onFeedback={handleFeedback}
                   onRegenerate={stableRegenerate}
                   onFollowUp={stableFollowUp}
+                  onArtifact={setArtifactState}
                 />
               ))}
             </AnimatePresence>
@@ -879,6 +882,8 @@ export function ChatView() {
           </>
         )}
       </AnimatePresence>
+
+      <ArtifactPanel artifact={artifactState} onClose={() => setArtifactState(null)} />
     </div>
   );
 }

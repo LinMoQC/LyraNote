@@ -13,6 +13,7 @@ import { AnimatePresence, m } from "framer-motion";
 import {
   Check,
   Copy,
+  ExternalLink,
   FileText,
   RefreshCw,
   ThumbsDown,
@@ -28,7 +29,7 @@ import { InlineCitationBadge } from "@/features/copilot/inline-citation";
 import { AgentSteps } from "@/features/copilot/agent-steps";
 import { DeepResearchProgress } from "@/features/chat/deep-research-progress";
 import { ChoiceCards, parseChoicesBlock } from "@/features/chat/choice-cards";
-import { MermaidBlock } from "@/features/chat/mermaid-block";
+import { buildMarkdownComponents } from "@/features/chat/genui";
 import type { CitationData } from "@/types";
 import type { AgentEvent } from "@/services/ai-service";
 import type { FeedbackRating } from "@/services/feedback-service";
@@ -228,6 +229,54 @@ function ReasoningBlock({ content, streaming }: { content: string; streaming?: b
   );
 }
 
+// ── SourceCard / WebCard (Phase 0 UI Elements) ───────────────────────────────
+
+function SourceCard({ data }: { data: Record<string, unknown> }) {
+  const title = String(data.title ?? "")
+  const excerpt = String(data.excerpt ?? "")
+  const score = typeof data.score === "number" ? data.score : null
+  return (
+    <div className="flex w-52 shrink-0 flex-col gap-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5">
+      <div className="flex items-start gap-1.5">
+        <FileText size={12} className="mt-0.5 shrink-0 text-muted-foreground/50" />
+        <span className="line-clamp-2 text-[12px] font-medium leading-snug text-foreground/80">{title}</span>
+      </div>
+      {excerpt && (
+        <p className="line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/60">{excerpt}</p>
+      )}
+      {score !== null && (
+        <span className="mt-auto self-end text-[10px] tabular-nums text-muted-foreground/40">
+          {Math.round(score * 100)}%
+        </span>
+      )}
+    </div>
+  )
+}
+
+function WebCard({ data }: { data: Record<string, unknown> }) {
+  const title = String(data.title ?? "")
+  const url = String(data.url ?? "")
+  const snippet = String(data.snippet ?? "")
+  const domain = url ? (() => { try { return new URL(url).hostname } catch { return url } })() : ""
+  return (
+    <a
+      href={url || undefined}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex w-52 shrink-0 flex-col gap-1 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2.5 transition-colors hover:border-white/[0.14] hover:bg-white/[0.06]"
+    >
+      <div className="flex items-center gap-1.5">
+        <ExternalLink size={11} className="shrink-0 text-muted-foreground/40" />
+        <span className="truncate text-[10px] text-muted-foreground/40">{domain}</span>
+      </div>
+      <span className="line-clamp-2 text-[12px] font-medium leading-snug text-foreground/80">{title}</span>
+      {snippet && (
+        <p className="line-clamp-2 text-[11px] leading-relaxed text-muted-foreground/60">{snippet}</p>
+      )}
+    </a>
+  )
+}
+
 // ── ChatCitationFooter ────────────────────────────────────────────────────────
 
 function ChatCitationFooter({ citations }: { citations: CitationData[] }) {
@@ -292,6 +341,7 @@ export interface ChatMessageBubbleProps {
   onFeedback: (msgId: string, rating: FeedbackRating) => void;
   onRegenerate: () => void;
   onFollowUp: (q: string) => void;
+  onArtifact?: (payload: { type: "html"; content: string; title: string }) => void;
 }
 
 export const ChatMessageBubble = memo(function ChatMessageBubble({
@@ -308,46 +358,19 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   onFeedback,
   onRegenerate,
   onFollowUp,
+  onArtifact,
 }: ChatMessageBubbleProps) {
   const t = useTranslations("chat");
   const stepsToShow = isLastAssistant && liveAgentSteps.length > 0 ? liveAgentSteps : msg.agentSteps;
 
   const isMermaidStreaming = isLastAssistant && streaming;
-  const mdComponents = useMemo(() => ({
-    p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => <p className="my-1.5">{processChildren(children, msg.citations)}</p>,
-    strong: ({ children }: React.HTMLAttributes<HTMLElement>) => <strong className="font-semibold text-foreground">{processChildren(children, msg.citations)}</strong>,
-    em: ({ children }: React.HTMLAttributes<HTMLElement>) => <em className="italic">{children}</em>,
-    ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
-    ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
-    li: ({ children }: React.HTMLAttributes<HTMLLIElement>) => <li className="my-0.5 leading-6">{processChildren(children, msg.citations)}</li>,
-    h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h1 className="mb-3 mt-6 text-xl font-bold text-foreground">{processChildren(children, msg.citations)}</h1>,
-    h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h2 className="mb-2.5 mt-5 text-lg font-bold text-foreground">{processChildren(children, msg.citations)}</h2>,
-    h3: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{processChildren(children, msg.citations)}</h3>,
-    h4: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h4 className="mb-1.5 mt-3 text-sm font-semibold text-foreground/90">{processChildren(children, msg.citations)}</h4>,
-    h5: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h5 className="mb-1 mt-2.5 text-[13px] font-semibold text-foreground/80">{processChildren(children, msg.citations)}</h5>,
-    blockquote: ({ children }: React.HTMLAttributes<HTMLElement>) => <blockquote className="my-1.5 border-l-2 border-primary/40 pl-3 text-foreground/70">{processChildren(children, msg.citations)}</blockquote>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    code: ({ children, className, ...props }: any) => {
-      const isInline = !("data-language" in props) && !className;
-      if (isInline) return <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-xs text-foreground/90">{children}</code>;
-      const text = String(children).replace(/\n$/, "");
-      if (className === "language-mermaid") return <MermaidBlock code={text} isStreaming={isMermaidStreaming} />;
-      return <CodeBlock code={text} language={className} />;
-    },
-    pre: ({ children }: React.HTMLAttributes<HTMLPreElement>) => <>{children}</>,
-    table: ({ children }: React.HTMLAttributes<HTMLTableElement>) => (
-      <div className="my-3 overflow-x-auto rounded-lg border border-white/[0.08]">
-        <table className="w-full border-collapse text-sm">{children}</table>
-      </div>
-    ),
-    thead: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => <thead className="bg-white/[0.04]">{children}</thead>,
-    tbody: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody className="divide-y divide-white/[0.06]">{children}</tbody>,
-    tr: ({ children }: React.HTMLAttributes<HTMLTableRowElement>) => <tr className="transition-colors hover:bg-white/[0.02]">{children}</tr>,
-    th: ({ children }: React.HTMLAttributes<HTMLTableCellElement>) => <th className="px-3 py-2 text-left text-xs font-semibold text-foreground/70">{children}</th>,
-    td: ({ children }: React.HTMLAttributes<HTMLTableCellElement>) => <td className="px-3 py-2 text-foreground/80">{children}</td>,
-    a: ({ href, children }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">{children}</a>,
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [msg.citations, isMermaidStreaming]);
+  const mdComponents = useMemo(() => buildMarkdownComponents({
+    citations: msg.citations,
+    isMermaidStreaming,
+    CodeBlock,
+    onArtifact,
+  }), [msg.citations, isMermaidStreaming, onArtifact]);
 
   return (
     <m.div
@@ -477,6 +500,16 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
 
           {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
             <ChatCitationFooter citations={msg.citations} />
+          )}
+
+          {msg.role === "assistant" && msg.uiElements && msg.uiElements.length > 0 && (
+            <div className="mt-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+              {msg.uiElements.map((el, i) =>
+                el.element_type === "source-card" ? <SourceCard key={i} data={el.data} />
+                : el.element_type === "web-card"   ? <WebCard key={i} data={el.data} />
+                : null
+              )}
+            </div>
           )}
 
           {msg.role === "assistant" && msg.content !== "" && !(isLastAssistant && streaming) && (

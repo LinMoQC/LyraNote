@@ -16,16 +16,17 @@ export interface StreamingMetrics {
 }
 
 export interface LocalMessage {
-  id: string;
-  role: ChatRole;
-  content: string;
-  reasoning?: string;
-  timestamp: Date;
-  citations?: CitationData[];
-  agentSteps?: AgentStep[];
-  deepResearch?: DrProgress;
-  attachments?: MessageAttachment[];
-  speed?: StreamingMetrics;
+  id: string
+  role: ChatRole
+  content: string
+  reasoning?: string
+  timestamp: Date
+  citations?: CitationData[]
+  agentSteps?: AgentStep[]
+  deepResearch?: DrProgress
+  attachments?: MessageAttachment[]
+  speed?: StreamingMetrics
+  uiElements?: Array<{ element_type: string; data: Record<string, unknown> }>
 }
 
 export const CONVERSATIONS_PAGE_SIZE = 30;

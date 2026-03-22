@@ -236,6 +236,17 @@ export function useChatStream({
             });
             return;
           }
+          if (event.type === "ui_element" && event.element_type) {
+            const curId = assistantIdRef.current;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === curId
+                  ? { ...m, uiElements: [...(m.uiElements ?? []), { element_type: event.element_type!, data: event.data ?? {} }] }
+                  : m
+              )
+            );
+            return;
+          }
           agentStepsRef.current = [...agentStepsRef.current, event];
           setAgentSteps((prev) => [...prev, event]);
         },
