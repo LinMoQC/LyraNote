@@ -31,7 +31,7 @@ function loadMermaid() {
   return mermaidReady;
 }
 
-function _MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+function MermaidBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
   const uniqueId = useId().replace(/:/g, "_");
   const [error, setError] = useState<string | null>(null);
   const [svgHtml, setSvgHtml] = useState<string | null>(null);
@@ -110,4 +110,4 @@ function _MermaidBlock({ code, isStreaming }: { code: string; isStreaming?: bool
   );
 }
 
-export const MermaidBlock = memo(_MermaidBlock);
+export const MermaidBlock = memo(MermaidBlockInner);

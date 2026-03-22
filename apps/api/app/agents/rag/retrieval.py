@@ -311,6 +311,35 @@ def _merge_hybrid(
 # Query rewriting and expansion
 # ---------------------------------------------------------------------------
 
+async def _rewrite_query(query: str) -> str:
+    """
+    Rewrite a single query for improved retrieval.
+
+    Resolves coreferences, expands abbreviations, and returns a concise
+    retrieval-friendly string.  Falls back to the original query on any
+    error or if the LLM returns an empty response.
+    """
+    from app.providers.llm import chat
+
+    prompt = (
+        "Rewrite the following user question into a concise retrieval query "
+        "by resolving coreferences and expanding abbreviations. "
+        "Return only the rewritten query, no explanation.\n\n"
+        f"Question: {query}"
+    )
+    try:
+        result = await chat(
+            [{"role": "user", "content": prompt}],
+            None,
+            0,
+            100,
+        )
+        rewritten = result.strip()
+        return rewritten if rewritten else query
+    except Exception:
+        return query
+
+
 async def _generate_query_variants(
     query: str,
     history: list[dict] | None = None,
