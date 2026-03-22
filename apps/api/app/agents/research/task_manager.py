@@ -80,6 +80,7 @@ async def run_research_task(
     model: str,
     tavily_api_key: str | None,
     user_memories: list[dict],
+    clarification_context: list[dict] | None = None,
 ) -> None:
     """Background coroutine: run LangGraph, push events to buffer, save to DB."""
     buf = TaskBuffer()
@@ -106,6 +107,7 @@ async def run_research_task(
                 "tavily_api_key": tavily_api_key,
                 "user_memories": user_memories,
                 "mode": mode,
+                "clarification_context": clarification_context,
                 "research_goal": "",
                 "evaluation_criteria": [],
                 "search_matrix": {},

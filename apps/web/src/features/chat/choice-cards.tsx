@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ChevronRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface Choice {
@@ -28,16 +29,24 @@ export function ChoiceCards({ choices, onSelect }: ChoiceCardsProps) {
             onSelect(c.value);
           }}
           className={cn(
-            "rounded-xl border px-3 py-2 text-sm transition-all",
+            "group flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-150",
             selected === c.value
-              ? "border-primary/40 bg-primary/15 text-primary"
+              ? "border-primary/50 bg-primary/10 text-primary"
               : selected
-                ? "cursor-not-allowed border-border/20 bg-muted/20 text-muted-foreground/40"
-                : "border-primary/20 bg-primary/[0.06] text-primary/80 hover:border-primary/40 hover:bg-primary/[0.12]",
+                ? "cursor-not-allowed border-border/20 text-muted-foreground/30 opacity-40"
+                : "border-border/50 bg-background/50 text-foreground/65 hover:border-primary/40 hover:bg-primary/[0.07] hover:text-primary/90",
           )}
           disabled={!!selected}
         >
-          {c.label}
+          <Sparkles size={10} className="shrink-0 opacity-50" />
+          <span>{c.label}</span>
+          <ChevronRight
+            size={10}
+            className={cn(
+              "shrink-0 opacity-40 transition-transform duration-150",
+              !selected && "group-hover:translate-x-0.5 group-hover:opacity-70",
+            )}
+          />
         </button>
       ))}
     </div>

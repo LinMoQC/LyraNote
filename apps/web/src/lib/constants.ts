@@ -81,6 +81,16 @@ export const DEFAULT_LLM_MODEL = "gpt-4o-mini"
 export const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
+/** 可选的重排序模型列表 (Cross-Encoder, 推荐 SiliconFlow 免费配额) */
+export const RERANKER_MODELS: ModelOption[] = [
+  { value: "BAAI/bge-reranker-v2-m3",                       label: "bge-reranker-v2-m3",                group: "BAAI" },
+  { value: "BAAI/bge-reranker-v2.5-gemma2-lightweight",     label: "bge-reranker-v2.5-gemma2-lite",     group: "BAAI" },
+  { value: "BAAI/bge-reranker-large",                       label: "bge-reranker-large",                group: "BAAI" },
+]
+
+export const DEFAULT_RERANKER_MODEL = "BAAI/bge-reranker-v2-m3"
+export const DEFAULT_RERANKER_BASE_URL = "https://api.siliconflow.cn/v1"
+
 // ── Storage backends ─────────────────────────────────────────────────────────
 
 /** 支持的文件存储后端类型 */

@@ -29,6 +29,14 @@ def get_provider() -> BaseLLMProvider:
             api_key=settings.openai_api_key,
             default_model=settings.llm_model,
         )
+    elif provider_type == "litellm":
+        from app.providers.litellm_provider import LiteLLMProvider
+
+        _provider = LiteLLMProvider(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url or None,
+            default_model=settings.llm_model,
+        )
     else:
         from app.providers.openai_provider import OpenAIProvider
 

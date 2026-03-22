@@ -14,18 +14,26 @@ from app.exceptions import BadRequestError
 from app.models import AppConfig
 from app.schemas.response import ApiResponse, success
 
-from .schemas import ConfigOut, ConfigPatchRequest, TestEmailResult, TestLlmResult
+from .schemas import ConfigOut, ConfigPatchRequest, TestEmailResult, TestEmbeddingResult, TestLlmResult, TestRerankerResult
 
 router = APIRouter(tags=["config"])
 
 # Keys that can be read/written via this endpoint (mirrors setup RUNTIME_CONFIG_KEYS)
 EDITABLE_KEYS = {
-    # AI
+    # AI — LLM
     "llm_provider",
     "openai_api_key",
     "openai_base_url",
     "llm_model",
+    # AI — Embedding
     "embedding_model",
+    "embedding_api_key",
+    "embedding_base_url",
+    # AI — Reranker (optional, Cross-Encoder)
+    "reranker_api_key",
+    "reranker_model",
+    "reranker_base_url",
+    # AI — Search
     "tavily_api_key",
     "perplexity_api_key",
     # Storage
@@ -53,6 +61,8 @@ EDITABLE_KEYS = {
 # Keys whose values should be masked when reading (shown as placeholder)
 _SENSITIVE_KEYS = {
     "openai_api_key",
+    "embedding_api_key",
+    "reranker_api_key",
     "storage_s3_access_key",
     "storage_s3_secret_key",
     "tavily_api_key",
@@ -114,6 +124,24 @@ async def update_config(body: ConfigPatchRequest, _current_user: CurrentUser, db
         from app.providers.provider_factory import reset_provider
         reset_provider()
 
+    # Reset embedding client when embedding-related keys change
+    embedding_keys = {"openai_api_key", "openai_base_url", "embedding_api_key", "embedding_base_url", "embedding_model"}
+    if embedding_keys & set(body.data.keys()):
+        try:
+            from app.providers import embedding
+            embedding._client = None
+        except Exception:
+            pass
+
+    # Reset reranker client when reranker-related keys change
+    reranker_keys = {"reranker_api_key", "reranker_model", "reranker_base_url"}
+    if reranker_keys & set(body.data.keys()):
+        try:
+            from app.providers import reranker
+            reranker._client = None  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
 
 @router.post("/config/test-email", response_model=ApiResponse[TestEmailResult])
 async def test_email(_current_user: CurrentUser, db: DbDep):
@@ -156,11 +184,10 @@ async def test_email(_current_user: CurrentUser, db: DbDep):
 @router.post("/config/test-llm", response_model=ApiResponse[TestLlmResult])
 async def test_llm_connection(_current_user: CurrentUser, db: DbDep):
     """Send a minimal request to the configured LLM to verify connectivity."""
-    from openai import AsyncOpenAI
-
-    result = await db.execute(select(AppConfig).where(AppConfig.key.in_({"openai_api_key", "openai_base_url", "llm_model"})))
+    result = await db.execute(select(AppConfig).where(AppConfig.key.in_({"llm_provider", "openai_api_key", "openai_base_url", "llm_model"})))
     rows = {r.key: r.value for r in result.scalars().all()}
 
+    provider = rows.get("llm_provider") or app_settings.llm_provider or "openai"
     api_key = rows.get("openai_api_key") or app_settings.openai_api_key
     base_url = rows.get("openai_base_url") or app_settings.openai_base_url or None
     model = rows.get("llm_model") or app_settings.llm_model
@@ -168,14 +195,97 @@ async def test_llm_connection(_current_user: CurrentUser, db: DbDep):
     if not api_key:
         return success(TestLlmResult(ok=False, model=model, message="未设置 API Key"))
 
-    client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=15.0)
     try:
-        resp = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": "Hi"}],
-            max_tokens=5,
-        )
-        reply = (resp.choices[0].message.content or "").strip()
+        if provider == "litellm":
+            import litellm
+            call_kw: dict = dict(
+                model=model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5,
+                api_key=api_key,
+            )
+            if model.startswith("gemini/"):
+                call_kw["custom_llm_provider"] = "gemini"
+            if base_url:
+                call_kw["api_base"] = base_url
+            resp = await litellm.acompletion(**call_kw)
+            reply = (resp.choices[0].message.content or "").strip()
+        else:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=15.0)
+            resp = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5,
+            )
+            reply = (resp.choices[0].message.content or "").strip()
         return success(TestLlmResult(ok=True, model=model, message=reply or "OK"))
     except Exception as exc:
         return success(TestLlmResult(ok=False, model=model, message=str(exc)[:200]))
+
+
+@router.post("/config/test-embedding", response_model=ApiResponse[TestEmbeddingResult])
+async def test_embedding_connection(_current_user: CurrentUser, db: DbDep):
+    """Test the configured Embedding API by creating a short vector."""
+    from openai import AsyncOpenAI
+
+    result = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(
+            {"openai_api_key", "openai_base_url", "embedding_model", "embedding_api_key", "embedding_base_url"}
+        ))
+    )
+    rows = {r.key: r.value for r in result.scalars().all()}
+
+    api_key = rows.get("embedding_api_key") or rows.get("openai_api_key") or app_settings.embedding_api_key or app_settings.openai_api_key
+    base_url = rows.get("embedding_base_url") or rows.get("openai_base_url") or app_settings.embedding_base_url or app_settings.openai_base_url or None
+    model = rows.get("embedding_model") or app_settings.embedding_model
+
+    if not api_key:
+        return success(TestEmbeddingResult(ok=False, model=model, dimensions=0, message="未设置 API Key"))
+
+    client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=15.0)
+    try:
+        resp = await client.embeddings.create(model=model, input=["test"])
+        dims = len(resp.data[0].embedding)
+        return success(TestEmbeddingResult(ok=True, model=model, dimensions=dims, message=f"维度 {dims}"))
+    except Exception as exc:
+        return success(TestEmbeddingResult(ok=False, model=model, dimensions=0, message=str(exc)[:200]))
+
+
+@router.post("/config/test-reranker", response_model=ApiResponse[TestRerankerResult])
+async def test_reranker_connection(_current_user: CurrentUser, db: DbDep):
+    """Test the configured Reranker API with a minimal request."""
+    import httpx
+
+    result = await db.execute(
+        select(AppConfig).where(AppConfig.key.in_(
+            {"openai_api_key", "openai_base_url", "reranker_api_key", "reranker_base_url", "reranker_model"}
+        ))
+    )
+    rows = {r.key: r.value for r in result.scalars().all()}
+
+    api_key = rows.get("reranker_api_key") or rows.get("openai_api_key") or app_settings.reranker_api_key or app_settings.openai_api_key
+    base_url = (rows.get("reranker_base_url") or rows.get("openai_base_url") or app_settings.reranker_base_url or app_settings.openai_base_url or "").rstrip("/")
+    model = rows.get("reranker_model") or app_settings.reranker_model
+
+    if not api_key:
+        return success(TestRerankerResult(ok=False, model=model, message="未设置 API Key"))
+    if not base_url:
+        return success(TestRerankerResult(ok=False, model=model, message="未设置 Base URL"))
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{base_url}/rerank",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "query": "test", "documents": ["hello world"], "top_n": 1, "return_documents": False},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        results = data.get("results", [])
+        if results:
+            score = round(results[0].get("relevance_score", 0), 4)
+            return success(TestRerankerResult(ok=True, model=model, message=f"Score {score}"))
+        return success(TestRerankerResult(ok=True, model=model, message="OK"))
+    except Exception as exc:
+        return success(TestRerankerResult(ok=False, model=model, message=str(exc)[:200]))

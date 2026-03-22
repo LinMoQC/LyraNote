@@ -29,10 +29,29 @@ class SourceSuggestionsOut(BaseModel):
 
 # ── Research ────────────────────────────────────────────────────────────────
 
+class ClarifyOption(BaseModel):
+    label: str
+    value: str
+
+
+class ClarifyQuestion(BaseModel):
+    question: str
+    options: list[ClarifyOption]
+
+
+class ClarifyRequest(BaseModel):
+    query: str
+
+
+class ClarifyResponse(BaseModel):
+    questions: list[ClarifyQuestion]
+
+
 class DeepResearchRequest(BaseModel):
     query: str
     notebook_id: str | None = None
     mode: Literal["quick", "deep"] = "quick"
+    clarification_context: list[dict] | None = None
 
 
 # ── Writing ─────────────────────────────────────────────────────────────────

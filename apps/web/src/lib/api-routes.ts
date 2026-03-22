@@ -34,6 +34,10 @@ export const SETUP = {
   INIT: "/setup/init",
   /** POST - 测试 LLM 连接（临时凭据） */
   TEST_LLM: "/setup/test-llm",
+  /** POST - 测试 Embedding 连接（临时凭据） */
+  TEST_EMBEDDING: "/setup/test-embedding",
+  /** POST - 测试 Reranker 连接（临时凭据） */
+  TEST_RERANKER: "/setup/test-reranker",
 } as const;
 
 // ── 系统配置 ──────────────────────────────────────────────────────────────────
@@ -43,6 +47,10 @@ export const CONFIG = {
   BASE: "/config",
   /** POST - 测试已保存的 LLM 配置 */
   TEST_LLM: "/config/test-llm",
+  /** POST - 测试已保存的 Embedding 配置 */
+  TEST_EMBEDDING: "/config/test-embedding",
+  /** POST - 测试已保存的 Reranker 配置 */
+  TEST_RERANKER: "/config/test-reranker",
   /** POST - 测试 SMTP 邮件配置 */
   TEST_EMAIL: "/config/test-email",
 } as const;
@@ -128,6 +136,8 @@ export const AI = {
   POLISH: "/ai/polish",
   /** POST - 创建深度研究任务 */
   DEEP_RESEARCH: "/ai/deep-research",
+  /** POST - 深度研究前置澄清问题 */
+  DEEP_RESEARCH_CLARIFY: "/ai/deep-research/clarify",
   /** GET - 深度研究任务状态 */
   deepResearchStatus: (taskId: string) => `/ai/deep-research/${taskId}`,
   /** GET - 深度研究事件流 (SSE) */

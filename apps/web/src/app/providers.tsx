@@ -53,7 +53,7 @@ export function Providers({ children, messages, locale, timeZone }: ProvidersPro
     <AuthProvider>
         <NextIntlClientProvider messages={messages} locale={locale} timeZone={timeZone}>
         <QueryClientProvider client={queryClient}>
-          <LazyMotion features={domAnimation} strict>
+          <LazyMotion features={domAnimation}>
             <ThemeProvider
               attribute="class"
               defaultTheme="dark"

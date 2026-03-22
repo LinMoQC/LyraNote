@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
@@ -6,8 +6,10 @@ import { useDeepResearchStore } from "@/store/use-deep-research-store";
 import { submitMessageFeedback } from "@/services/feedback-service";
 import { saveNote } from "@/services/note-service";
 import { getMessages } from "@/services/conversation-service";
+import { getClarifyingQuestions } from "@/services/ai-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { DrProgress } from "@/features/chat/deep-research-progress";
+import type { ClarifyQuestion } from "@/features/chat/dr-types";
 import type { useStreamLifecycle } from "@/features/chat/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
@@ -17,6 +19,11 @@ import { mapRecord, sortMessagesByTime } from "./chat-helpers";
 import type { Dispatch, SetStateAction } from "react";
 
 export const DR_MESSAGES_KEY = "lyranote-dr-messages";
+
+export interface ClarifyingState {
+  questions: ClarifyQuestion[];
+  query: string;
+}
 
 interface UseDeepResearchOpts {
   globalNotebookId: string | undefined;
@@ -55,6 +62,9 @@ export function useDeepResearch({
   const deliverableMessageIdRef = useRef<string | null>(null);
   const drPersistedRef = useRef(false);
   const drQueryRef = useRef<string>("");
+
+  const [clarifyingState, setClarifyingState] = useState<ClarifyingState | null>(null);
+  const [isFetchingClarifications, setIsFetchingClarifications] = useState(false);
 
   // Watch store: when isActive transitions false → handle completion
   const prevIsActiveRef = useRef(drStore.isActive);
@@ -143,23 +153,18 @@ export function useDeepResearch({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drStore.isActive, activeConvId]);
 
-  const handleDeepResearch = useCallback(async (text: string) => {
-    if (!text || streaming) return;
-    setInput("");
-    drQueryRef.current = text;
-
-    const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: "user", content: text, timestamp: new Date() };
-    setMessages((prev) => [...prev, userMsg]);
+  const _startResearch = useCallback(async (
+    text: string,
+    clarificationContext: Array<{ question: string; answer: string }> | null,
+  ) => {
     setStreaming(true);
     streamLifecycle.start();
     streamAbortRef.current?.abort();
-
     deliverableMessageIdRef.current = null;
 
     try {
-      await getDrState().start(text, globalNotebookId ?? undefined, drMode);
+      await getDrState().start(text, globalNotebookId ?? undefined, drMode, clarificationContext ?? undefined);
 
-      // Backend created the conversation — activate it immediately
       const { conversationId } = getDrState();
       if (conversationId) {
         setActiveConvId(conversationId);
@@ -175,7 +180,46 @@ export function useDeepResearch({
       setStreaming(false);
       streamLifecycle.finish();
     }
-  }, [streaming, globalNotebookId, drMode, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, queryClient, t]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalNotebookId, drMode, streamLifecycle, streamAbortRef, setStreaming, setActiveConvId, queryClient, t]);
+
+  const handleDeepResearch = useCallback(async (overrideText?: string) => {
+    const text = overrideText ?? "";
+    if (!text || streaming) return;
+    setInput("");
+    drQueryRef.current = text;
+
+    const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: "user", content: text, timestamp: new Date() };
+    setMessages((prev) => [...prev, userMsg]);
+
+    if (drMode === "deep") {
+      setIsFetchingClarifications(true);
+      try {
+        const { questions } = await getClarifyingQuestions(text);
+        setClarifyingState({ questions, query: text });
+      } catch {
+        await _startResearch(text, null);
+      } finally {
+        setIsFetchingClarifications(false);
+      }
+      return;
+    }
+
+    await _startResearch(text, null);
+  }, [streaming, drMode, _startResearch, setMessages, setInput]);
+
+  const submitClarifications = useCallback(async (answers: Record<number, string>) => {
+    if (!clarifyingState) return;
+    const { questions, query } = clarifyingState;
+    const clarificationContext = Object.entries(answers)
+      .filter(([, answer]) => answer)
+      .map(([idx, answer]) => ({
+        question: questions[Number(idx)]?.question ?? "",
+        answer,
+      }));
+    setClarifyingState(null);
+    await _startResearch(query, clarificationContext.length > 0 ? clarificationContext : null);
+  }, [clarifyingState, _startResearch]);
 
   const handleSaveAsNote = useCallback(async (reportOverride?: string, titleOverride?: string) => {
     if (!globalNotebookId) throw new Error("No notebook");
@@ -223,5 +267,8 @@ export function useDeepResearch({
     handleSaveAsNote,
     handleDrRate,
     setDrProgress,
+    clarifyingState,
+    isFetchingClarifications,
+    submitClarifications,
   };
 }

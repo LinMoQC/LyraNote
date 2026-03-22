@@ -33,6 +33,42 @@ from app.agents.core.tools import ToolContext, execute_tool
 logger = logging.getLogger(__name__)
 
 
+def _build_context(tool_results: list[str], max_total_chars: int = 6000) -> str:
+    """
+    Build the RAG context string from tool results with source deduplication.
+
+    - Splits each result into individual "[片段N]" sections
+    - Keeps at most 2 chunks per unique source title
+    - Caps total length at max_total_chars to protect the context window
+    """
+    import re
+
+    sections: list[str] = []
+    seen_sources: dict[str, int] = {}  # source_title → count of included chunks
+
+    for result_block in tool_results[:8]:
+        # Split on "[片段N]" markers
+        raw_sections = re.split(r"(?=\[片段\d+\])", result_block)
+        for section in raw_sections:
+            section = section.strip()
+            if not section:
+                continue
+            # Extract source title from "来源：《xxx》" pattern
+            title_match = re.search(r"来源：《(.+?)》", section)
+            source_title = title_match.group(1) if title_match else "_unknown"
+            count = seen_sources.get(source_title, 0)
+            if count >= 2:
+                continue  # already have 2 chunks from this source
+            seen_sources[source_title] = count + 1
+            sections.append(section)
+
+    combined = "\n\n---\n\n".join(sections)
+    # Hard-cap to avoid overflowing context window
+    if len(combined) > max_total_chars:
+        combined = combined[:max_total_chars] + "\n\n[…内容已截断]"
+    return combined
+
+
 class AgentEngine:
     """Execute agent instructions, yielding SSE-compatible event dicts."""
 
@@ -315,7 +351,7 @@ class AgentEngine:
         ]
 
         if state.tool_results:
-            combined = "\n\n---\n\n".join(state.tool_results[:6])
+            combined = _build_context(state.tool_results)
             last_user = next(
                 (i for i in range(len(clean) - 1, -1, -1) if clean[i].get("role") == "user"),
                 -1,

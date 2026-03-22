@@ -2,6 +2,16 @@ import { ShieldAlert, ShieldCheck, ShieldEllipsis } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface ClarifyOption {
+  label: string;
+  value: string;
+}
+
+export interface ClarifyQuestion {
+  question: string;
+  options: ClarifyOption[];
+}
+
 export interface DrLearning {
   question: string;
   content: string;

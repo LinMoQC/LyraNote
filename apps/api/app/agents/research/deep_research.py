@@ -73,6 +73,7 @@ class ResearchState(TypedDict):
     tavily_api_key: str | None
     user_memories: list[dict]
     mode: str               # "quick" | "deep"
+    clarification_context: list[dict] | None  # [{question, answer}, ...]
 
     # ── plan_node output ───────────────────────────────────────────────────────
     report_title: str
@@ -266,7 +267,77 @@ async def web_search_sync(query: str, tavily_api_key: str, max_results: int = 4)
 
 # ── Research primitives ───────────────────────────────────────────────────────
 
-async def _plan(query: str, client: AsyncOpenAI, model: str, queries_per_dim: int = 2) -> dict:
+async def generate_clarifying_questions(query: str, client: AsyncOpenAI, model: str) -> list[dict]:
+    """Generate 4 query-specific clarifying questions with 3 options each."""
+    system_prompt = (
+        "你是一位研究助手，需要通过几个简短选择题了解用户的研究偏好，以便生成更精准的深度研究报告。\n\n"
+        "根据用户的研究主题，生成4个选择题，每题3个选项。问题须涵盖：\n"
+        "1. 研究侧重（选项必须与该主题强相关，不可用通用词汇）\n"
+        "2. 目标读者（专业研究者 / 行业从业者 / 普通读者）\n"
+        "3. 时间维度（最新进展为主 / 历史演进 / 不限）\n"
+        "4. 报告风格（综合综述 / 技术深度分析 / 案例驱动）\n\n"
+        "要求：\n"
+        "- 第1题的选项必须高度贴合研究主题，体现该领域的核心分支或方向\n"
+        "- 选项 value 使用简洁英文关键词，label 使用中文\n"
+        "- 只返回JSON，不含其他文字\n\n"
+        '输出格式：{"questions": [{"question": "...", "options": [{"label": "...", "value": "..."}, ...]}, ...]}'
+    )
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"研究主题：{query}"},
+            ],
+            temperature=0.3,
+            max_tokens=600,
+            response_format={"type": "json_object"},
+        )
+        raw = _strip_fences((resp.choices[0].message.content or "").strip())
+        result = json.loads(raw)
+        questions = result.get("questions", [])
+        if questions and len(questions) >= 2:
+            return questions
+    except Exception:
+        pass
+
+    return [
+        {
+            "question": "研究侧重是什么？",
+            "options": [
+                {"label": "理论原理", "value": "theory"},
+                {"label": "实践应用", "value": "practice"},
+                {"label": "两者兼顾", "value": "both"},
+            ],
+        },
+        {
+            "question": "您的目标读者是？",
+            "options": [
+                {"label": "专业研究者", "value": "researcher"},
+                {"label": "行业从业者", "value": "practitioner"},
+                {"label": "普通读者", "value": "general"},
+            ],
+        },
+        {
+            "question": "时间维度侧重？",
+            "options": [
+                {"label": "最新进展（近1年）", "value": "recent"},
+                {"label": "历史演进与现状", "value": "history"},
+                {"label": "不限时间", "value": "all"},
+            ],
+        },
+        {
+            "question": "报告输出风格？",
+            "options": [
+                {"label": "综合综述", "value": "overview"},
+                {"label": "技术深度分析", "value": "technical"},
+                {"label": "案例驱动", "value": "case_study"},
+            ],
+        },
+    ]
+
+
+async def _plan(query: str, client: AsyncOpenAI, model: str, queries_per_dim: int = 2, clarification_context: list[dict] | None = None) -> dict:
     """
     Generate a structured research plan with a 4-dimension search matrix.
     Returns: {research_goal, evaluation_criteria, search_matrix, title}
@@ -315,7 +386,11 @@ async def _plan(query: str, client: AsyncOpenAI, model: str, queries_per_dim: in
                     "}}"
                 ),
             },
-            {"role": "user", "content": f"研究主题：{query}"},
+            {"role": "user", "content": f"研究主题：{query}" + (
+                "\n\n用户研究偏好（请根据以下偏好调整研究侧重、深度和报告风格）：\n"
+                + "\n".join(f"- {item['question']}：{item['answer']}" for item in clarification_context if item.get("answer"))
+                if clarification_context else ""
+            )},
         ],
         temperature=0.4,
         max_tokens=800 if n <= 2 else 1200,
@@ -504,11 +579,23 @@ async def _synthesize_report(
         "- 报告应包含：背景引入 → 核心发现 → 争议或局限 → 结论与建议，但具体章节名称和数量由你根据内容决定\n"
         "- 关键发现处标注证据等级，格式：[证据：强/中/弱]\n"
         "- 最后一个章节应包含3-5条具体可执行的行动建议（有序列表）\n\n"
-        f"字数{report_words}字，使用 Markdown 格式，不要引用来源编号。"
+        f"字数{report_words}字，使用 Markdown 格式，不要引用来源编号。\n\n"
+        "## 严格禁止\n"
+        "- 禁止任何问候语、开场白或自我介绍（如\"尊敬的...\"、\"见字如面\"、\"我是...秘书\"等）\n"
+        "- 直接从报告正文内容开始，第一行必须是 ## 章节标题或报告主体文字"
     )
+    # Only inject factual background memories (occupation, research preferences),
+    # exclude identity/persona memories (preferred_ai_name, user_role, communication_tone)
+    # which cause the report to adopt a letter/greeting format.
+    _PERSONA_KEYS = {"preferred_ai_name", "user_role", "communication_tone", "ai_name"}
     if user_memories:
-        mem_lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in user_memories)
-        system_content += f"\n\n用户背景信息（据此调整报告深度和侧重）：\n{mem_lines}"
+        factual_memories = [
+            m for m in user_memories
+            if str(m.get("key", "")).strip() not in _PERSONA_KEYS
+        ]
+        if factual_memories:
+            mem_lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in factual_memories)
+            system_content += f"\n\n用户背景信息（据此调整报告深度和侧重）：\n{mem_lines}"
 
     MAX_CONTINUATIONS = 3
     messages = [
@@ -621,7 +708,11 @@ def create_research_graph(
     async def plan_node(state: ResearchState) -> dict:
         cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         await adispatch_custom_event("plan", {"status": "planning"})
-        plan_result = await _plan(state["query"], client, state["model"], queries_per_dim=cfg.queries_per_dim)
+        plan_result = await _plan(
+            state["query"], client, state["model"],
+            queries_per_dim=cfg.queries_per_dim,
+            clarification_context=state.get("clarification_context"),
+        )
         all_queries = [q for qs in plan_result["search_matrix"].values() for q in qs]
         report_title = plan_result.get("title") or state["query"][:25]
         await adispatch_custom_event("plan", {

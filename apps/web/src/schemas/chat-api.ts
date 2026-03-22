@@ -29,6 +29,11 @@ export const MessageRecordSchema = z.object({
     type: z.string(),
     file_id: z.string(),
   })).nullable().optional(),
+  speed: z.object({
+    ttft_ms: z.number(),
+    tps: z.number(),
+    tokens: z.number(),
+  }).nullable().optional(),
   created_at: z.string(),
 });
 

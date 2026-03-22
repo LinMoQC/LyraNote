@@ -13,13 +13,18 @@ class Settings(BaseSettings):
 
     # LLM Provider
     # Supported: openai (default, works with any OpenAI-compatible endpoint),
-    #            anthropic (native Anthropic SDK)
-    llm_provider: Literal["openai", "anthropic"] = "openai"
+    #            anthropic (native Anthropic SDK),
+    #            litellm (universal adapter — Gemini, Mistral, Cohere, etc.)
+    #            For litellm, prefix model names with provider: gemini/gemini-2.0-flash
+    llm_provider: Literal["openai", "anthropic", "litellm"] = "openai"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    # Embedding-specific overrides (falls back to openai_api_key / openai_base_url when empty)
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
 
     # Auth (local JWT)
     # Set a fixed secret in .env for production; empty = random per-process (dev only)
@@ -47,6 +52,16 @@ class Settings(BaseSettings):
     # For Docker/self-hosted MinIO: set to http://localhost:9000 (or your server's public address).
     # Leave empty to fall back to storage_s3_endpoint_url.
     storage_s3_public_url: str = ""
+
+    # Cross-Encoder Reranker (optional — leave empty to skip reranking)
+    # Recommended: SiliconFlow free tier (https://siliconflow.cn)
+    reranker_api_key: str = ""
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_base_url: str = "https://api.siliconflow.cn/v1"
+    reranker_timeout: float = 8.0
+
+    # Embedding query cache (Redis TTL in seconds; 0 = disabled)
+    embedding_cache_ttl: int = 3600
 
     # Tavily AI Search
     tavily_api_key: str = ""

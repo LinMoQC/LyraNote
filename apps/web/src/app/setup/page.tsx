@@ -28,8 +28,11 @@ import {
   DEFAULT_BASE_URL,
   DEFAULT_EMBEDDING_MODEL,
   DEFAULT_LLM_MODEL,
+  DEFAULT_RERANKER_BASE_URL,
+  DEFAULT_RERANKER_MODEL,
   EMBEDDING_MODELS,
   LLM_MODELS,
+  RERANKER_MODELS,
   STORAGE_LOGO,
 } from "@/lib/constants"
 import {
@@ -42,7 +45,7 @@ import {
   type PersonalityValues,
   type StorageValues,
 } from "@/schemas/setup-schemas"
-import { setupInit, testLlmConnection } from "@/services/auth-service"
+import { setupInit, testEmbeddingConnection, testLlmConnection, testRerankerConnection } from "@/services/auth-service"
 
 // ── Storage provider brand icons ──────────────────────────────────────────────
 
@@ -174,6 +177,12 @@ export default function SetupPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [llmCustomMode, setLlmCustomMode] = useState(false)
+  const [embTesting, setEmbTesting] = useState(false)
+  const [embTestResult, setEmbTestResult] = useState<{ ok: boolean; message: string } | null>(null)
+  const [rerankerTesting, setRerankerTesting] = useState(false)
+  const [rerankerTestResult, setRerankerTestResult] = useState<{ ok: boolean; message: string } | null>(null)
 
   const accountSchema = createAccountSchema(t)
   const aiSchema = createAiSchema(t)
@@ -194,9 +203,15 @@ export default function SetupPage() {
   const aiForm = useForm<AIValues>({
     resolver: zodResolver(aiSchema),
     defaultValues: {
+      llm_provider: "openai",
       openai_base_url: DEFAULT_BASE_URL,
       llm_model: DEFAULT_LLM_MODEL,
       embedding_model: DEFAULT_EMBEDDING_MODEL,
+      embedding_api_key: "",
+      embedding_base_url: "",
+      reranker_api_key: "",
+      reranker_base_url: DEFAULT_RERANKER_BASE_URL,
+      reranker_model: DEFAULT_RERANKER_MODEL,
       tavily_api_key: "",
     },
   })
@@ -225,12 +240,57 @@ export default function SetupPage() {
         api_key: apiKey,
         base_url: aiForm.getValues("openai_base_url") || undefined,
         model: aiForm.getValues("llm_model") || undefined,
+        llm_provider: aiForm.getValues("llm_provider") || undefined,
       })
       setTestResult(result)
     } catch {
       setTestResult({ ok: false, message: "请求失败，请检查网络" })
     } finally {
       setIsTesting(false)
+    }
+  }
+
+  async function handleTestEmbedding() {
+    const apiKey = aiForm.getValues("embedding_api_key") || aiForm.getValues("openai_api_key")
+    if (!apiKey) {
+      setEmbTestResult({ ok: false, message: "请先填写 API Key" })
+      return
+    }
+    setEmbTesting(true)
+    setEmbTestResult(null)
+    try {
+      const result = await testEmbeddingConnection({
+        api_key: apiKey,
+        base_url: aiForm.getValues("embedding_base_url") || aiForm.getValues("openai_base_url") || undefined,
+        model: aiForm.getValues("embedding_model") || undefined,
+      })
+      setEmbTestResult({ ok: result.ok, message: result.ok ? `维度 ${result.dimensions} ✓` : result.message })
+    } catch {
+      setEmbTestResult({ ok: false, message: "请求失败，请检查网络" })
+    } finally {
+      setEmbTesting(false)
+    }
+  }
+
+  async function handleTestReranker() {
+    const apiKey = aiForm.getValues("reranker_api_key") || aiForm.getValues("openai_api_key")
+    if (!apiKey) {
+      setRerankerTestResult({ ok: false, message: "请先填写 API Key" })
+      return
+    }
+    setRerankerTesting(true)
+    setRerankerTestResult(null)
+    try {
+      const result = await testRerankerConnection({
+        api_key: apiKey,
+        base_url: aiForm.getValues("reranker_base_url") || aiForm.getValues("openai_base_url") || undefined,
+        model: aiForm.getValues("reranker_model") || undefined,
+      })
+      setRerankerTestResult(result)
+    } catch {
+      setRerankerTestResult({ ok: false, message: "请求失败，请检查网络" })
+    } finally {
+      setRerankerTesting(false)
     }
   }
 
@@ -259,10 +319,16 @@ export default function SetupPage() {
         password: accountData.password,
         email: accountData.email,
         avatar_url: accountData.avatar_url,
+        llm_provider: aiData.llm_provider,
         openai_api_key: aiData.openai_api_key,
         openai_base_url: aiData.openai_base_url || DEFAULT_BASE_URL,
         llm_model: aiData.llm_model,
         embedding_model: aiData.embedding_model,
+        embedding_api_key: aiData.embedding_api_key,
+        embedding_base_url: aiData.embedding_base_url,
+        reranker_api_key: aiData.reranker_api_key,
+        reranker_base_url: aiData.reranker_base_url,
+        reranker_model: aiData.reranker_model,
         tavily_api_key: aiData.tavily_api_key,
         storage_backend: storageData.storage_backend,
         storage_region: storageData.storage_region,
@@ -425,12 +491,23 @@ export default function SetupPage() {
                   <p className="mt-0.5 text-xs text-muted-foreground">{t("configureAiDesc")}</p>
                 </div>
                 <form onSubmit={aiForm.handleSubmit(handleAINext)} className="space-y-4 p-6">
-                  <Field label="API Key" error={aiForm.formState.errors.openai_api_key?.message}>
+                  {/* ── 主模型 ── */}
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">主模型</p>
+                  <Field label="LLM 提供商" hint="OpenAI 兼容接口选 OpenAI；Gemini 等原生模型选 LiteLLM">
+                    <Select defaultValue="openai" onValueChange={(v) => aiForm.setValue("llm_provider", v as AIValues["llm_provider"])}>
+                      <SelectContent>
+                        <SelectItem value="openai">OpenAI / Compatible</SelectItem>
+                        <SelectItem value="litellm">LiteLLM (Gemini, Mistral…)</SelectItem>
+                        <SelectItem value="anthropic">Anthropic (Claude)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <Field label="LLM API Key" hint="用于 LLM / Embedding / Reranker，各模块可单独覆盖" error={aiForm.formState.errors.openai_api_key?.message}>
                     <Input placeholder="sk-..." autoComplete="off" {...aiForm.register("openai_api_key")} />
                   </Field>
 
                   <Field
-                    label="Base URL（可选）"
+                    label="LLM Base URL（可选）"
                     hint="官方接口无需修改；国内代理填入完整 URL"
                     error={aiForm.formState.errors.openai_base_url?.message}
                   >
@@ -439,22 +516,45 @@ export default function SetupPage() {
 
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="对话模型" error={aiForm.formState.errors.llm_model?.message}>
-                      <Select defaultValue={DEFAULT_LLM_MODEL} onValueChange={(v) => aiForm.setValue("llm_model", v)}>
-                        <SelectContent>
-                          {LLM_MODELS.map((m) => (
-                            <SelectItem key={m.value} value={m.value}>
-                              <span className="flex items-center gap-1.5">
-                                {m.label}
-                                {m.thinking && (
-                                  <span className="rounded-md bg-violet-500/15 px-1 py-0.5 text-[9px] font-medium text-violet-400">
-                                    Thinking
-                                  </span>
-                                )}
-                              </span>
+                      {llmCustomMode ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            autoFocus
+                            placeholder="输入模型名称，如 qwen-max"
+                            {...aiForm.register("llm_model")}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => { setLlmCustomMode(false); aiForm.setValue("llm_model", DEFAULT_LLM_MODEL); }}
+                            className="flex-shrink-0 rounded-lg border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            取消
+                          </button>
+                        </div>
+                      ) : (
+                        <Select defaultValue={DEFAULT_LLM_MODEL} onValueChange={(v) => {
+                          if (v === "__custom__") { setLlmCustomMode(true); aiForm.setValue("llm_model", ""); }
+                          else aiForm.setValue("llm_model", v);
+                        }}>
+                          <SelectContent>
+                            {LLM_MODELS.map((m) => (
+                              <SelectItem key={m.value} value={m.value}>
+                                <span className="flex items-center gap-1.5">
+                                  {m.label}
+                                  {m.thinking && (
+                                    <span className="rounded-md bg-violet-500/15 px-1 py-0.5 text-[9px] font-medium text-violet-400">
+                                      Thinking
+                                    </span>
+                                  )}
+                                </span>
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="__custom__">
+                              <span className="text-muted-foreground">自定义模型…</span>
                             </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                          </SelectContent>
+                        </Select>
+                      )}
                     </Field>
 
                     <Field label="Embedding 模型" error={aiForm.formState.errors.embedding_model?.message}>
@@ -467,6 +567,77 @@ export default function SetupPage() {
                       </Select>
                     </Field>
                   </div>
+
+                  {/* ── 高级配置（可折叠）── */}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced((v) => !v)}
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-foreground transition-colors"
+                  >
+                    <ChevronRight size={12} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
+                    高级配置（Embedding / Reranker 独立密钥，可选）
+                  </button>
+
+                  {showAdvanced && (
+                    <div className="space-y-4 rounded-xl border border-border/40 bg-muted/20 p-4">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">向量化模型 · 留空继承主模型配置</p>
+                      <Field label="Embedding API Key（可选）">
+                        <Input placeholder="sk-..." autoComplete="off" {...aiForm.register("embedding_api_key")} />
+                      </Field>
+                      <Field label="Embedding Base URL（可选）">
+                        <Input placeholder={DEFAULT_BASE_URL} {...aiForm.register("embedding_base_url")} />
+                      </Field>
+                      <div className="flex items-center gap-3 border-t border-border/30 pt-3">
+                        <button
+                          type="button"
+                          onClick={handleTestEmbedding}
+                          disabled={embTesting}
+                          className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
+                        >
+                          {embTesting ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                          测试 Embedding
+                        </button>
+                        {embTestResult && (
+                          <span className={embTestResult.ok ? "text-xs text-emerald-400" : "text-xs text-red-400"}>
+                            {embTestResult.message}
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">重排序模型 · 留空继承主模型配置</p>
+                      <Field label="Reranker API Key（可选）" hint="推荐 SiliconFlow 免费配额">
+                        <Input placeholder="sk-..." autoComplete="off" {...aiForm.register("reranker_api_key")} />
+                      </Field>
+                      <Field label="Reranker Base URL（可选）">
+                        <Input placeholder={DEFAULT_RERANKER_BASE_URL} {...aiForm.register("reranker_base_url")} />
+                      </Field>
+                      <Field label="Reranker 模型">
+                        <Select defaultValue={DEFAULT_RERANKER_MODEL} onValueChange={(v) => aiForm.setValue("reranker_model", v)}>
+                          <SelectContent>
+                            {RERANKER_MODELS.map((m) => (
+                              <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <div className="flex items-center gap-3 border-t border-border/30 pt-3">
+                        <button
+                          type="button"
+                          onClick={handleTestReranker}
+                          disabled={rerankerTesting}
+                          className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
+                        >
+                          {rerankerTesting ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                          测试 Reranker
+                        </button>
+                        {rerankerTestResult && (
+                          <span className={rerankerTestResult.ok ? "text-xs text-emerald-400" : "text-xs text-red-400"}>
+                            {rerankerTestResult.message}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
 
                   <Field label="Tavily API Key（可选）" hint="用于联网搜索，不填则禁用搜索工具">
                     <Input placeholder="tvly-..." autoComplete="off" {...aiForm.register("tavily_api_key")} />
@@ -481,7 +652,7 @@ export default function SetupPage() {
                   >
                     {isTesting
                       ? <><Loader2 size={14} className="animate-spin" /> 测试中…</>
-                      : <><Zap size={14} /> 测试连接</>
+                      : <><Zap size={14} /> 测试 LLM 连接</>
                     }
                   </button>
                   {testResult && (

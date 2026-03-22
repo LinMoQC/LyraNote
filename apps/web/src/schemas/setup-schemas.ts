@@ -37,10 +37,16 @@ export function createAccountSchema(t: (key: string) => string) {
  */
 export function createAiSchema(t: (key: string) => string) {
   return z.object({
+    llm_provider: z.enum(["openai", "anthropic", "litellm"]),
     openai_api_key: z.string().min(1, t("validation.apiKeyRequired")),
     openai_base_url: z.string().url(t("validation.invalidUrl")).optional().or(z.literal("")),
     llm_model: z.string().min(1),
     embedding_model: z.string().min(1),
+    embedding_api_key: z.string().optional(),
+    embedding_base_url: z.string().url(t("validation.invalidUrl")).optional().or(z.literal("")),
+    reranker_api_key: z.string().optional(),
+    reranker_base_url: z.string().url(t("validation.invalidUrl")).optional().or(z.literal("")),
+    reranker_model: z.string().optional(),
     tavily_api_key: z.string().optional(),
   });
 }

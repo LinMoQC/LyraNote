@@ -376,6 +376,26 @@ export async function markAllInsightsRead(): Promise<void> {
 
 // ─── Deep Research ────────────────────────────────────────────────────────────
 
+/** 深度研究前置澄清问题 */
+export interface DrClarifyOption {
+  label: string
+  value: string
+}
+
+export interface DrClarifyQuestion {
+  question: string
+  options: DrClarifyOption[]
+}
+
+export interface DrClarifyResponse {
+  questions: DrClarifyQuestion[]
+}
+
+/** 获取深度研究前置澄清问题（仅 deep 模式调用） */
+export async function getClarifyingQuestions(query: string): Promise<DrClarifyResponse> {
+  return http.post<DrClarifyResponse>(AI.DEEP_RESEARCH_CLARIFY, { query })
+}
+
 /** 深度研究 SSE 事件 */
 export interface DeepResearchEvent {
   type: "plan" | "searching" | "learning" | "writing" | "token" | "done" | "deliverable" | "error" | "report_complete"
@@ -405,7 +425,7 @@ export interface DeepResearchTaskStatus {
  */
 export async function createDeepResearch(
   query: string,
-  opts: { notebookId?: string; mode?: "quick" | "deep" },
+  opts: { notebookId?: string; mode?: "quick" | "deep"; clarificationContext?: Array<{ question: string; answer: string }> },
 ): Promise<{ taskId: string; conversationId: string }> {
   const data = await http.post<{ task_id: string; conversation_id: string }>(
     AI.DEEP_RESEARCH,
@@ -413,6 +433,7 @@ export async function createDeepResearch(
       query,
       notebook_id: opts.notebookId ?? null,
       mode: opts.mode ?? "quick",
+      clarification_context: opts.clarificationContext ?? null,
     },
   )
   return { taskId: data.task_id, conversationId: data.conversation_id }

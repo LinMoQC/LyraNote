@@ -20,10 +20,18 @@ class SetupInitRequest(BaseModel):
     avatar_url: str = ""
 
     # ── AI ───────────────────────────────────────────────────────────────────
+    llm_provider: Literal["openai", "anthropic", "litellm"] = "openai"
     openai_api_key: str
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    # Embedding overrides (falls back to openai_api_key / openai_base_url when empty)
     embedding_model: str = "text-embedding-3-small"
+    embedding_api_key: str = ""
+    embedding_base_url: str = ""
+    # Reranker (optional, falls back to openai_api_key / openai_base_url when empty)
+    reranker_api_key: str = ""
+    reranker_base_url: str = ""
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
     tavily_api_key: str = ""
 
     # ── Storage ───────────────────────────────────────────────────────────────
@@ -71,8 +79,32 @@ class SetupTestLlmRequest(BaseModel):
     api_key: str
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-4o-mini"
+    llm_provider: Literal["openai", "anthropic", "litellm"] = "openai"
 
 
 class SetupTestLlmResponse(BaseModel):
+    ok: bool
+    message: str
+
+
+class SetupTestEmbeddingRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = ""
+    model: str = "text-embedding-3-small"
+
+
+class SetupTestEmbeddingResponse(BaseModel):
+    ok: bool
+    dimensions: int = 0
+    message: str
+
+
+class SetupTestRerankerRequest(BaseModel):
+    api_key: str = ""
+    base_url: str = "https://api.siliconflow.cn/v1"
+    model: str = "BAAI/bge-reranker-v2-m3"
+
+
+class SetupTestRerankerResponse(BaseModel):
     ok: bool
     message: str

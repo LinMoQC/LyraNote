@@ -56,10 +56,16 @@ export interface SetupInitPayload {
   email?: string
   avatar_url?: string
   // AI
+  llm_provider?: string
   openai_api_key: string
   openai_base_url?: string
   llm_model?: string
   embedding_model?: string
+  embedding_api_key?: string
+  embedding_base_url?: string
+  reranker_api_key?: string
+  reranker_base_url?: string
+  reranker_model?: string
   tavily_api_key?: string
   // Storage
   storage_backend?: StorageBackend
@@ -137,6 +143,7 @@ export interface TestLlmPayload {
   api_key: string
   base_url?: string
   model?: string
+  llm_provider?: string
 }
 
 /** LLM 连接测试结果 */
@@ -152,4 +159,45 @@ export interface TestLlmResult {
  */
 export async function testLlmConnection(payload: TestLlmPayload): Promise<TestLlmResult> {
   return http.post<TestLlmResult>(SETUP.TEST_LLM, payload, { skipToast: true })
+}
+
+/** 初始化向导中的 Embedding 连接测试参数 */
+export interface TestEmbeddingPayload {
+  api_key: string
+  base_url?: string
+  model?: string
+}
+
+/** Embedding 连接测试结果 */
+export interface TestEmbeddingResult {
+  ok: boolean
+  dimensions: number
+  message: string
+}
+
+/**
+ * 在初始化向导中测试 Embedding 连接
+ */
+export async function testEmbeddingConnection(payload: TestEmbeddingPayload): Promise<TestEmbeddingResult> {
+  return http.post<TestEmbeddingResult>(SETUP.TEST_EMBEDDING, payload, { skipToast: true })
+}
+
+/** 初始化向导中的 Reranker 连接测试参数 */
+export interface TestRerankerPayload {
+  api_key: string
+  base_url?: string
+  model?: string
+}
+
+/** Reranker 连接测试结果 */
+export interface TestRerankerResult {
+  ok: boolean
+  message: string
+}
+
+/**
+ * 在初始化向导中测试 Reranker 连接
+ */
+export async function testRerankerConnection(payload: TestRerankerPayload): Promise<TestRerankerResult> {
+  return http.post<TestRerankerResult>(SETUP.TEST_RERANKER, payload, { skipToast: true })
 }

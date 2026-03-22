@@ -105,7 +105,7 @@ async def get_suggestions(current_user: CurrentUser, db: DbDep):
     client = get_client()
     try:
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=get_model() or "gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "你是一个知识发现助手，根据用户的知识库生成有价值的探索问题。只返回 JSON 数组，不含任何额外文字。"},
                 {"role": "user", "content": user_prompt},

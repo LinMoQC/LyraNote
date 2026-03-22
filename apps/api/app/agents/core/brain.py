@@ -61,6 +61,10 @@ class AgentBrain:
         phase = state.phase
 
         if phase == "init":
+            # 快速路径：未配置外部工具时，直接走 RAG，跳过 tool-use LLM 调用
+            # 节省一次完整非流式 LLM 请求（约 500ms–2s）
+            if not self._has_tools:
+                return CallRAGInstruction(query=state.query)
             return CallLLMInstruction()
 
         if phase == "llm_result":

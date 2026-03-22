@@ -51,6 +51,7 @@ import { ChatMessageBubble } from "./chat-message-bubble";
 import { useDeepResearch, DR_MESSAGES_KEY } from "./use-deep-research";
 import { useChatStream } from "./use-chat-stream";
 import { useDeepResearchStore } from "@/store/use-deep-research-store";
+import { ClarifyingPanel, ClarifyingLoading } from "./clarifying-panel";
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -710,6 +711,18 @@ export function ChatView() {
           />
         )}
 
+        {/* Clarifying questions panel (deep mode only, shown above input) */}
+        <AnimatePresence>
+          {dr.isFetchingClarifications && <ClarifyingLoading />}
+          {dr.clarifyingState && (
+            <ClarifyingPanel
+              questions={dr.clarifyingState.questions}
+              onSubmit={dr.submitClarifications}
+              onSkip={() => dr.submitClarifications({})}
+            />
+          )}
+        </AnimatePresence>
+
         {/* Input */}
         <ChatInputContainer>
           <ChatInput
@@ -718,7 +731,7 @@ export function ChatView() {
             onChange={setInput}
             onSubmit={handleSubmit}
             placeholder={isDeepResearch ? t("deepResearchPlaceholder") : t("placeholder")}
-            disabled={!globalNotebookId || fileAttachments.isUploading}
+            disabled={!globalNotebookId || fileAttachments.isUploading || !!dr.clarifyingState || dr.isFetchingClarifications}
             streaming={streaming}
             onCancel={chat.handleCancelStreaming}
             variant="default"

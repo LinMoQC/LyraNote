@@ -13,8 +13,12 @@ from app.domains.setup.schemas import (
     SetupInitRequest,
     SetupInitResponse,
     SetupStatusOut,
+    SetupTestEmbeddingRequest,
+    SetupTestEmbeddingResponse,
     SetupTestLlmRequest,
     SetupTestLlmResponse,
+    SetupTestRerankerRequest,
+    SetupTestRerankerResponse,
 )
 from app.exceptions import ForbiddenError
 from app.models import AppConfig, User
@@ -27,10 +31,16 @@ _COOKIE_MAX_AGE = 60 * 60 * 24 * 30
 
 # Keys that are synced from app_config → in-memory settings at startup
 RUNTIME_CONFIG_KEYS = [
+    "llm_provider",
     "openai_api_key",
     "openai_base_url",
     "llm_model",
     "embedding_model",
+    "embedding_api_key",
+    "embedding_base_url",
+    "reranker_api_key",
+    "reranker_base_url",
+    "reranker_model",
     "tavily_api_key",
     "perplexity_api_key",
     "storage_backend",
@@ -112,10 +122,16 @@ async def setup_init(body: SetupInitRequest, response: Response, db: DbDep):
 
     # Persist all config to app_config
     config_map: dict[str, str] = {
+        "llm_provider": body.llm_provider,
         "openai_api_key": body.openai_api_key,
         "openai_base_url": body.openai_base_url,
         "llm_model": body.llm_model,
         "embedding_model": body.embedding_model,
+        "embedding_api_key": body.embedding_api_key,
+        "embedding_base_url": body.embedding_base_url,
+        "reranker_api_key": body.reranker_api_key,
+        "reranker_base_url": body.reranker_base_url,
+        "reranker_model": body.reranker_model,
         "tavily_api_key": body.tavily_api_key,
         "storage_backend": body.storage_backend,
         "storage_region": body.storage_region,
@@ -176,23 +192,87 @@ async def setup_init(body: SetupInitRequest, response: Response, db: DbDep):
 @router.post("/setup/test-llm", response_model=ApiResponse[SetupTestLlmResponse])
 async def setup_test_llm(body: SetupTestLlmRequest):
     """Quick connectivity check — sends a tiny request to verify key + endpoint."""
-    from openai import AsyncOpenAI
-
     if not body.api_key:
         return success(SetupTestLlmResponse(ok=False, message="未提供 API Key"))
 
-    client = AsyncOpenAI(
-        api_key=body.api_key,
-        base_url=body.base_url or None,
-        timeout=15.0,
-    )
     try:
-        resp = await client.chat.completions.create(
-            model=body.model,
-            messages=[{"role": "user", "content": "Hi"}],
-            max_tokens=5,
-        )
-        reply = (resp.choices[0].message.content or "").strip()
+        if body.llm_provider == "litellm":
+            import litellm
+            call_kw: dict = dict(
+                model=body.model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5,
+                api_key=body.api_key,
+            )
+            if body.model.startswith("gemini/"):
+                call_kw["custom_llm_provider"] = "gemini"
+            if body.base_url:
+                call_kw["api_base"] = body.base_url
+            resp = await litellm.acompletion(**call_kw)
+            reply = (resp.choices[0].message.content or "").strip()
+        else:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(
+                api_key=body.api_key,
+                base_url=body.base_url or None,
+                timeout=15.0,
+            )
+            resp = await client.chat.completions.create(
+                model=body.model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=5,
+            )
+            reply = (resp.choices[0].message.content or "").strip()
         return success(SetupTestLlmResponse(ok=True, message=reply or "OK"))
     except Exception as exc:
         return success(SetupTestLlmResponse(ok=False, message=str(exc)[:200]))
+
+
+@router.post("/setup/test-embedding", response_model=ApiResponse[SetupTestEmbeddingResponse])
+async def setup_test_embedding(body: SetupTestEmbeddingRequest):
+    """Test Embedding API connectivity with provided (or default) credentials."""
+    from openai import AsyncOpenAI
+
+    api_key = body.api_key.strip()
+    if not api_key:
+        return success(SetupTestEmbeddingResponse(ok=False, dimensions=0, message="未提供 API Key"))
+
+    client = AsyncOpenAI(
+        api_key=api_key,
+        base_url=body.base_url.strip() or None,
+        timeout=15.0,
+    )
+    try:
+        resp = await client.embeddings.create(model=body.model, input=["test"])
+        dims = len(resp.data[0].embedding)
+        return success(SetupTestEmbeddingResponse(ok=True, dimensions=dims, message=f"维度 {dims}"))
+    except Exception as exc:
+        return success(SetupTestEmbeddingResponse(ok=False, dimensions=0, message=str(exc)[:200]))
+
+
+@router.post("/setup/test-reranker", response_model=ApiResponse[SetupTestRerankerResponse])
+async def setup_test_reranker(body: SetupTestRerankerRequest):
+    """Test Reranker API connectivity with provided credentials."""
+    import httpx
+
+    api_key = body.api_key.strip()
+    if not api_key:
+        return success(SetupTestRerankerResponse(ok=False, message="未提供 API Key"))
+
+    base_url = body.base_url.rstrip("/") if body.base_url else "https://api.siliconflow.cn/v1"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{base_url}/rerank",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": body.model, "query": "test", "documents": ["hello world"], "top_n": 1, "return_documents": False},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        results = data.get("results", [])
+        if results:
+            score = round(results[0].get("relevance_score", 0), 4)
+            return success(SetupTestRerankerResponse(ok=True, message=f"Score {score}"))
+        return success(SetupTestRerankerResponse(ok=True, message="OK"))
+    except Exception as exc:
+        return success(SetupTestRerankerResponse(ok=False, message=str(exc)[:200]))
