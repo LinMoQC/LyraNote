@@ -161,7 +161,13 @@ class ConversationService:
         from app.agents.memory import build_memory_context, get_notebook_summary
         from app.agents.writing.scene_detector import detect_scene, get_scene_instruction
 
-        scene = await detect_scene(content)
+        # 提前启动 detect_scene（LLM 调用），使其与后续 DB 操作并行
+        detect_task = asyncio.create_task(detect_scene(content))
+
+        notebook_summary = await get_notebook_summary(conv.notebook_id, self.db)
+
+        # 此时 LLM 调用已在后台运行，大概率已完成
+        scene = await detect_task
 
         try:
             user_memories = await build_memory_context(
@@ -171,13 +177,13 @@ class ConversationService:
             logger.warning("build_memory_context failed: %s", exc)
             user_memories = []
 
-        notebook_summary = await get_notebook_summary(conv.notebook_id, self.db)
         scene_instruction = get_scene_instruction(scene)
 
         full_content: list[str] = []
         full_reasoning: list[str] = []
         citations: list[dict] = []
         agent_steps: list[dict] = []
+        speed_metrics: dict | None = None
 
         async for event in run_agent(
             query=content,
@@ -221,6 +227,14 @@ class ConversationService:
                 full_content.append(event.get("content", ""))
                 yield f"data: {json.dumps(event)}\n\n"
 
+            elif event_type == "speed":
+                speed_metrics = {
+                    "ttft_ms": event.get("ttft_ms", 0),
+                    "tps": event.get("tps", 0),
+                    "tokens": event.get("tokens", 0),
+                }
+                yield f"data: {json.dumps(event)}\n\n"
+
             elif event_type == "done":
                 content_text = "".join(full_content)
                 reasoning_text = "".join(full_reasoning).strip() or None
@@ -232,6 +246,7 @@ class ConversationService:
                         reasoning=reasoning_text,
                         citations=citations,
                         agent_steps=agent_steps or None,
+                        speed=speed_metrics,
                     )
                     self.db.add(assistant_msg)
                     await self.db.flush()

@@ -216,6 +216,126 @@ export function FieldSelectRow({ label, description, value, options, onChange }:
   );
 }
 
+const CUSTOM_MODEL_SENTINEL = "__custom_model__";
+
+/**
+ * Like CustomSelect but adds a "自定义模型…" option at the bottom.
+ * If the current value is not in the options list, automatically enters text-input mode.
+ */
+export function ModelSelectWithCustom({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: SelectOption[];
+  onChange: (v: string) => void;
+}) {
+  const isKnown = (v: string) => !!options.find((o) => o.value === v);
+  const [mode, setMode] = useState<"select" | "custom">(
+    !isKnown(value) && !!value ? "custom" : "select",
+  );
+  const [draft, setDraft] = useState(!isKnown(value) && value ? value : "");
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Prevents the sync useEffect from fighting user-initiated mode changes
+  const skipSyncRef = useRef(false);
+
+  // Sync when value changes from parent (e.g., config loads from server after mount)
+  useEffect(() => {
+    if (skipSyncRef.current) { skipSyncRef.current = false; return; }
+    if (!isKnown(value) && value) {
+      setMode("custom");
+      setDraft(value);
+    } else if (isKnown(value)) {
+      setMode("select");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  useEffect(() => {
+    if (mode === "custom") setTimeout(() => inputRef.current?.focus(), 50);
+  }, [mode]);
+
+  function commitCustom() {
+    const v = draft.trim();
+    if (v) { skipSyncRef.current = true; onChange(v); }
+  }
+
+  function cancelCustom() {
+    skipSyncRef.current = true;
+    setMode("select");
+    setDraft("");
+    // If current value is unknown, reset to a known model so the dropdown renders correctly
+    if (!isKnown(value)) onChange(options[0]?.value ?? "");
+  }
+
+  const extendedOptions: SelectOption[] = [
+    ...options,
+    // Include current custom value so CustomSelect can display it after confirming
+    ...(!isKnown(value) && value ? [{ value, label: value }] : []),
+    { value: CUSTOM_MODEL_SENTINEL, label: "自定义模型…" },
+  ];
+
+  if (mode === "custom") {
+    return (
+      <div className="flex items-center gap-1.5">
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { commitCustom(); setMode("select"); }
+            if (e.key === "Escape") cancelCustom();
+          }}
+          placeholder="输入模型名称，如 qwen-max"
+          className="flex h-8 min-w-[180px] rounded-xl border border-primary/50 bg-card px-3 text-sm text-foreground outline-none ring-1 ring-primary/20 placeholder:text-muted-foreground/40"
+        />
+        <button
+          type="button"
+          onClick={() => { commitCustom(); setMode("select"); }}
+          className="flex-shrink-0 rounded-lg border border-primary/60 bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
+        >
+          确认
+        </button>
+        <button
+          type="button"
+          onClick={cancelCustom}
+          className="flex-shrink-0 rounded-lg border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+        >
+          取消
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <CustomSelect
+      value={value}
+      options={extendedOptions}
+      onChange={(v) => {
+        if (v === CUSTOM_MODEL_SENTINEL) {
+          setDraft("");
+          setMode("custom");
+        } else {
+          onChange(v);
+        }
+      }}
+    />
+  );
+}
+
+export function FieldModelRow({ label, description, value, options, onChange }: {
+  label: string; description?: string;
+  value: string; options: SelectOption[]; onChange: (v: string) => void;
+}) {
+  return (
+    <SettingRow label={label} description={description}>
+      <ModelSelectWithCustom value={value} options={options} onChange={onChange} />
+    </SettingRow>
+  );
+}
+
 export function SaveButton({ onClick, saving, saved }: { onClick: () => void; saving: boolean; saved: boolean }) {
   const tc = useTranslations("common");
   return (

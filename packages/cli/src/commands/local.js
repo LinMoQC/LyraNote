@@ -102,7 +102,7 @@ export async function startLocal() {
   await runDevTUI([
     {
       name: 'api',
-      label: 'FastAPI',
+      label: 'Agent',
       command: uvicorn,
       args: ['app.main:app', '--host', '0.0.0.0', '--port', '8000', '--reload'],
       cwd: API_DIR,
@@ -116,7 +116,7 @@ export async function startLocal() {
     },
     {
       name: 'web',
-      label: 'Next.js',
+      label: 'Web',
       command: 'pnpm',
       args: ['dev'],
       cwd: WEB_DIR,

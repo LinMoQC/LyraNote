@@ -55,6 +55,7 @@ class MessageOut(BaseModel):
     citations: list | None
     agent_steps: list | None = None
     attachments: list | None = None
+    speed: dict | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

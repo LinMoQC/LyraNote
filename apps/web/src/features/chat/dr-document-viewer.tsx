@@ -19,7 +19,32 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
+import { MermaidBlock } from "./mermaid-block";
 import { EVIDENCE_STRENGTH_CONFIG, type DrProgress } from "./dr-types";
+
+// ── Evidence badge helpers ─────────────────────────────────────────────────────
+
+function EvidenceBadge({ grade }: { grade: "强" | "中" | "弱" }) {
+  const configs = {
+    强: { cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", label: "强" },
+    中: { cls: "bg-amber-500/15 text-amber-400 border-amber-500/25", label: "中" },
+    弱: { cls: "bg-red-500/15 text-red-400 border-red-500/25", label: "弱" },
+  } as const;
+  const cfg = configs[grade];
+  return (
+    <span className={cn("mx-1 inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium", cfg.cls)}>
+      证据：{cfg.label}
+    </span>
+  );
+}
+
+/** Replace [证据：强/中/弱] with inline-code tokens so remark never sees the brackets. */
+function injectEvidenceTokens(md: string): string {
+  return md
+    .replace(/\[证据：强\]/g, "`__ev:strong__`")
+    .replace(/\[证据：中\]/g, "`__ev:medium__`")
+    .replace(/\[证据：弱\]/g, "`__ev:weak__`");
+}
 
 interface TocItem {
   id: string;
@@ -275,14 +300,25 @@ export function DrDocumentViewer({
                         const id = headingId(headingCounter);
                         return <h3 data-toc-id={id}>{children}</h3>;
                       },
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      code: ({ children, className }: any) => {
+                        const text = String(children).replace(/\n$/, "");
+                        if (className === "language-mermaid")
+                          return <MermaidBlock code={text} />;
+                        if (text === "__ev:strong__") return <EvidenceBadge grade="强" />;
+                        if (text === "__ev:medium__") return <EvidenceBadge grade="中" />;
+                        if (text === "__ev:weak__")   return <EvidenceBadge grade="弱" />;
+                        return <code className={className}>{children}</code>;
+                      },
+                      pre: ({ children }) => <>{children}</>,
                     }}
                   >
-                    {reportTokens}
+                    {injectEvidenceTokens(reportTokens)}
                   </ReactMarkdown>
                 </div>
 
-                {/* Citations section */}
-                {doneCitations.length > 0 && (
+                {/* Citations section — hidden when citation table already provides a summary */}
+                {doneCitations.length > 0 && !(deliverable && deliverable.citationTable.length > 0) && (
                   <div className="mt-8 border-t border-border/30 pt-4">
                     <button
                       type="button"

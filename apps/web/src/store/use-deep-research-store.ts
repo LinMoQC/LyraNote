@@ -26,7 +26,7 @@ interface DeepResearchState {
 }
 
 interface DeepResearchActions {
-  start(query: string, notebookId: string | undefined, mode: "quick" | "deep"): Promise<void>;
+  start(query: string, notebookId: string | undefined, mode: "quick" | "deep", clarificationContext?: Array<{ question: string; answer: string }>): Promise<void>;
   reconnect(taskId: string): Promise<void>;
   finishFromDB(status: {
     report: string | null;
@@ -207,7 +207,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
       eventIndex: 0,
       focusRequested: false,
 
-      async start(query, notebookId, mode) {
+      async start(query, notebookId, mode, clarificationContext) {
         _abortController?.abort();
 
         set({
@@ -225,6 +225,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
         const { taskId, conversationId } = await createDeepResearch(query, {
           notebookId,
           mode,
+          clarificationContext,
         });
         set({ taskId, conversationId });
 

@@ -18,6 +18,7 @@ import remarkGfm from "remark-gfm";
 
 import { DrDocumentCard } from "./dr-document-card";
 import { DrDocumentViewer } from "./dr-document-viewer";
+import { MermaidBlock } from "./mermaid-block";
 import { LearningCard } from "./dr-learning-card";
 import type { DrProgress } from "./dr-types";
 
@@ -334,7 +335,19 @@ export function DeepResearchProgress({
             className="relative mt-3 max-h-60 overflow-hidden rounded-xl border border-border/40 bg-muted/20 px-4 py-4"
           >
             <div className="prose prose-sm prose-invert max-w-none text-sm leading-relaxed text-foreground/85 [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-sm [&_h2]:font-semibold [&_h2]:text-foreground [&_h3]:mb-1.5 [&_h3]:mt-3 [&_h3]:text-xs [&_h3]:font-semibold [&_li]:my-0.5 [&_p]:my-1.5 [&_strong]:font-semibold [&_strong]:text-foreground">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{reportTokens}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  code({ className, children }) {
+                    const text = String(children).replace(/\n$/, "")
+                    if (className === "language-mermaid")
+                      return <MermaidBlock code={text} />
+                    return <code className={className}>{children}</code>
+                  },
+                }}
+              >
+                {reportTokens}
+              </ReactMarkdown>
             </div>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-card to-transparent" />
           </m.div>

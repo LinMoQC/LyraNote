@@ -74,7 +74,8 @@ async def run_agent(
 
     # ── Build system prompt ───────────────────────────────────────────────
     tool_ctx = ToolContext(
-        notebook_id=notebook_id, user_id=user_id, db=db, global_search=global_search
+        notebook_id=notebook_id, user_id=user_id, db=db, global_search=global_search,
+        history=list(history[-6:]),  # last 3 turns for coreference resolution
     )
     system_prompt = await build_system_prompt(
         user_memories, notebook_summary, scene_instruction, db=db

@@ -22,3 +22,16 @@ class TestLlmResult(BaseModel):
     ok: bool
     model: str
     message: str
+
+
+class TestEmbeddingResult(BaseModel):
+    ok: bool
+    model: str
+    dimensions: int
+    message: str
+
+
+class TestRerankerResult(BaseModel):
+    ok: bool
+    model: str
+    message: str

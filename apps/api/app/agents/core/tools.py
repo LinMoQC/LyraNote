@@ -26,6 +26,7 @@ class ToolContext:
     db: AsyncSession
     collected_citations: list[dict] = field(default_factory=list)
     global_search: bool = False        # True when called from global chat
+    history: list[dict] = field(default_factory=list)  # Recent chat turns for coreference resolution
     mind_map_data: dict | None = None  # Set by generate_mind_map skill
     created_note_id: str | None = None       # Set by create_note_draft skill
     created_note_title: str | None = None    # Set by create_note_draft skill

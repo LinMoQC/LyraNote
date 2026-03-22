@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
@@ -19,7 +19,7 @@ interface UseChatStreamOpts {
   isDeepResearch: boolean;
   streamLifecycle: ReturnType<typeof useStreamLifecycle>;
   streamAbortRef: React.MutableRefObject<AbortController | null>;
-  handleDeepResearch: (text: string) => Promise<void>;
+  handleDeepResearch: (text?: string) => Promise<void>;
   setMessages: Dispatch<SetStateAction<LocalMessage[]>>;
   setInput: Dispatch<SetStateAction<string>>;
   setStreaming: Dispatch<SetStateAction<boolean>>;
@@ -56,6 +56,80 @@ export function useChatStream({
   const attachmentPreviewsRef = useRef<MessageAttachment[]>([]);
   const attachmentMetaRef = useRef<AttachmentMeta[]>([]);
   const assistantIdRef = useRef("");
+
+  // Token render queue — drains at TOKEN_INTERVAL_MS regardless of how fast
+  // tokens arrive from the API (handles providers that batch-send all tokens at once).
+  const TOKEN_INTERVAL_MS = 25
+  const tokenQueueRef = useRef<string[]>([])
+  const tokenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Callback executed once the queue empties naturally (after stream ends).
+  const onDrainCompleteRef = useRef<(() => void) | null>(null)
+
+  const startTokenDrain = useCallback(() => {
+    if (tokenTimerRef.current) return
+    tokenTimerRef.current = setInterval(() => {
+      const token = tokenQueueRef.current.shift()
+      if (token !== undefined) {
+        assistantContentRef.current += token
+        const curId = assistantIdRef.current
+        setMessages((prev) =>
+          prev.map((m) => m.id === curId ? { ...m, content: m.content + token } : m)
+        )
+        return
+      }
+      // Queue is empty — check for a pending drain-complete callback
+      const cb = onDrainCompleteRef.current
+      if (cb) {
+        onDrainCompleteRef.current = null
+        clearInterval(tokenTimerRef.current!)
+        tokenTimerRef.current = null
+        cb()
+      }
+    }, TOKEN_INTERVAL_MS)
+  }, [setMessages])
+
+  /**
+   * Schedule `callback` to run after the token queue is fully drained.
+   * If the queue is already empty, the callback runs on the next tick.
+   * Used for the citations / finalize path so typing completes before UI updates.
+   */
+  const scheduleAfterDrain = useCallback((callback: () => void) => {
+    if (tokenQueueRef.current.length === 0) {
+      if (tokenTimerRef.current) {
+        clearInterval(tokenTimerRef.current)
+        tokenTimerRef.current = null
+      }
+      callback()
+      return
+    }
+    // Tokens still pending — let the interval drain them, then call back
+    onDrainCompleteRef.current = callback
+  }, [])
+
+  /**
+   * Hard-stop the drain immediately (used for abort / error / cancel paths).
+   * Flushes remaining tokens in one batch so content is never lost.
+   */
+  const stopTokenDrain = useCallback(() => {
+    onDrainCompleteRef.current = null
+    if (!tokenTimerRef.current) return
+    clearInterval(tokenTimerRef.current)
+    tokenTimerRef.current = null
+    const remaining = tokenQueueRef.current.splice(0)
+    if (remaining.length > 0) {
+      const flush = remaining.join("")
+      assistantContentRef.current += flush
+      const curId = assistantIdRef.current
+      setMessages((prev) =>
+        prev.map((m) => m.id === curId ? { ...m, content: m.content + flush } : m)
+      )
+    }
+  }, [setMessages])
+
+  // Clean up timer on unmount
+  useEffect(() => () => {
+    if (tokenTimerRef.current) clearInterval(tokenTimerRef.current)
+  }, [])
 
   const handleSend = useCallback(async (overrideText?: string, skipUserBubble?: boolean) => {
     const text = (overrideText ?? input).trim();
@@ -94,30 +168,32 @@ export function useChatStream({
     agentStepsRef.current = [];
     assistantContentRef.current = "";
     reasoningContentRef.current = "";
+    tokenQueueRef.current = [];
+    startTokenDrain();
 
     try {
       const usedConvId = await sendMessageStream(
         text,
         (token) => {
-          assistantContentRef.current += token;
-          const curId = assistantIdRef.current;
-          setMessages((prev) =>
-            prev.map((m) => m.id === curId ? { ...m, content: m.content + token } : m)
-          );
+          tokenQueueRef.current.push(token)
         },
         (citations) => {
-          const curId = assistantIdRef.current;
-          const savedSteps: AgentStep[] = agentStepsRef.current
-            .filter((e) => e.type === "thought" || e.type === "tool_call" || e.type === "tool_result")
-            .map((e) => ({ type: e.type as AgentStep["type"], content: e.content, tool: e.tool, input: e.input }));
-          setMessages((prev) =>
-            prev.map((m) => m.id === curId
-              ? { ...m, citations: citations?.length ? citations : m.citations, agentSteps: savedSteps.length ? savedSteps : undefined }
-              : m)
-          );
-          streamLifecycle.finalize();
-          setStreaming(false);
-          queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+          // Wait for the token queue to drain naturally before finalizing,
+          // so the typing effect plays out completely even with pseudo-streaming.
+          scheduleAfterDrain(() => {
+            const curId = assistantIdRef.current;
+            const savedSteps: AgentStep[] = agentStepsRef.current
+              .filter((e) => e.type === "thought" || e.type === "tool_call" || e.type === "tool_result")
+              .map((e) => ({ type: e.type as AgentStep["type"], content: e.content, tool: e.tool, input: e.input }));
+            setMessages((prev) =>
+              prev.map((m) => m.id === curId
+                ? { ...m, citations: citations?.length ? citations : m.citations, agentSteps: savedSteps.length ? savedSteps : undefined }
+                : m)
+            );
+            streamLifecycle.finalize();
+            setStreaming(false);
+            queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+          });
         },
         undefined,
         globalNotebookId,
@@ -127,6 +203,17 @@ export function useChatStream({
             assistantIdRef.current = event.message_id;
             setMessages((prev) =>
               prev.map((m) => m.id === curId ? { ...m, id: event.message_id! } : m)
+            );
+            return;
+          }
+          if (event.type === "speed" && event.ttft_ms !== undefined) {
+            const curId = assistantIdRef.current;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === curId
+                  ? { ...m, speed: { ttft_ms: event.ttft_ms!, tps: event.tps ?? 0, tokens: event.tokens ?? 0 } }
+                  : m
+              )
             );
             return;
           }
@@ -169,6 +256,7 @@ export function useChatStream({
       }
       streamLifecycle.finish();
     } catch (error) {
+      stopTokenDrain();
       if (isAbortError(error)) return;
       const message = getErrorMessage(error, t("streamFailed"));
       streamLifecycle.fail(message);
@@ -180,7 +268,7 @@ export function useChatStream({
     } finally {
       streamAbortRef.current = null;
     }
-  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, setNoteCreatedAlert, t]);
+  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, setNoteCreatedAlert, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain]);
 
   const handleRegenerate = useCallback(async (messages: LocalMessage[]) => {
     if (streaming) return;
@@ -195,9 +283,10 @@ export function useChatStream({
   const handleCancelStreaming = useCallback(() => {
     if (!streaming) return;
     streamAbortRef.current?.abort();
+    stopTokenDrain();
     streamLifecycle.finish();
     setStreaming(false);
-  }, [streaming, streamLifecycle, streamAbortRef, setStreaming]);
+  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain]);
 
   return {
     agentSteps,

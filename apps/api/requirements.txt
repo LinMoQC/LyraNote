@@ -8,10 +8,13 @@ pgvector>=0.3
 celery[redis]>=5.4
 redis>=5.2
 openai>=1.58
+litellm[google]>=1.0
 pypdf>=5.1
 httpx>=0.28
 beautifulsoup4>=4.13
 langchain-text-splitters>=0.3
+langchain-experimental>=0.3
+langchain-openai>=0.2
 langgraph>=0.2
 python-jose[cryptography]>=3.3
 bcrypt>=4.0
@@ -23,3 +26,8 @@ croniter>=6.0
 feedparser>=6.0
 aiosmtplib>=3.0
 markdown>=3.5
+# PDF parsing (enhanced) — replaces pypdf for text extraction; OCR fallback
+pymupdf>=1.24
+# OCR for scanned PDFs (requires system-level tesseract-ocr + chi_sim language pack)
+pytesseract>=0.3
+Pillow>=10.0

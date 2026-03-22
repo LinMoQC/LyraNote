@@ -54,6 +54,7 @@ class SearchKnowledgeSkill(SkillBase):
             query, ctx.notebook_id, ctx.db,
             global_search=ctx.global_search,
             user_id=ctx.user_id,
+            history=getattr(ctx, "history", None),
         )
 
         if not chunks:
@@ -73,8 +74,13 @@ class SearchKnowledgeSkill(SkillBase):
 
         result_parts = []
         for i, c in enumerate(chunks, 1):
+            meta = c.get("metadata_") or {}
+            page_info = f"第 {meta['page']} 页" if meta.get("page") else ""
+            heading_info = meta.get("heading") or meta.get("section") or ""
+            location = "、".join(filter(None, [page_info, heading_info]))
+            source_label = f"《{c['source_title']}》" + (f"（{location}）" if location else "")
             result_parts.append(
-                f"[片段{i}] 来源：《{c['source_title']}》（相关度 {c['score']:.2f}）\n{c['content'][:400]}"
+                f"[片段{i}] 来源：{source_label}（相关度 {c['score']:.2f}）\n{c['content'][:400]}"
             )
         return "\n\n".join(result_parts)
 

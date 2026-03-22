@@ -66,6 +66,7 @@ export function mapRecord(m: MessageRecord): LocalMessage {
     timestamp: new Date(m.created_at),
     citations: (m.citations as CitationData[] | null) ?? undefined,
     agentSteps: (m.agent_steps as unknown[] | null) as LocalMessage["agentSteps"],
+    speed: m.speed ?? undefined,
   };
   if (m.attachments && m.attachments.length > 0) {
     base.attachments = m.attachments.map((a) => ({

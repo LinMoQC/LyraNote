@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
-from app.domains.ai.schemas import DeepResearchRequest
+from app.domains.ai.schemas import ClarifyRequest, DeepResearchRequest
 from app.config import settings
 from app.models import ResearchTask, Conversation, Message, Notebook
 from app.schemas.response import success
@@ -23,6 +23,20 @@ from app.agents.research.task_manager import get_buffer, run_research_task
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post("/ai/deep-research/clarify")
+async def clarify_deep_research(
+    body: ClarifyRequest,
+    current_user: CurrentUser,
+):
+    """Generate clarifying questions for a deep-research query."""
+    from app.agents.research.deep_research import generate_clarifying_questions
+    from app.providers.llm import get_client
+
+    client = get_client()
+    questions = await generate_clarifying_questions(body.query, client, settings.llm_model)
+    return success({"questions": questions})
 
 
 @router.post("/ai/deep-research")
@@ -97,6 +111,7 @@ async def create_deep_research(
             model=settings.llm_model,
             tavily_api_key=settings.tavily_api_key or None,
             user_memories=user_memories,
+            clarification_context=body.clarification_context,
         )
     )
 

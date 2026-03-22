@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { memo, useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import { BotAvatar } from "@/components/ui/bot-avatar";
 import { cn } from "@/lib/utils";
@@ -28,6 +28,7 @@ import { InlineCitationBadge } from "@/features/copilot/inline-citation";
 import { AgentSteps } from "@/features/copilot/agent-steps";
 import { DeepResearchProgress } from "@/features/chat/deep-research-progress";
 import { ChoiceCards, parseChoicesBlock } from "@/features/chat/choice-cards";
+import { MermaidBlock } from "@/features/chat/mermaid-block";
 import type { CitationData } from "@/types";
 import type { AgentEvent } from "@/services/ai-service";
 import type { FeedbackRating } from "@/services/feedback-service";
@@ -154,103 +155,7 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
 }
 
 // ── MermaidBlock ──────────────────────────────────────────────────────────────
-
-const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let mermaidReady: Promise<any> | null = null;
-
-function loadMermaid() {
-  if (!mermaidReady) {
-    mermaidReady = import(/* webpackIgnore: true */ MERMAID_CDN).then((m) => {
-      const mermaid = m.default;
-      mermaid.initialize({
-        startOnLoad: false,
-        theme: "dark",
-        themeVariables: {
-          primaryColor: "#6366f1",
-          primaryTextColor: "#e2e8f0",
-          primaryBorderColor: "#4f46e5",
-          lineColor: "#64748b",
-          secondaryColor: "#1e293b",
-          tertiaryColor: "#0f172a",
-          fontFamily: "inherit",
-          fontSize: "13px",
-        },
-      });
-      return mermaid;
-    });
-  }
-  return mermaidReady;
-}
-
-function MermaidBlock({ code }: { code: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const uniqueId = useId().replace(/:/g, "_");
-  const [error, setError] = useState<string | null>(null);
-  const [svgHtml, setSvgHtml] = useState<string | null>(null);
-  const [zoomed, setZoomed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadMermaid()
-      .then(async (mermaid) => {
-        if (cancelled) return;
-        try {
-          const { svg } = await mermaid.render(`mermaid${uniqueId}`, code.trim());
-          if (!cancelled) {
-            setSvgHtml(svg);
-            if (containerRef.current) containerRef.current.innerHTML = svg;
-          }
-        } catch {
-          if (!cancelled) setError("Diagram render failed");
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setError("Failed to load Mermaid");
-      });
-    return () => { cancelled = true; };
-  }, [code, uniqueId]);
-
-  if (error) {
-    return (
-      <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5">
-        <code>{code}</code>
-      </pre>
-    );
-  }
-
-  return (
-    <>
-      <div
-        ref={containerRef}
-        onClick={() => svgHtml && setZoomed(true)}
-        className="group my-2 flex cursor-zoom-in justify-center overflow-x-auto rounded-xl bg-accent/30 p-4 transition-colors hover:bg-accent/50 [&_svg]:max-w-full"
-      />
-      <AnimatePresence>
-        {zoomed && svgHtml && (
-          <m.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[999] flex cursor-zoom-out items-center justify-center bg-black/70 backdrop-blur-sm"
-            onClick={() => setZoomed(false)}
-          >
-            <m.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
-              className="max-h-[90vh] max-w-[90vw] overflow-auto rounded-2xl bg-card/95 p-6 shadow-2xl ring-1 ring-white/10 [&_svg]:max-h-[80vh] [&_svg]:max-w-full"
-              onClick={(e) => e.stopPropagation()}
-              dangerouslySetInnerHTML={{ __html: svgHtml }}
-            />
-          </m.div>
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
+// Imported from shared mermaid-block.tsx
 
 // ── ReasoningBlock (Gemini-style) ────────────────────────────────────────────
 
@@ -407,6 +312,43 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   const t = useTranslations("chat");
   const stepsToShow = isLastAssistant && liveAgentSteps.length > 0 ? liveAgentSteps : msg.agentSteps;
 
+  const isMermaidStreaming = isLastAssistant && streaming;
+  const mdComponents = useMemo(() => ({
+    p: ({ children }: React.HTMLAttributes<HTMLParagraphElement>) => <p className="my-1.5">{processChildren(children, msg.citations)}</p>,
+    strong: ({ children }: React.HTMLAttributes<HTMLElement>) => <strong className="font-semibold text-foreground">{processChildren(children, msg.citations)}</strong>,
+    em: ({ children }: React.HTMLAttributes<HTMLElement>) => <em className="italic">{children}</em>,
+    ul: ({ children }: React.HTMLAttributes<HTMLUListElement>) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
+    ol: ({ children }: React.HTMLAttributes<HTMLOListElement>) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
+    li: ({ children }: React.HTMLAttributes<HTMLLIElement>) => <li className="my-0.5 leading-6">{processChildren(children, msg.citations)}</li>,
+    h1: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h1 className="mb-3 mt-6 text-xl font-bold text-foreground">{processChildren(children, msg.citations)}</h1>,
+    h2: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h2 className="mb-2.5 mt-5 text-lg font-bold text-foreground">{processChildren(children, msg.citations)}</h2>,
+    h3: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{processChildren(children, msg.citations)}</h3>,
+    h4: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h4 className="mb-1.5 mt-3 text-sm font-semibold text-foreground/90">{processChildren(children, msg.citations)}</h4>,
+    h5: ({ children }: React.HTMLAttributes<HTMLHeadingElement>) => <h5 className="mb-1 mt-2.5 text-[13px] font-semibold text-foreground/80">{processChildren(children, msg.citations)}</h5>,
+    blockquote: ({ children }: React.HTMLAttributes<HTMLElement>) => <blockquote className="my-1.5 border-l-2 border-primary/40 pl-3 text-foreground/70">{processChildren(children, msg.citations)}</blockquote>,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    code: ({ children, className, ...props }: any) => {
+      const isInline = !("data-language" in props) && !className;
+      if (isInline) return <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-xs text-foreground/90">{children}</code>;
+      const text = String(children).replace(/\n$/, "");
+      if (className === "language-mermaid") return <MermaidBlock code={text} isStreaming={isMermaidStreaming} />;
+      return <CodeBlock code={text} language={className} />;
+    },
+    pre: ({ children }: React.HTMLAttributes<HTMLPreElement>) => <>{children}</>,
+    table: ({ children }: React.HTMLAttributes<HTMLTableElement>) => (
+      <div className="my-3 overflow-x-auto rounded-lg border border-white/[0.08]">
+        <table className="w-full border-collapse text-sm">{children}</table>
+      </div>
+    ),
+    thead: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => <thead className="bg-white/[0.04]">{children}</thead>,
+    tbody: ({ children }: React.HTMLAttributes<HTMLTableSectionElement>) => <tbody className="divide-y divide-white/[0.06]">{children}</tbody>,
+    tr: ({ children }: React.HTMLAttributes<HTMLTableRowElement>) => <tr className="transition-colors hover:bg-white/[0.02]">{children}</tr>,
+    th: ({ children }: React.HTMLAttributes<HTMLTableCellElement>) => <th className="px-3 py-2 text-left text-xs font-semibold text-foreground/70">{children}</th>,
+    td: ({ children }: React.HTMLAttributes<HTMLTableCellElement>) => <td className="px-3 py-2 text-foreground/80">{children}</td>,
+    a: ({ href, children }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">{children}</a>,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [msg.citations, isMermaidStreaming]);
+
   return (
     <m.div
       key={msg.id}
@@ -437,7 +379,19 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
       {!(msg.role === "assistant" && msg.deepResearch?.status === "done" && msg.deepResearch.reportTokens) && (
       <div className={cn("flex gap-2 md:gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
         {msg.role === "assistant" && (
-          <BotAvatar className="h-6 w-6 flex-shrink-0 md:h-7 md:w-7" />
+          isLastAssistant && msg.content === "" ? (
+            <div className="relative h-8 w-8 shrink-0">
+              <div
+                className="absolute inset-0 spin-ease rounded-full"
+                style={{ background: "conic-gradient(from 0deg, #a78bfa, #818cf8, #60a5fa, transparent 55%)" }}
+              />
+              <div className="absolute inset-[2.5px] overflow-hidden rounded-full">
+                <BotAvatar className="h-full w-full" />
+              </div>
+            </div>
+          ) : (
+            <BotAvatar className="h-6 w-6 flex-shrink-0 md:h-7 md:w-7" />
+          )
         )}
         <div className="min-w-0 max-w-[85%] md:max-w-[80%]">
           {msg.role === "assistant" && msg.reasoning && showReasoning && (
@@ -446,6 +400,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               streaming={isLastAssistant && streaming}
             />
           )}
+          {(msg.role === "user" || msg.content !== "") && (
           <div
             className={cn(
               "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
@@ -455,18 +410,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             )}
           >
             {msg.role === "assistant" ? (
-              msg.content === "" ? (
-                <div className="flex items-center gap-1.5 py-0.5">
-                  {[0, 1, 2].map((i) => (
-                    <m.div
-                      key={i}
-                      animate={{ scale: [1, 1.4, 1], opacity: [0.4, 1, 0.4] }}
-                      transition={{ duration: 1, repeat: Infinity, delay: i * 0.2 }}
-                      className="h-1.5 w-1.5 rounded-full bg-muted-foreground"
-                    />
-                  ))}
-                </div>
-              ) : (() => {
+              (() => {
                 const { textBefore, choices } = parseChoicesBlock(msg.content);
                 const displayContent = choices ? textBefore : msg.content;
                 const useReactMarkdown = displayContent.includes("\n## ") || displayContent.startsWith("## ") ||
@@ -479,43 +423,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                       <div className="text-sm leading-relaxed text-foreground/85">
                         <ReactMarkdown
                           remarkPlugins={[remarkGfm]}
-                          components={{
-                            p: ({ children }) => <p className="my-1.5">{processChildren(children, msg.citations)}</p>,
-                            strong: ({ children }) => <strong className="font-semibold text-foreground">{processChildren(children, msg.citations)}</strong>,
-                            em: ({ children }) => <em className="italic">{children}</em>,
-                            ul: ({ children }) => <ul className="my-1 ml-4 list-disc space-y-0.5">{children}</ul>,
-                            ol: ({ children }) => <ol className="my-1 ml-4 list-decimal space-y-0.5">{children}</ol>,
-                            li: ({ children }) => <li className="my-0.5 leading-6">{processChildren(children, msg.citations)}</li>,
-                            h1: ({ children }) => <h1 className="mb-3 mt-6 text-xl font-bold text-foreground">{processChildren(children, msg.citations)}</h1>,
-                            h2: ({ children }) => <h2 className="mb-2.5 mt-5 text-lg font-bold text-foreground">{processChildren(children, msg.citations)}</h2>,
-                            h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-semibold text-foreground">{processChildren(children, msg.citations)}</h3>,
-                            h4: ({ children }) => <h4 className="mb-1.5 mt-3 text-sm font-semibold text-foreground/90">{processChildren(children, msg.citations)}</h4>,
-                            h5: ({ children }) => <h5 className="mb-1 mt-2.5 text-[13px] font-semibold text-foreground/80">{processChildren(children, msg.citations)}</h5>,
-                            blockquote: ({ children }) => <blockquote className="my-1.5 border-l-2 border-primary/40 pl-3 text-foreground/70">{processChildren(children, msg.citations)}</blockquote>,
-                            code: ({ children, className, ...props }) => {
-                              const isInline = !("data-language" in props) && !className;
-                              if (isInline) {
-                                return <code className="rounded bg-accent px-1.5 py-0.5 font-mono text-xs text-foreground/90">{children}</code>;
-                              }
-                              const text = String(children).replace(/\n$/, "");
-                              if (className === "language-mermaid") {
-                                return <MermaidBlock code={text} />;
-                              }
-                              return <CodeBlock code={text} language={className} />;
-                            },
-                            pre: ({ children }) => <>{children}</>,
-                            table: ({ children }) => (
-                              <div className="my-3 overflow-x-auto rounded-lg border border-white/[0.08]">
-                                <table className="w-full border-collapse text-sm">{children}</table>
-                              </div>
-                            ),
-                            thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
-                            tbody: ({ children }) => <tbody className="divide-y divide-white/[0.06]">{children}</tbody>,
-                            tr: ({ children }) => <tr className="transition-colors hover:bg-white/[0.02]">{children}</tr>,
-                            th: ({ children }) => <th className="px-3 py-2 text-left text-xs font-semibold text-foreground/70">{children}</th>,
-                            td: ({ children }) => <td className="px-3 py-2 text-foreground/80">{children}</td>,
-                            a: ({ href, children }) => <a href={href} className="text-primary underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">{children}</a>,
-                          }}
+                          components={mdComponents}
                         >
                           {displayContent}
                         </ReactMarkdown>
@@ -548,22 +456,27 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               </div>
             )}
             {msg.content !== "" && (
-              <p className={cn("mt-1.5 text-[10px]", msg.role === "user" ? "text-white/50" : "text-muted-foreground/40")}>
-                {formatTime(msg.timestamp, t)}
+              <p className={cn("mt-1.5 flex items-center gap-2 text-[10px]", msg.role === "user" ? "text-white/50 justify-end" : "text-muted-foreground/40 justify-between")}>
+                <span>{formatTime(msg.timestamp, t)}</span>
+                {msg.role === "assistant" && msg.speed && !(isLastAssistant && streaming) && (() => {
+                  const totalSec = (msg.speed.ttft_ms + (msg.speed.tokens / (msg.speed.tps || 1)) * 1000) / 1000;
+                  const label = totalSec >= 1 ? `${totalSec.toFixed(1)}s` : `${msg.speed.ttft_ms}ms`;
+                  return (
+                    <span
+                      className="tabular-nums"
+                      title={`TTFT ${msg.speed.ttft_ms}ms · ${msg.speed.tps} tok/s · ${msg.speed.tokens} tokens`}
+                    >
+                      用时 {label}
+                    </span>
+                  );
+                })()}
               </p>
             )}
           </div>
+          )}
 
           {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
             <ChatCitationFooter citations={msg.citations} />
-          )}
-
-          {msg.role === "assistant" && msg.speed && !(isLastAssistant && streaming) && (
-            <div className="mt-1 flex items-center gap-2.5 text-[10px] tabular-nums text-muted-foreground/35">
-              <span>TTFT {msg.speed.ttft_ms}ms</span>
-              <span>{msg.speed.tps} tok/s</span>
-              <span>{msg.speed.tokens} tokens</span>
-            </div>
           )}
 
           {msg.role === "assistant" && msg.content !== "" && !(isLastAssistant && streaming) && (

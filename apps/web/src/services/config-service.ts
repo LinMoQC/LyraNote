@@ -8,11 +8,20 @@ import type { StorageBackend } from "@/lib/constants"
 
 /** 应用配置项完整映射（对应后端 config 表的所有字段） */
 export interface AppConfigMap {
-  // AI
+  // AI — LLM
+  llm_provider: string
   openai_api_key: string
   openai_base_url: string
   llm_model: string
+  // AI — Embedding
   embedding_model: string
+  embedding_api_key: string
+  embedding_base_url: string
+  // AI — Reranker
+  reranker_api_key: string
+  reranker_model: string
+  reranker_base_url: string
+  // AI — Search
   tavily_api_key: string
   perplexity_api_key: string
   // Storage
@@ -67,6 +76,35 @@ export interface TestLlmResult {
  */
 export async function testLlmConnection(): Promise<TestLlmResult> {
   return http.post<TestLlmResult>(CONFIG.TEST_LLM)
+}
+
+/** Embedding 连接测试结果 */
+export interface TestEmbeddingResult {
+  ok: boolean
+  model: string
+  dimensions: number
+  message: string
+}
+
+/**
+ * 测试当前已保存的 Embedding 配置是否可用
+ */
+export async function testEmbeddingConnection(): Promise<TestEmbeddingResult> {
+  return http.post<TestEmbeddingResult>(CONFIG.TEST_EMBEDDING)
+}
+
+/** Reranker 连接测试结果 */
+export interface TestRerankerResult {
+  ok: boolean
+  model: string
+  message: string
+}
+
+/**
+ * 测试当前已保存的 Reranker 配置是否可用
+ */
+export async function testRerankerConnection(): Promise<TestRerankerResult> {
+  return http.post<TestRerankerResult>(CONFIG.TEST_RERANKER)
 }
 
 /** 邮件连接测试结果 */
