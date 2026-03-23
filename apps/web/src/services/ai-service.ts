@@ -53,7 +53,7 @@ export async function getInlineSuggestion(context: string): Promise<string> {
 
 /** 流式 Agent 事件（SSE 推送的各类事件） */
 export interface AgentEvent {
-  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "note_created" | "speed" | "human_approve_required" | "error" | "ui_element"
+  type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "diagram" | "mcp_result" | "note_created" | "speed" | "human_approve_required" | "error" | "ui_element" | "content_replace"
   content?: string
   tool?: string
   input?: Record<string, unknown>
@@ -68,7 +68,10 @@ export interface AgentEvent {
   tps?: number
   tokens?: number
   tool_names?: string[]
-  tool_calls?: Record<string, unknown>[]
+  /** Present on human_approve_required — the UUID to pass to the approve endpoint */
+  approval_id?: string
+  /** Present on human_approve_required — full list of pending MCP tool calls */
+  tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }>
 }
 
 /** 消息附件元信息 */
@@ -109,6 +112,8 @@ export async function sendMessageStream(
   toolHint?: string,
   attachmentIds?: string[],
   attachmentsMeta?: AttachmentMeta[],
+  /** When true, the conversation is tagged as "copilot" and excluded from the chat page list. */
+  isCopilot?: boolean,
 ): Promise<string> {
   let convId = conversationId
 
@@ -120,7 +125,7 @@ export async function sendMessageStream(
   if (!convId) {
     const convRaw = await http.fetchJson<{ id: string }>(CONVERSATIONS.list(notebookId!), {
       method: "POST",
-      body: JSON.stringify({ title: prompt.slice(0, 60) }),
+      body: JSON.stringify({ title: prompt.slice(0, 60), source: isCopilot ? "copilot" : "chat" }),
       signal,
     });
     const conv = CreateConversationResponseSchema.parse(convRaw);
@@ -179,7 +184,10 @@ export async function sendMessageStream(
         } else if (event.type === "human_approve_required" && onAgentEvent) {
           onAgentEvent(event)
         } else if (
-          (event.type === "thought" || event.type === "tool_call" || event.type === "tool_result" || event.type === "mind_map" || event.type === "note_created") &&
+          (event.type === "thought" || event.type === "tool_call" || event.type === "tool_result"
+            || event.type === "mind_map" || event.type === "diagram"
+            || event.type === "mcp_result" || event.type === "ui_element"
+            || event.type === "note_created") &&
           onAgentEvent
         ) {
           onAgentEvent(event)
@@ -513,4 +521,15 @@ export async function startDeepResearch(
   const result = await createDeepResearch(query, opts)
   await subscribeDeepResearch(result.taskId, onEvent, signal)
   return result
+}
+
+// ── Human-in-the-Loop: MCP tool approval ──────────────────────────────────────
+
+/**
+ * Resolve a pending MCP tool-call approval.
+ * @param approvalId  The UUID from the `human_approve_required` SSE event.
+ * @param approved    true = allow the tool call, false = reject.
+ */
+export async function approveToolCall(approvalId: string, approved: boolean): Promise<void> {
+  await http.post(CONVERSATIONS.approveTool(approvalId), { approved })
 }

@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * @file Mermaid 图表渲染块
+ * @description 按需从 CDN 加载 Mermaid.js，将代码围栏（```mermaid）渲染为 SVG 图表，
+ *              支持流式输出时的加载态、放大查看、错误降级展示，以及暗色主题适配。
+ */
+
 import { AnimatePresence, m } from "framer-motion";
 import { memo, useEffect, useId, useState } from "react";
 

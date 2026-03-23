@@ -1,5 +1,11 @@
 "use client"
 
+/**
+ * @file Agent 步骤可视化组件
+ * @description 展示 AI 推理过程中的思考链和工具调用步骤，以可折叠时间线形式呈现，
+ *              每个步骤配有对应图标（思考/工具调用/工具结果）。被 chat 和 copilot 共用。
+ */
+
 import { AnimatePresence, m } from "framer-motion"
 import {
   BookOpen,
@@ -15,6 +21,7 @@ import {
   Network,
   Search,
   Sparkles,
+  Unplug,
   Wrench,
 } from "lucide-react"
 import { useState } from "react"
@@ -59,6 +66,11 @@ const TOOL_META: Record<string, { icon: typeof Search; labelKey: string; color: 
     labelKey: "steps.generateMindMap",
     color: "text-pink-400",
   },
+  generate_diagram: {
+    icon: Network,
+    labelKey: "steps.generateDiagram",
+    color: "text-blue-400",
+  },
   deep_read_sources: {
     icon: BookOpen,
     labelKey: "steps.deepRead",
@@ -97,6 +109,13 @@ function Connector({ active }: { active?: boolean }) {
   )
 }
 
+/** Parse an MCP-namespaced tool name (e.g. "excalidraw_mcp__create_view") into parts. */
+function parseMcpTool(toolName: string): { server: string; method: string } | null {
+  const idx = toolName.indexOf("__")
+  if (idx === -1) return null
+  return { server: toolName.slice(0, idx), method: toolName.slice(idx + 2) }
+}
+
 function ToolCallStep({
   step,
   showConnector,
@@ -108,13 +127,19 @@ function ToolCallStep({
 }) {
   const t = useTranslations("copilot")
   const [expanded, setExpanded] = useState(false)
-  const meta = TOOL_META[step.tool ?? ""] ?? {
-    icon: Wrench,
-    labelKey: "steps.toolCall",
-    color: "text-muted-foreground",
-  }
-  const Icon = meta.icon
   const inputStr = step.input ? JSON.stringify(step.input) : ""
+
+  const mcpParts = step.tool ? parseMcpTool(step.tool) : null
+
+  const meta = mcpParts
+    ? { icon: Unplug, label: null, color: "text-purple-400" }
+    : {
+        icon: TOOL_META[step.tool ?? ""]?.icon ?? Wrench,
+        label: null,
+        color: TOOL_META[step.tool ?? ""]?.color ?? "text-muted-foreground",
+      }
+  const builtinLabelKey = !mcpParts ? (TOOL_META[step.tool ?? ""]?.labelKey ?? "steps.toolCall") : null
+  const Icon = meta.icon
 
   return (
     <m.div
@@ -148,9 +173,17 @@ function ToolCallStep({
           onClick={() => inputStr.length > 30 && setExpanded((o) => !o)}
           className="flex w-full items-center gap-1 py-1.5 text-left"
         >
-          <span className="flex-1 truncate text-[12px] font-medium text-foreground/80">
-            {t(meta.labelKey)}
-          </span>
+          {mcpParts ? (
+            <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-[12px] font-medium">
+              <span className={cn("truncate", meta.color)}>{mcpParts.server}</span>
+              <span className="text-muted-foreground/40">→</span>
+              <span className="truncate text-foreground/80">{mcpParts.method}</span>
+            </span>
+          ) : (
+            <span className="flex-1 truncate text-[12px] font-medium text-foreground/80">
+              {builtinLabelKey ? t(builtinLabelKey) : step.tool}
+            </span>
+          )}
           {inputStr.length > 30 && (
             <ChevronRight
               size={10}

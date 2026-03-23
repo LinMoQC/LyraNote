@@ -5,6 +5,8 @@ This module now acts as a thin wrapper around the SkillRegistry.
 ToolContext is defined here because it is shared across the agent pipeline.
 
 Actual tool logic lives in app/skills/builtin/*.py
+MCP tools are loaded dynamically per-request in react_agent.py and stored
+in ToolContext.mcp_skill_map for execution dispatch.
 """
 
 from __future__ import annotations
@@ -28,9 +30,12 @@ class ToolContext:
     global_search: bool = False        # True when called from global chat
     history: list[dict] = field(default_factory=list)  # Recent chat turns for coreference resolution
     mind_map_data: dict | None = None  # Set by generate_mind_map skill
+    diagram_data: dict | None = None   # Set by generate_diagram skill
     created_note_id: str | None = None       # Set by create_note_draft skill
     created_note_title: str | None = None    # Set by create_note_draft skill
     ui_elements: list[dict] = field(default_factory=list)  # Flushed to SSE after each tool_result
+    # MCPSkill instances keyed by their namespaced function name, populated by react_agent
+    mcp_skill_map: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -60,8 +65,19 @@ def TOOL_SCHEMAS() -> list[dict]:  # noqa: N802
 
 
 async def execute_tool(tool_call: dict, ctx: ToolContext) -> str:
-    """Dispatch a tool_call dict {name, arguments} to the SkillRegistry."""
+    """
+    Dispatch a tool_call dict {name, arguments} to the appropriate handler.
+
+    Resolution order:
+      1. ctx.mcp_skill_map  — MCP tools loaded for this specific agent turn
+      2. skill_registry     — built-in and user-installed Python skills
+    """
     from app.skills.registry import skill_registry
     name = tool_call["name"]
     args = tool_call.get("arguments", {})
+
+    # Check MCP skills first (they have namespaced names like "server__tool")
+    if name in ctx.mcp_skill_map:
+        return await ctx.mcp_skill_map[name].execute(args, ctx)
+
     return await skill_registry.execute(name, args, ctx)

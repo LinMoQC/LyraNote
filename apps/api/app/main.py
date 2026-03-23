@@ -121,6 +121,7 @@ from app.domains.upload.router import router as upload_router
 from app.domains.task.router import router as task_router
 from app.domains.public.router import router as public_router
 from app.domains.knowledge_graph.router import router as knowledge_graph_router
+from app.domains.mcp.router import router as mcp_router
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(setup_router, prefix="/api/v1")
@@ -139,6 +140,7 @@ app.include_router(upload_router, prefix="/api/v1")
 app.include_router(task_router, prefix="/api/v1")
 app.include_router(public_router, prefix="/api/v1")
 app.include_router(knowledge_graph_router, prefix="/api/v1")
+app.include_router(mcp_router, prefix="/api/v1")
 
 
 @app.get("/health")

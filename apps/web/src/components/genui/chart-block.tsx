@@ -5,7 +5,7 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts"
-import { safeParseJSON } from "@/features/chat/genui/utils"
+import { safeParseJSON } from "./utils"
 
 const COLORS = ["#6366f1", "#818cf8", "#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#38bdf8"]
 

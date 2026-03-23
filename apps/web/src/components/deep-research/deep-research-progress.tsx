@@ -18,7 +18,7 @@ import remarkGfm from "remark-gfm";
 
 import { DrDocumentCard } from "./dr-document-card";
 import { DrDocumentViewer } from "./dr-document-viewer";
-import { buildMarkdownComponents } from "./genui";
+import { buildMarkdownComponents } from "@/components/genui";
 import { LearningCard } from "./dr-learning-card";
 import type { DrProgress } from "./dr-types";
 

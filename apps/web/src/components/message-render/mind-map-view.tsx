@@ -1,5 +1,11 @@
 "use client"
 
+/**
+ * @file 思维导图渲染组件
+ * @description 基于 Markmap 将结构化 MindMapData 渲染为可交互 SVG 思维导图，
+ *              支持展开/收起、工具栏、以及 mindMapToMarkdown 辅助函数（供编辑器插入）。
+ */
+
 import { useEffect, useRef, useState } from "react"
 import { GitBranch, ChevronDown, ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"

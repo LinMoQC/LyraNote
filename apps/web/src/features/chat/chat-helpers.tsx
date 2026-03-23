@@ -67,6 +67,10 @@ export function mapRecord(m: MessageRecord): LocalMessage {
     citations: (m.citations as CitationData[] | null) ?? undefined,
     agentSteps: (m.agent_steps as unknown[] | null) as LocalMessage["agentSteps"],
     speed: m.speed ?? undefined,
+    mindMap: (m.mind_map as LocalMessage["mindMap"]) ?? undefined,
+    diagram: (m.diagram as LocalMessage["diagram"]) ?? undefined,
+    mcpResult: (m.mcp_result as LocalMessage["mcpResult"]) ?? undefined,
+    uiElements: (m.ui_elements as LocalMessage["uiElements"]) ?? undefined,
   };
   if (m.attachments && m.attachments.length > 0) {
     base.attachments = m.attachments.map((a) => ({

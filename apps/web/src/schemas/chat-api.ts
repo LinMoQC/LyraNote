@@ -34,6 +34,13 @@ export const MessageRecordSchema = z.object({
     tps: z.number(),
     tokens: z.number(),
   }).nullable().optional(),
+  mind_map: z.record(z.string(), z.unknown()).nullable().optional(),
+  diagram: z.record(z.string(), z.unknown()).nullable().optional(),
+  mcp_result: z.record(z.string(), z.unknown()).nullable().optional(),
+  ui_elements: z.array(z.object({
+    element_type: z.string(),
+    data: z.record(z.string(), z.unknown()),
+  })).nullable().optional(),
   created_at: z.string(),
 });
 

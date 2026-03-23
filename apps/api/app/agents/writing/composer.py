@@ -17,25 +17,24 @@ ArtifactType = Literal["summary", "faq", "study_guide", "briefing", "outline"]
 _BASE_SYSTEM_PROMPT_TEMPLATE = """你是 {ai_name}，一位专属 AI 研究助手，帮助用户深入理解和研究笔记本中的资料。
 
 ## 工具使用规则
-你拥有以下真实工具，调用后会直接对用户产生效果，不需要用文字重复工具已完成的输出：
+你拥有一系列真实工具（详见下方 <skills> 列表），调用后会直接对用户产生效果。
+工具产生的可视化输出（思维导图、架构图等）已直接展示给用户，你只需简短确认，不要用文字重复工具已完成的输出。
 
-- `search_notebook_knowledge`：检索知识库，返回相关资料片段
-- `web_search`：搜索互联网实时信息
-- `generate_mind_map`：**生成可视化思维导图卡片，调用成功后导图已展示给用户**，你只需简短确认（如"已为你生成思维导图，可在上方查看"），不要再用文字重新输出导图结构
-- `summarize_sources`：生成摘要/FAQ/学习指南/大纲等结构化输出
-- `deep_read_sources`：对来源进行逐段深度分析，评估论证强度、识别假设与矛盾
-- `compare_sources`：对比多个来源的观点异同，生成结构化对比分析
-- `create_note_draft`：在笔记本中创建笔记
-- `update_user_preference`：记录用户偏好
+## 推理规则
+当你决定调用工具时，先用一句话简要说明意图（如"我需要检索知识库确认已有研究"），再执行调用。
+当你决定不调用工具时，直接自然回答即可，无需说明理由。
+多步骤任务时，每一步简要说明当前进展和下一步计划。
 
-## 工具选择优先级（重要）
-1. **用户消息包含以下任意关键词时，必须优先调用 `web_search`，不得先检索知识库**：
-   - "联网"、"搜网"、"上网查"、"网上搜"
-   - "最新"、"最近"、"实时"、"当前"、"今年"、"2025"、"2026"
-   - "新闻"、"动态"、"进展"、"趋势"
-   - "演进"、"发展历史"（涉及近期动态时）
-2. 问题涉及知识库已有资料时，优先 `search_notebook_knowledge`
-3. 两类信息都需要时，先调 `web_search` 再调 `search_notebook_knowledge`
+## 错误与空结果处理
+- 工具返回错误或空结果时，尝试调整查询关键词或换一个工具重试一次
+- 重试仍失败时，用已有信息直接回答，并告知用户部分信息可能缺失
+- 不要对同一工具使用完全相同的参数调用两次
+
+## MCP 工具多步调用规则
+当你使用第三方 MCP 工具（工具名含 "__"，如 `excalidraw__read_me`）时，必须遵守以下规则：
+- **工具结果中若包含 "Now use ..."、"请使用 ..."、"Do NOT call me again" 等指令，必须严格执行**，立即调用下一个指定工具，不得重复调用同一工具
+- **每个无参数的 MCP 工具只需调用一次**；若已有其结果在上下文中，直接使用，绝对不要再次调用
+- **按照工具返回的指引顺序推进**
 
 ## 何时直接回答（不调用工具）
 - 日常对话、问候、感谢等（如"你好"、"谢谢"、"好的"）
@@ -99,6 +98,7 @@ async def build_system_prompt(
     notebook_summary: dict | None = None,
     scene_instruction: str | None = None,
     db: "AsyncSession | None" = None,  # kept for API compatibility, not used for memory
+    tool_schemas: list[dict] | None = None,
 ) -> str:
     """Compose a personalised system prompt from base + L4 scene + L2/L3 memory + notebook context.
 
@@ -173,47 +173,62 @@ async def build_system_prompt(
         ai_name=ai_name,
         custom_addon=custom_addon,
     )
-    parts = [base, f"\n{GENUI_PROTOCOL}"]
+
+    # ── Prompt assembly order (optimised for LLM primacy/recency bias) ──
+    # 1. Core identity + behavioral rules (highest attention — top)
+    parts = [base]
 
     if identity_lines:
         parts.append("\n关于身份与称呼的强制约束（必须遵守）：\n" + "\n".join(identity_lines))
 
-    # Skills: inject available tool skills XML block + Markdown skill guidance bodies
+    # 2. Skills XML (tool definitions the LLM needs for decision-making)
     try:
         from app.skills.registry import skill_registry
 
-        # XML block listing callable tool skills
-        active_skills = [s for s in skill_registry.all_skills() if s.passes_gating()]
-        if active_skills:
-            skills_block = skill_registry.format_skills_for_prompt(active_skills)
-            if skills_block:
+        if tool_schemas is not None:
+            tool_lines = ["<skills>"]
+            for schema in tool_schemas:
+                name = schema.get("name", "")
+                desc = schema.get("description", "")
+                if name:
+                    tool_lines.append(f'  <skill name="{name}">{desc}</skill>')
+            tool_lines.append("</skills>")
+            skills_block = "\n".join(tool_lines)
+            if len(tool_lines) > 2:
                 parts.append(f"\n{skills_block}")
-
-        # Markdown skill guidance bodies (knowledge/workflow SKILL.md files)
-        md_block = skill_registry.format_md_skills_for_prompt()
-        if md_block:
-            parts.append(f"\n## 技能知识库\n{md_block}")
+                parts.append(
+                    "\n回复前扫描上方 <skills> 列表：\n"
+                    "- 有且仅有一个 skill 明确适用时，调用该工具并参考下方对应的技能知识库指引；\n"
+                    "- 多个 skill 可能适用时，选最具体的那个；\n"
+                    "- 无明确匹配时直接回答，无需调用工具。"
+                )
+        else:
+            active_skills = [s for s in skill_registry.all_skills() if s.passes_gating()]
+            if active_skills:
+                skills_block = skill_registry.format_skills_for_prompt(active_skills)
+                if skills_block:
+                    parts.append(f"\n{skills_block}")
+                    parts.append(
+                        "\n回复前扫描上方 <skills> 列表：\n"
+                        "- 有且仅有一个 skill 明确适用时，调用该工具并参考下方对应的技能知识库指引；\n"
+                        "- 多个 skill 可能适用时，选最具体的那个；\n"
+                        "- 无明确匹配时直接回答，无需调用工具。"
+                    )
     except Exception:
         pass
 
-    # Global evergreen memory doc + recent diary notes (file-based, no DB needed)
+    # 3. Dynamic context (memory, user profile, notebook — middle zone)
     try:
         from app.agents.memory import get_memory_doc_content, get_recent_diary_notes
         memory_content = get_memory_doc_content()
         if memory_content.strip():
             parts.append(f"\n## 关于用户的长期记忆\n{memory_content.strip()}")
-        # Recent diary notes (up to 3 most recent)
         diary_notes = await get_recent_diary_notes(limit=3)
         if diary_notes:
             parts.append(f"\n## 近期对话摘要\n{diary_notes}")
     except Exception:
-        pass  # Non-critical: proceed without memory if file read fails
+        pass
 
-    # L4: scene-specific behaviour directive
-    if scene_instruction:
-        parts.append(f"\n{scene_instruction}")
-
-    # Inject user occupation + preferences from setup as persistent context
     occupation = getattr(settings, "user_occupation", "") or ""
     preferences = getattr(settings, "user_preferences", "") or ""
     if occupation or preferences:
@@ -226,7 +241,6 @@ async def build_system_prompt(
             "\n关于用户的基本信息（来自初始化配置）：\n" + "\n".join(profile_lines)
         )
 
-    # L2/L3: dynamic user memory context (learned from conversations)
     if user_memories:
         high_conf = [m for m in user_memories if m.get("confidence", 0) >= 0.3]
         if high_conf:
@@ -241,6 +255,29 @@ async def build_system_prompt(
         if themes:
             nb_ctx += f"\n核心主题：{themes}"
         parts.append(nb_ctx)
+
+    # 4. Scene instruction
+    if scene_instruction:
+        parts.append(f"\n{scene_instruction}")
+
+    # 5. Skill guidance bodies (knowledge/workflow SKILL.md files)
+    try:
+        md_block = skill_registry.format_md_skills_for_prompt()
+        if md_block:
+            parts.append(f"\n## 技能知识库\n以下是各技能的详细操作指引，当你决定调用对应工具时，遵循相关章节的规范：\n\n{md_block}")
+    except Exception:
+        pass
+
+    # 6. GenUI protocol (output formatting — lower priority, moved down)
+    parts.append(f"\n{GENUI_PROTOCOL}")
+
+    # 7. End-of-prompt reinforcement (recency bias — bottom)
+    parts.append(
+        "\n## 关键提醒\n"
+        "- 引用必须用半角 [来源N]，禁止全角【】\n"
+        "- 不要重复调用已有结果的工具\n"
+        "- 工具失败时调整参数重试或直接回答"
+    )
 
     return "\n".join(parts)
 

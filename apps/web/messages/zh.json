@@ -188,6 +188,7 @@
       "personality": "个性化",
       "memory": "记忆",
       "skills": "技能",
+      "mcp": "MCP 工具",
       "storage": "存储",
       "notify": "通知",
       "security": "安全"
@@ -597,6 +598,7 @@
       "searchWeb": "正在搜索网络",
       "createTask": "正在创建定时任务",
       "generateMindMap": "正在生成思维导图",
+      "generateDiagram": "正在生成架构图",
       "deepRead": "正在深度阅读",
       "compareSources": "正在对比来源",
       "updateMemory": "正在更新记忆",

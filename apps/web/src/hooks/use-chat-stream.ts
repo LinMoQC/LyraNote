@@ -1,15 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 
-import { sendMessageStream, type AgentEvent, type AttachmentMeta } from "@/services/ai-service";
+import { sendMessageStream, type AttachmentMeta } from "@/services/ai-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
-import type { useStreamLifecycle } from "@/features/chat/use-stream-lifecycle";
+import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
-import { notifyError } from "@/lib/notify";
-import type { AgentStep } from "@/types";
-import type { LocalMessage, MessageAttachment } from "./chat-types";
-import type { DrProgress } from "./deep-research-progress";
+import { notifyError, notifySuccess } from "@/lib/notify";
+import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
+import type { DiagramData, MindMapData, MCPResultData } from "@/types";
+import type { LocalMessage, MessageAttachment } from "@/features/chat/chat-types";
+import type { DrProgress } from "@/components/deep-research/deep-research-progress";
 
 interface UseChatStreamOpts {
   globalNotebookId: string | undefined;
@@ -25,7 +26,6 @@ interface UseChatStreamOpts {
   setStreaming: Dispatch<SetStateAction<boolean>>;
   setActiveConvId: Dispatch<SetStateAction<string | null>>;
   setDrProgress: Dispatch<SetStateAction<DrProgress | null>>;
-  setNoteCreatedAlert: Dispatch<SetStateAction<{ id: string; title: string; notebookId?: string } | null>>;
 }
 
 export function useChatStream({
@@ -42,15 +42,20 @@ export function useChatStream({
   setStreaming,
   setActiveConvId,
   setDrProgress,
-  setNoteCreatedAlert,
 }: UseChatStreamOpts) {
   const queryClient = useQueryClient();
   const t = useTranslations("chat");
-  const [agentSteps, setAgentSteps] = useState<AgentEvent[]>([]);
-  const agentStepsRef = useRef<AgentEvent[]>([]);
+  const {
+    agentSteps,
+    agentStepsRef,
+    pendingApproval,
+    setPendingApproval,
+    handleAgentEvent,
+    buildSavedSteps,
+    reset: resetAgentState,
+  } = useAgentStreamEvents();
   const assistantContentRef = useRef("");
   const reasoningContentRef = useRef("");
-
   const toolHintRef = useRef<string | null>(null);
   const attachmentIdsRef = useRef<string[]>([]);
   const attachmentPreviewsRef = useRef<MessageAttachment[]>([]);
@@ -164,8 +169,7 @@ export function useChatStream({
     streamAbortRef.current?.abort();
     const abortController = new AbortController();
     streamAbortRef.current = abortController;
-    setAgentSteps([]);
-    agentStepsRef.current = [];
+    resetAgentState();
     assistantContentRef.current = "";
     reasoningContentRef.current = "";
     tokenQueueRef.current = [];
@@ -182,9 +186,7 @@ export function useChatStream({
           // so the typing effect plays out completely even with pseudo-streaming.
           scheduleAfterDrain(() => {
             const curId = assistantIdRef.current;
-            const savedSteps: AgentStep[] = agentStepsRef.current
-              .filter((e) => e.type === "thought" || e.type === "tool_call" || e.type === "tool_result")
-              .map((e) => ({ type: e.type as AgentStep["type"], content: e.content, tool: e.tool, input: e.input }));
+            const savedSteps = buildSavedSteps();
             setMessages((prev) =>
               prev.map((m) => m.id === curId
                 ? { ...m, citations: citations?.length ? citations : m.citations, agentSteps: savedSteps.length ? savedSteps : undefined }
@@ -229,11 +231,7 @@ export function useChatStream({
           if (event.type === "note_created") {
             queryClient.invalidateQueries({ queryKey: ["note"] });
             queryClient.invalidateQueries({ queryKey: ["notes"] });
-            setNoteCreatedAlert({
-              id: event.note_id!,
-              title: event.note_title ?? t("aiDraft"),
-              notebookId: event.notebook_id ?? globalNotebookId,
-            });
+            notifySuccess(t("noteCreated", { title: event.note_title ?? t("aiDraft") }));
             return;
           }
           if (event.type === "ui_element" && event.element_type) {
@@ -247,8 +245,45 @@ export function useChatStream({
             );
             return;
           }
-          agentStepsRef.current = [...agentStepsRef.current, event];
-          setAgentSteps((prev) => [...prev, event]);
+          if (event.type === "mind_map" && event.data) {
+            const curId = assistantIdRef.current;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === curId ? { ...m, mindMap: event.data as unknown as MindMapData } : m
+              )
+            );
+          }
+          if (event.type === "diagram" && event.data) {
+            const curId = assistantIdRef.current;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === curId ? { ...m, diagram: event.data as unknown as DiagramData } : m
+              )
+            );
+          }
+          if (event.type === "mcp_result" && event.data) {
+            const curId = assistantIdRef.current;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === curId ? { ...m, mcpResult: event.data as unknown as MCPResultData } : m
+              )
+            );
+          }
+          if (event.type === "content_replace" && typeof event.content === "string") {
+            const replacedContent = event.content;
+            const curId = assistantIdRef.current;
+            // Wait for pending tokens to drain before replacing, so the typing
+            // animation completes before the JSON block disappears.
+            scheduleAfterDrain(() => {
+              tokenQueueRef.current = [];
+              assistantContentRef.current = replacedContent;
+              setMessages((prev) =>
+                prev.map((m) => m.id === curId ? { ...m, content: replacedContent } : m)
+              );
+            });
+          }
+          // Common: human_approve_required + append to agentSteps
+          handleAgentEvent(event);
         },
         activeConvId ?? undefined,
         true,
@@ -279,7 +314,7 @@ export function useChatStream({
     } finally {
       streamAbortRef.current = null;
     }
-  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, setNoteCreatedAlert, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain]);
+  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain]);
 
   const handleRegenerate = useCallback(async (messages: LocalMessage[]) => {
     if (streaming) return;
@@ -301,10 +336,12 @@ export function useChatStream({
 
   return {
     agentSteps,
+    pendingApproval,
+    setPendingApproval,
     handleSend,
     handleRegenerate,
     handleCancelStreaming,
-    setAgentSteps,
+    resetAgentState,
     toolHintRef,
     attachmentIdsRef,
     attachmentPreviewsRef,

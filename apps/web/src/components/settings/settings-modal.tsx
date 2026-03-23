@@ -12,6 +12,7 @@ import {
   Shield,
   Sparkles,
   User,
+  Unplug,
   X,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -30,11 +31,12 @@ import {
   SecuritySection,
   MemorySection,
   SkillsSection,
+  MCPSection,
 } from "./settings-sections";
 
 // ── Nav config ────────────────────────────────────────────────────────────────
 
-const NAV_IDS = ["general", "appearance", "account", "ai", "personality", "memory", "skills", "storage", "notify", "security"] as const;
+const NAV_IDS = ["general", "appearance", "account", "ai", "personality", "memory", "skills", "mcp", "storage", "notify", "security"] as const;
 type SectionId = (typeof NAV_IDS)[number];
 
 const NAV_ICONS: Record<SectionId, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -45,6 +47,7 @@ const NAV_ICONS: Record<SectionId, React.ComponentType<{ size?: number; classNam
   personality: Sparkles,
   memory: BookOpen,
   skills: Blocks,
+  mcp: Unplug,
   storage: HardDrive,
   notify: Bell,
   security: Shield,
@@ -58,6 +61,7 @@ const NAV_LABEL_KEYS: Record<SectionId, string> = {
   personality: "sections.personality",
   memory: "sections.memory",
   skills: "sections.skills",
+  mcp: "sections.mcp",
   storage: "sections.storage",
   notify: "sections.notify",
   security: "sections.security",
@@ -71,6 +75,7 @@ const SECTION_COMPONENTS: Record<SectionId, React.ComponentType> = {
   personality: PersonalitySection,
   memory: MemorySection,
   skills: SkillsSection,
+  mcp: MCPSection,
   storage: StorageSection,
   notify: NotifySection,
   security: SecuritySection,

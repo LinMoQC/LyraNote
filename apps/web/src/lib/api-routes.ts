@@ -119,6 +119,8 @@ export const CONVERSATIONS = {
   saveMessage: (conversationId: string) => `/conversations/${conversationId}/messages/save`,
   /** POST - 流式消息 (SSE) */
   stream: (conversationId: string) => `/conversations/${conversationId}/messages/stream`,
+  /** POST - 解决 MCP 工具人工审批 */
+  approveTool: (approvalId: string) => `/agent/approve/${approvalId}`,
 } as const;
 
 // ── AI 服务 ───────────────────────────────────────────────────────────────────
@@ -234,7 +236,18 @@ export const UPLOADS = {
   tempPreview: (fileId: string) => `/uploads/temp/${fileId}`,
 } as const;
 
-// ── 公开访问 ──────────────────────────────────────────────────────────────────
+// ── MCP 服务器配置 ─────────────────────────────────────────────────────────────
+
+export const MCP = {
+  /** GET - 列出当前用户的 MCP 服务器配置 */
+  LIST: "/mcp/servers",
+  /** POST - 新增 MCP 服务器配置 */
+  CREATE: "/mcp/servers",
+  /** GET / PUT / DELETE - 单个 MCP 服务器配置 */
+  detail: (id: string) => `/mcp/servers/${id}`,
+  /** POST - 测试连接并返回可用工具列表 */
+  test: (id: string) => `/mcp/servers/${id}/test`,
+} as const;
 
 export const PUBLIC = {
   /** GET - 公开笔记本列表 */

@@ -31,3 +31,5 @@ pymupdf>=1.24
 # OCR for scanned PDFs (requires system-level tesseract-ocr + chi_sim language pack)
 pytesseract>=0.3
 Pillow>=10.0
+# MCP (Model Context Protocol) client support
+mcp>=1.0.0

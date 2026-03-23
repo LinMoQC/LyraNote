@@ -19,7 +19,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
-import { buildMarkdownComponents } from "./genui";
+import { buildMarkdownComponents } from "@/components/genui";
 import { EVIDENCE_STRENGTH_CONFIG, type DrProgress } from "./dr-types";
 
 // ── Evidence badge helpers ─────────────────────────────────────────────────────

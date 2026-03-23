@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { DrProgress, DrDeliverable } from "@/features/chat/dr-types";
+import type { DrProgress, DrDeliverable } from "@/components/deep-research/dr-types";
 import {
   createDeepResearch,
   subscribeDeepResearch,

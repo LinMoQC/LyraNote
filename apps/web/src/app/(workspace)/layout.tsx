@@ -1,5 +1,5 @@
 import { AppShell } from "@/components/layout/app-shell";
-import { DrFloatingIndicator } from "@/features/chat/dr-floating-indicator";
+import { DrFloatingIndicator } from "@/components/deep-research/dr-floating-indicator";
 
 export default function WorkspaceLayout({
   children,
