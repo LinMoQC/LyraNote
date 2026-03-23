@@ -20,11 +20,11 @@ import { ApprovalCard } from "@/components/message-render/approval-card";
 import { CopilotMessageBubble } from "@/features/copilot/copilot-message-bubble";
 import { ProactiveCard } from "@/features/copilot/proactive-card";
 import { WritingContextBar } from "@/features/copilot/writing-context-bar";
-import { approveToolCall, getContextGreeting, getInsights, getRelatedKnowledge, sendMessageStream, type AgentEvent, type CrossNotebookChunk, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
+import { approveToolCall, getContextGreeting, getInsights, getRelatedKnowledge, sendMessageStream, type CrossNotebookChunk, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
 import { cn } from "@/lib/utils";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
-import type { AgentStep, CitationData, Message, MindMapData } from "@/types";
+import type { CitationData, Message, MindMapData } from "@/types";
 
 export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 
@@ -75,7 +75,6 @@ export function CopilotPanel({
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const {
     agentSteps,
-    agentStepsRef,
     pendingApproval,
     setPendingApproval,
     handleAgentEvent,

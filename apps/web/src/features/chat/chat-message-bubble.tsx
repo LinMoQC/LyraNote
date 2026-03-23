@@ -10,7 +10,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { m } from "framer-motion";
-import { Check, Copy, FileText, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Copy, FileText, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { memo, useMemo } from "react";

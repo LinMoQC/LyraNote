@@ -13,7 +13,6 @@ from app.agents.brain import (
     CONTEXT_TOKEN_THRESHOLD,
     TOOLS_REQUIRING_APPROVAL,
     AgentBrain,
-    _is_knowledge_query,
 )
 from app.agents.instructions import (
     CallLLMInstruction,
@@ -38,96 +37,6 @@ def make_state(**kwargs) -> AgentState:
     )
     defaults.update(kwargs)
     return AgentState(**defaults)
-
-
-# ── _is_knowledge_query ────────────────────────────────────────────────────────
-
-class TestIsKnowledgeQuery:
-    def test_short_query_below_threshold_returns_false(self):
-        assert _is_knowledge_query("hi") is False
-
-    def test_exactly_three_chars_returns_false(self):
-        assert _is_knowledge_query("hey") is False
-
-    def test_four_chars_generic_returns_true(self):
-        # "data" is 4 chars and not a conversational pattern
-        assert _is_knowledge_query("data") is True
-
-    def test_exact_greeting_hi_returns_false(self):
-        assert _is_knowledge_query("hi") is False
-
-    def test_exact_greeting_hello_returns_false(self):
-        assert _is_knowledge_query("hello") is False
-
-    def test_exact_chinese_greeting_returns_false(self):
-        assert _is_knowledge_query("你好") is False
-
-    def test_exact_thanks_returns_false(self):
-        assert _is_knowledge_query("thanks") is False
-
-    def test_exact_thank_you_returns_false(self):
-        assert _is_knowledge_query("thank you") is False
-
-    def test_exact_ok_returns_false(self):
-        assert _is_knowledge_query("ok") is False
-
-    def test_exact_okay_returns_false(self):
-        assert _is_knowledge_query("okay") is False
-
-    def test_exact_bye_returns_false(self):
-        assert _is_knowledge_query("bye") is False
-
-    def test_short_startswith_greeting_hi_returns_false(self):
-        # "hi all" is 6 chars, starts with "hi"
-        assert _is_knowledge_query("hi all") is False
-
-    def test_short_startswith_hello_returns_false(self):
-        # "hello!" is 6 chars, starts with "hello"
-        assert _is_knowledge_query("hello!") is False
-
-    def test_longer_query_starting_with_greeting_not_filtered(self):
-        # len > 8, so startswith check doesn't apply
-        assert _is_knowledge_query("hello world this is a long query") is True
-
-    def test_typical_knowledge_query_returns_true(self):
-        assert _is_knowledge_query("What is machine learning?") is True
-
-    def test_chinese_knowledge_query_returns_true(self):
-        assert _is_knowledge_query("深度学习的原理是什么") is True
-
-    def test_whitespace_only_short_returns_false(self):
-        # strip makes it empty string, len < 4
-        assert _is_knowledge_query("   ") is False
-
-    def test_query_with_leading_whitespace_stripped(self):
-        # After strip: "hi" → len 2 < 4 → False
-        assert _is_knowledge_query("   hi   ") is False
-
-    def test_case_insensitive_matching(self):
-        # "HI" should be lowercased before comparison
-        assert _is_knowledge_query("HI") is False
-
-    def test_case_insensitive_hello(self):
-        assert _is_knowledge_query("HELLO") is False
-
-    def test_case_insensitive_ok(self):
-        assert _is_knowledge_query("OK") is False
-
-    def test_empty_string_returns_false(self):
-        assert _is_knowledge_query("") is False
-
-    def test_technical_question_returns_true(self):
-        assert _is_knowledge_query("How does gradient descent work?") is True
-
-    def test_exact_chinese_thanks_returns_false(self):
-        assert _is_knowledge_query("谢谢") is False
-
-    def test_exact_chinese_ok_returns_false(self):
-        assert _is_knowledge_query("好的") is False
-
-    def test_chinese_question_returns_true(self):
-        # Not a conversational pattern
-        assert _is_knowledge_query("量子计算是什么") is True
 
 
 # ── AgentBrain.decide — phase: init ──────────────────────────────────────────

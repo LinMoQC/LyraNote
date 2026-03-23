@@ -47,7 +47,6 @@ export function useChatStream({
   const t = useTranslations("chat");
   const {
     agentSteps,
-    agentStepsRef,
     pendingApproval,
     setPendingApproval,
     handleAgentEvent,
@@ -314,7 +313,7 @@ export function useChatStream({
     } finally {
       streamAbortRef.current = null;
     }
-  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain]);
+  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain, buildSavedSteps, handleAgentEvent, resetAgentState]);
 
   const handleRegenerate = useCallback(async (messages: LocalMessage[]) => {
     if (streaming) return;
