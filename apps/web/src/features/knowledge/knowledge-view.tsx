@@ -267,10 +267,15 @@ export function KnowledgeView() {
     },
   });
 
-  const allSources = useMemo(
-    () => data?.pages.flatMap((p) => p.items) ?? [],
-    [data]
-  );
+  const allSources = useMemo(() => {
+    const items = data?.pages.flatMap((p) => p.items) ?? []
+    const seen = new Set<string>()
+    return items.filter((item) => {
+      if (seen.has(item.id)) return false
+      seen.add(item.id)
+      return true
+    })
+  }, [data])
   const total = data?.pages[0]?.total ?? 0;
 
   // Infinite scroll via IntersectionObserver
