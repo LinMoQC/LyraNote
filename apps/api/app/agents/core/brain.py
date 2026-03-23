@@ -44,6 +44,15 @@ def _requires_approval(tool_name: str) -> bool:
 
 CONTEXT_TOKEN_THRESHOLD = 8000
 
+# Queries shorter than this are treated as conversational greetings / chitchat
+# and do not warrant a RAG lookup.
+_KNOWLEDGE_QUERY_MIN_CHARS = 8
+
+
+def _is_knowledge_query(query: str) -> bool:
+    """Return True if the query looks like a substantive knowledge question."""
+    return len(query.strip()) >= _KNOWLEDGE_QUERY_MIN_CHARS
+
 
 class AgentBrain:
     """Stateless decision maker for the ReAct agent loop."""
@@ -96,9 +105,14 @@ class AgentBrain:
 
                 state.pending_tool_calls = fresh_calls
                 return CallToolsInstruction(tool_calls=fresh_calls)
-            # LLM chose not to call any tool — trust that decision and answer directly.
-            # search_notebook_knowledge is in the tool list; if the LLM didn't call it,
-            # it judged that no retrieval was needed for this query.
+            # LLM chose not to call any tool.
+            # If we already have retrieved content, stream directly.
+            if state.tool_results:
+                return StreamAnswerInstruction()
+            # For knowledge-seeking queries with no existing context, fall back to
+            # RAG so the answer has grounding material.
+            if _is_knowledge_query(state.query):
+                return CallRAGInstruction(query=state.query)
             return StreamAnswerInstruction()
 
         if phase == "tool_result":
