@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class ConversationCreate(BaseModel):
     title: str | None = None
+    source: str = "chat"  # "chat" | "copilot"
 
 
 class ConversationOut(BaseModel):
@@ -56,6 +57,10 @@ class MessageOut(BaseModel):
     agent_steps: list | None = None
     attachments: list | None = None
     speed: dict | None = None
+    mind_map: dict | None = None
+    diagram: dict | None = None
+    mcp_result: dict | None = None
+    ui_elements: list | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

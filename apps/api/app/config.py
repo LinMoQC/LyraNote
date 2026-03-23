@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # Perplexity Sonar Search (preferred over Tavily when configured)
     perplexity_api_key: str = ""
 
+    # Jina AI Search & Reader (no key required; set for higher rate limits)
+    jina_api_key: str = ""
+
     # AI Personality (set via setup wizard, persisted in app_config)
     # Empty by default — real value comes from app_config table (setup wizard)
     ai_name: str = ""

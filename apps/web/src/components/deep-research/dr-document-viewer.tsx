@@ -19,7 +19,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
-import { MermaidBlock } from "./mermaid-block";
+import { buildMarkdownComponents } from "@/components/genui";
 import { EVIDENCE_STRENGTH_CONFIG, type DrProgress } from "./dr-types";
 
 // ── Evidence badge helpers ─────────────────────────────────────────────────────
@@ -288,6 +288,7 @@ export function DrDocumentViewer({
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
+                      ...buildMarkdownComponents({}),
                       h1: ({ children }) => {
                         const id = headingId(headingCounter);
                         return <h1 data-toc-id={id}>{children}</h1>;
@@ -301,16 +302,15 @@ export function DrDocumentViewer({
                         return <h3 data-toc-id={id}>{children}</h3>;
                       },
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      code: ({ children, className }: any) => {
+                      code: (codeProps: any): React.ReactNode => {
+                        const { children, className, ...rest } = codeProps;
                         const text = String(children).replace(/\n$/, "");
-                        if (className === "language-mermaid")
-                          return <MermaidBlock code={text} />;
                         if (text === "__ev:strong__") return <EvidenceBadge grade="强" />;
                         if (text === "__ev:medium__") return <EvidenceBadge grade="中" />;
                         if (text === "__ev:weak__")   return <EvidenceBadge grade="弱" />;
-                        return <code className={className}>{children}</code>;
+                        const baseMd = buildMarkdownComponents({});
+                        return (baseMd.code as (...args: unknown[]) => React.ReactNode)({ children, className, ...rest });
                       },
-                      pre: ({ children }) => <>{children}</>,
                     }}
                   >
                     {injectEvidenceTokens(reportTokens)}

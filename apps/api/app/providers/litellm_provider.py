@@ -20,8 +20,18 @@ from app.providers.base import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
-# Suppress litellm's verbose startup banners
+# Suppress litellm's verbose startup banners and per-request debug logs.
+# Without this, every LLM call dumps the full request/response payload to
+# stderr which (a) floods the terminal, and (b) causes the lyra CLI process
+# to OOM when processing large MCP responses like excalidraw read_me.
 litellm.suppress_debug_info = True
+# LiteLLM has two log systems:
+# 1. Standard Python logging (controlled by getLogger)
+# 2. Its own internal verbose logger that prints "· POST Request Sent..." to stdout
+#    — must be silenced via set_verbose=False
+litellm.set_verbose = False
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
 
 
 class LiteLLMProvider(BaseLLMProvider):

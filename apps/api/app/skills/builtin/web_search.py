@@ -1,14 +1,28 @@
 """
 Built-in Skill: web_search
-Searches the internet via Tavily API and auto-saves results to the notebook.
-Requires TAVILY_API_KEY environment variable.
+
+Multi-provider web search with deep content extraction and reranking.
+
+Provider routing priority:
+  Jina (no key, clean Markdown) → Perplexity (has key, synthesized answer) → Tavily (has key, default)
+
+Steps performed:
+  1. Route to best available provider based on config
+  2. Optionally extract full content via Jina Reader for top-2 URLs (fetch_full_content=True)
+  3. Rerank results with cross-encoder (reranker.py) when available
+  4. Emit UI web-cards, save new URLs to notebook knowledge base
+  5. Append quality signal at end to guide LLM self-reflection
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from uuid import UUID
 
 from app.skills.base import SkillBase, SkillMeta
+
+logger = logging.getLogger(__name__)
 
 
 class WebSearchSkill(SkillBase):
@@ -21,7 +35,7 @@ class WebSearchSkill(SkillBase):
             "搜索结果会自动保存到笔记本知识库中供后续使用。"
         ),
         category="web",
-        requires_env=["TAVILY_API_KEY"],
+        requires_env=[],  # Jina Search works without any key; Tavily/Perplexity optional
         thought_label="🌐 正在搜索网络",
         config_schema={
             "type": "object",
@@ -51,7 +65,21 @@ class WebSearchSkill(SkillBase):
                     "search_depth": {
                         "type": "string",
                         "enum": ["basic", "advanced"],
-                        "description": f"搜索深度：basic=快速搜索（默认），advanced=深度搜索（更慢但结果更全面）。当前默认：{default_depth}",
+                        "description": (
+                            f"搜索深度：basic=快速搜索（默认），"
+                            f"advanced=深度搜索（更慢但结果更全面）。当前默认：{default_depth}"
+                        ),
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "只返回最近 N 天内的结果（7=一周，30=一月）。时效性问题请设置此参数。",
+                    },
+                    "fetch_full_content": {
+                        "type": "boolean",
+                        "description": (
+                            "为排名前 2 的结果提取完整网页内容（更慢但内容更丰富）。"
+                            "适合深度研究或内容摘要任务，默认 false。"
+                        ),
                     },
                 },
                 "required": ["query"],
@@ -59,18 +87,83 @@ class WebSearchSkill(SkillBase):
         }
 
     async def execute(self, args: dict, ctx) -> str:
+        from app.config import settings
+        from app.providers import jina, perplexity, tavily
+        from app.providers.reranker import rerank
         from sqlalchemy import select
         from app.models import Source
-        from app.providers import tavily
 
-        query = args.get("query", "")
-        search_depth = args.get("search_depth", "basic")
+        query: str = args.get("query", "")
+        search_depth: str = args.get("search_depth", "basic")
+        days: int | None = args.get("days")
+        fetch_full_content: bool = bool(args.get("fetch_full_content", False))
+        max_results: int = 5
 
-        results = await tavily.search(query, max_results=5, search_depth=search_depth)
+        # -------------------------------------------------------
+        # Step 2: Provider routing
+        # -------------------------------------------------------
+        results: list[dict] = []
+        provider_used: str = ""
+
+        if settings.perplexity_api_key:
+            recency = _days_to_recency(days)
+            results = await perplexity.search(
+                query,
+                max_results=max_results,
+                recency_filter=recency,
+            )
+            provider_used = "perplexity"
+
+        if not results and settings.tavily_api_key:
+            results = await tavily.search(
+                query,
+                max_results=max_results,
+                search_depth=search_depth,
+                include_answer=True,
+                days=days,
+            )
+            provider_used = "tavily"
 
         if not results:
-            return "网络搜索未返回结果，请尝试更换关键词或检查 TAVILY_API_KEY 配置。"
+            results = await jina.search(query, max_results=max_results)
+            provider_used = "jina"
 
+        if not results:
+            return (
+                "网络搜索未返回结果，请尝试更换关键词。\n\n"
+                "[搜索质量评估] 0 条结果。建议修改 query 后重试。"
+            )
+
+        # -------------------------------------------------------
+        # Step 3: Jina Reader — deep content extraction for top URLs
+        # -------------------------------------------------------
+        if fetch_full_content:
+            top_urls = [r["url"] for r in results if r.get("url")][:2]
+            if top_urls:
+                full_texts = await asyncio.gather(
+                    *[jina.read_url(u) for u in top_urls],
+                    return_exceptions=True,
+                )
+                url_to_full: dict[str, str] = {}
+                for u, text in zip(top_urls, full_texts):
+                    if isinstance(text, str) and text.strip():
+                        url_to_full[u] = text
+
+                for r in results:
+                    if r.get("url") in url_to_full:
+                        r["content"] = url_to_full[r["url"]]
+
+        # -------------------------------------------------------
+        # Step 4: Reranking (graceful fallback — keeps original order on failure)
+        # -------------------------------------------------------
+        if len(results) > 1:
+            docs = [r.get("content") or r.get("title") or "" for r in results]
+            ranked_indices = await rerank(query, docs)
+            results = [results[i] for i in ranked_indices]
+
+        # -------------------------------------------------------
+        # Step 5: Build output + quality signal
+        # -------------------------------------------------------
         existing_result = await ctx.db.execute(
             select(Source.url).where(
                 Source.notebook_id == UUID(ctx.notebook_id),
@@ -81,27 +174,37 @@ class WebSearchSkill(SkillBase):
 
         new_source_count = 0
         result_parts: list[str] = []
+        top_score: float = 0.0
 
         for i, r in enumerate(results, 1):
-            title = r.get("title") or "未知标题"
-            url = r.get("url", "")
-            content = r.get("content", "")
-            score = float(r.get("score", 0.0))
+            title: str = r.get("title") or "未知标题"
+            url: str = r.get("url") or ""
+            content: str = r.get("content") or ""
+            score: float = float(r.get("score") or 0.0)
+            top_score = max(top_score, score)
 
-            ctx.collected_citations.append(
-                {
-                    "source_id": f"web-search-{i}",
-                    "chunk_id": f"web-search-chunk-{i}",
-                    "excerpt": content[:200],
-                    "source_title": title,
-                    "score": score,
-                }
-            )
+            ctx.collected_citations.append({
+                "source_id": f"web-search-{i}",
+                "chunk_id": f"web-search-chunk-{i}",
+                "excerpt": content[:400],
+                "source_title": title,
+                "score": score,
+            })
+
+            if url:
+                ctx.ui_elements.append({
+                    "element_type": "web-card",
+                    "data": {
+                        "title": title,
+                        "url": url,
+                        "snippet": content[:120],
+                    },
+                })
 
             result_parts.append(
                 f"[结果{i}] 《{title}》（相关度 {score:.0%}）\n"
                 f"链接：{url}\n"
-                f"{content[:500]}"
+                f"{content[:1200]}"
             )
 
             if url and url not in existing_urls:
@@ -126,7 +229,36 @@ class WebSearchSkill(SkillBase):
         if new_source_count > 0:
             footer += f"，其中 {new_source_count} 个新来源正在后台导入到知识库"
 
-        return "\n\n".join(result_parts) + footer
+        # Quality signal for LLM self-reflection (Step 5)
+        quality_hint = (
+            f"\n\n[搜索质量评估] 找到 {len(results)} 条结果，"
+            f"最高相关度 {top_score:.0%}（来源：{provider_used}）。\n"
+        )
+        if top_score < 0.4:
+            quality_hint += (
+                "当前结果相关度较低，建议换用不同关键词重新搜索，"
+                "或启用 fetch_full_content=true 获取完整内容。"
+            )
+        elif not fetch_full_content:
+            quality_hint += (
+                "如需更深入的内容（完整文章/论文），"
+                "可在下一次调用时设置 fetch_full_content=true。"
+            )
+
+        return "\n\n".join(result_parts) + footer + quality_hint
+
+
+def _days_to_recency(days: int | None) -> str:
+    """Convert a days integer to a Perplexity recency_filter string."""
+    if days is None:
+        return "month"
+    if days <= 1:
+        return "day"
+    if days <= 7:
+        return "week"
+    if days <= 30:
+        return "month"
+    return "year"
 
 
 skill = WebSearchSkill()

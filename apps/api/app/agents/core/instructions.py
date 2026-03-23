@@ -53,6 +53,7 @@ class RequestHumanApprovalInstruction:
     """Pause the loop and request human approval for high-risk tool calls."""
 
     tool_calls: list[dict] = field(default_factory=list)
+    approval_id: str = ""
     type: str = "request_human_approve"
 
 

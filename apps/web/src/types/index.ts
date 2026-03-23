@@ -99,6 +99,21 @@ export interface MindMapData {
   branches: MindMapNode[]
 }
 
+/** draw.io 架构图数据 */
+export interface DiagramData {
+  xml: string
+  title?: string
+}
+
+/** MCP 工具返回的结构化数据（通用，由前端按 tool 名称决定如何渲染） */
+export interface MCPResultData {
+  tool: string
+  /** JSON 数据（来自 plain-JSON 工具结果） */
+  data?: unknown
+  /** HTML 字符串（来自 EmbeddedResource，用 iframe 渲染） */
+  html_content?: string
+}
+
 /** 对话消息 */
 export type Message = {
   id: string;
@@ -108,6 +123,8 @@ export type Message = {
   quotedText?: string;
   agentSteps?: AgentStep[];
   mindMap?: MindMapData;
+  diagram?: DiagramData;
+  mcpResult?: MCPResultData;
 };
 
 /** AI 生成物（摘要、大纲、思维导图等） */

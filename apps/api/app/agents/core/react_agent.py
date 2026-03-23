@@ -26,17 +26,18 @@ from app.agents.writing.composer import build_system_prompt
 from app.agents.core.engine import AgentEngine
 from app.agents.core.state import AgentState
 from app.agents.core.tools import ToolContext
+from app.mcp.skill import load_mcp_skills
 
 logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 5
 
 TOOL_HINT_PROMPTS: dict[str, str] = {
-    "summarize": "用户明确要求对笔记本内容生成摘要。请直接调用 summarize_sources 工具，artifact_type='summary'。",
-    "insights": "用户要求提取关键洞察。请先调用 search_notebook_knowledge 检索核心内容，然后从中提炼出 5-8 条关键洞察（核心发现、趋势、反直觉结论等），以结构化列表呈现。每条洞察用加粗标题+说明。",
-    "outline": "用户要求生成大纲。请调用 summarize_sources 工具，artifact_type='outline'。",
-    "deep_read": "用户要求对来源进行深度阅读分析。请调用 deep_read_sources 工具进行逐段深度分析。",
-    "compare": "用户要求对比多个来源。请调用 compare_sources 工具进行结构化对比分析。",
+    "summarize": "用户点击了「摘要」功能，希望对当前笔记本内容生成一份结构化摘要。请根据需要检索相关内容，然后调用 summarize_sources 工具（artifact_type='summary'）完成任务。",
+    "insights": "用户点击了「洞察」功能，希望从笔记本内容中提炼关键洞察。请先检索核心内容，再提炼出 5-8 条关键洞察（核心发现、趋势、反直觉结论等），以结构化列表呈现，每条用加粗标题配说明。",
+    "outline": "用户点击了「大纲」功能，希望基于笔记本内容生成结构化大纲。请根据需要检索相关内容，然后调用 summarize_sources 工具（artifact_type='outline'）完成任务。",
+    "deep_read": "用户点击了「深度阅读」功能，希望对来源进行逐段深度分析。请调用 deep_read_sources 工具完成任务。",
+    "compare": "用户点击了「对比分析」功能，希望对多个来源的观点进行结构化对比。请调用 compare_sources 工具完成任务。",
 }
 
 
@@ -71,14 +72,28 @@ async def run_agent(
         logger.warning("Failed to load active skills, falling back to empty tool list", exc_info=True)
         tool_schemas = []
         thought_labels = {}
+        tool_skills = []
+
+    # ── Load MCP tools ────────────────────────────────────────────────────
+    mcp_skills = await load_mcp_skills(user_id, db)
+    if mcp_skills:
+        tool_schemas.extend(s.get_schema() for s in mcp_skills)
+        thought_labels.update(
+            {s.get_schema()["name"]: s.meta.thought_label for s in mcp_skills}
+        )
 
     # ── Build system prompt ───────────────────────────────────────────────
+    # Build a lookup dict for MCP skills so execute_tool can dispatch them.
+    mcp_skill_map = {s.meta.name: s for s in mcp_skills}
+
     tool_ctx = ToolContext(
         notebook_id=notebook_id, user_id=user_id, db=db, global_search=global_search,
         history=list(history[-6:]),  # last 3 turns for coreference resolution
+        mcp_skill_map=mcp_skill_map,
     )
     system_prompt = await build_system_prompt(
-        user_memories, notebook_summary, scene_instruction, db=db
+        user_memories, notebook_summary, scene_instruction, db=db,
+        tool_schemas=tool_schemas,
     )
     if tool_hint and tool_hint in TOOL_HINT_PROMPTS:
         system_prompt += f"\n\n## 当前工具指令\n{TOOL_HINT_PROMPTS[tool_hint]}"

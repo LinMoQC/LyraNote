@@ -2,8 +2,9 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from app.dependencies import CurrentUser, DbDep
 from app.schemas.response import ApiResponse, success
@@ -37,7 +38,7 @@ async def create_conversation(
     notebook_id: UUID, body: ConversationCreate, db: DbDep, current_user: CurrentUser
 ):
     svc = ConversationService(db, current_user.id)
-    return success(await svc.create(notebook_id, body.title))
+    return success(await svc.create(notebook_id, body.title, source=body.source))
 
 
 @router.get(
@@ -115,3 +116,31 @@ async def delete_conversation(
 ):
     svc = ConversationService(db, current_user.id)
     await svc.delete(conversation_id)
+
+
+# ── Human-in-the-Loop: MCP tool approval ──────────────────────────────────────
+
+class ApproveToolCallBody(BaseModel):
+    approved: bool
+
+
+@router.post(
+    "/agent/approve/{approval_id}",
+    response_model=ApiResponse[None],
+)
+async def approve_tool_call(
+    approval_id: str,
+    body: ApproveToolCallBody,
+    _current_user: CurrentUser,
+):
+    """Resolve a pending MCP tool-call approval request.
+
+    The agent is paused, waiting on an asyncio.Event keyed by ``approval_id``.
+    Calling this endpoint unblocks it with the user's decision.
+    """
+    from app.agents.core import approval_store
+
+    ok = approval_store.resolve(approval_id, body.approved)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Approval request not found or already resolved")
+    return success(None)

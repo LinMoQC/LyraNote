@@ -27,6 +27,8 @@ from langgraph.types import Send
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.core.genui_protocol import GENUI_PROTOCOL_REPORT as _GENUI_PROTOCOL_REPORT
+
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -582,7 +584,8 @@ async def _synthesize_report(
         f"字数{report_words}字，使用 Markdown 格式，不要引用来源编号。\n\n"
         "## 严格禁止\n"
         "- 禁止任何问候语、开场白或自我介绍（如\"尊敬的...\"、\"见字如面\"、\"我是...秘书\"等）\n"
-        "- 直接从报告正文内容开始，第一行必须是 ## 章节标题或报告主体文字"
+        "- 直接从报告正文内容开始，第一行必须是 ## 章节标题或报告主体文字\n\n"
+        f"{_GENUI_PROTOCOL_REPORT}"
     )
     # Only inject factual background memories (occupation, research preferences),
     # exclude identity/persona memories (preferred_ai_name, user_role, communication_tone)

@@ -188,6 +188,7 @@
       "personality": "Personality",
       "memory": "Memory",
       "skills": "Skills",
+      "mcp": "MCP Tools",
       "storage": "Storage",
       "notify": "Notifications",
       "security": "Security"
@@ -597,6 +598,7 @@
       "searchWeb": "Searching the web",
       "createTask": "Creating scheduled task",
       "generateMindMap": "Generating mind map",
+      "generateDiagram": "Generating diagram",
       "deepRead": "Deep reading sources",
       "compareSources": "Comparing sources",
       "updateMemory": "Updating memory",

@@ -12,19 +12,21 @@ import { ChevronDown, Sparkles, X } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useCopilotResize, DEFAULT_WIDTH } from "./use-copilot-resize";
+import { useCopilotResize, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 
 import { ChatInput } from "@/components/chat-input";
-import { AgentSteps } from "@/features/copilot/agent-steps";
-import { ChatMessageBubble } from "@/features/copilot/chat-message-bubble";
+import { AgentSteps } from "@/components/message-render/agent-steps";
+import { ApprovalCard } from "@/components/message-render/approval-card";
+import { CopilotMessageBubble } from "@/features/copilot/copilot-message-bubble";
 import { ProactiveCard } from "@/features/copilot/proactive-card";
 import { WritingContextBar } from "@/features/copilot/writing-context-bar";
-import { getContextGreeting, getInsights, getRelatedKnowledge, sendMessageStream, type AgentEvent, type CrossNotebookChunk, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
+import { approveToolCall, getContextGreeting, getInsights, getRelatedKnowledge, sendMessageStream, type CrossNotebookChunk, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
 import { cn } from "@/lib/utils";
 import { useProactiveStore } from "@/store/use-proactive-store";
-import type { AgentStep, CitationData, Message, MindMapData } from "@/types";
+import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
+import type { CitationData, Message, MindMapData } from "@/types";
 
-export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "./use-copilot-resize";
+export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 
 /**
  * Copilot 侧边面板组件
@@ -71,8 +73,14 @@ export function CopilotPanel({
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [agentSteps, setAgentSteps] = useState<AgentEvent[]>([]);
-  const agentStepsRef = useRef<AgentEvent[]>([]);
+  const {
+    agentSteps,
+    pendingApproval,
+    setPendingApproval,
+    handleAgentEvent,
+    buildSavedSteps,
+    reset: resetAgentState,
+  } = useAgentStreamEvents();
 
   // ── Dynamic context greeting ──────────────────────────────
   const [greetingText, setGreetingText] = useState<string | null>(null);
@@ -209,10 +217,11 @@ export function CopilotPanel({
 
       const assistantId = `assistant-${Date.now()}`;
       setMessages((c) => [...c, { id: assistantId, role: "assistant", content: "" }]);
-      setAgentSteps([]);
-      agentStepsRef.current = [];
+      resetAgentState();
 
       const pendingMindMap = { current: null as MindMapData | null };
+      const pendingDiagram = { current: null as import("@/types").DiagramData | null };
+      const pendingMCPResult = { current: null as import("@/types").MCPResultData | null };
 
       try {
         await sendMessageStream(
@@ -223,9 +232,7 @@ export function CopilotPanel({
             );
           },
           (citations?: CitationData[]) => {
-            const savedSteps: AgentStep[] = agentStepsRef.current
-              .filter((e) => e.type === "thought" || e.type === "tool_call" || e.type === "tool_result")
-              .map((e) => ({ type: e.type as AgentStep["type"], content: e.content, tool: e.tool, input: e.input }));
+            const savedSteps = buildSavedSteps();
             setMessages((c) =>
               c.map((m) => (m.id === assistantId
                 ? {
@@ -233,6 +240,8 @@ export function CopilotPanel({
                     citations: citations?.length ? citations : m.citations,
                     agentSteps: savedSteps.length ? savedSteps : undefined,
                     mindMap: pendingMindMap.current ?? m.mindMap,
+                    diagram: pendingDiagram.current ?? m.diagram,
+                    mcpResult: pendingMCPResult.current ?? m.mcpResult,
                   }
                 : m))
             );
@@ -251,13 +260,42 @@ export function CopilotPanel({
                 )
               );
             }
+            if (event.type === "diagram" && event.data) {
+              const diagramData = event.data as unknown as import("@/types").DiagramData;
+              pendingDiagram.current = diagramData;
+              setMessages((c) =>
+                c.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, diagram: diagramData }
+                    : m
+                )
+              );
+            }
+            if (event.type === "mcp_result" && event.data) {
+              const mcpData = event.data as unknown as import("@/types").MCPResultData;
+              pendingMCPResult.current = mcpData;
+              setMessages((c) =>
+                c.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, mcpResult: mcpData }
+                    : m
+                )
+              );
+            }
             if (event.type === "note_created") {
               onNoteCreated?.();
               return;
             }
-            agentStepsRef.current = [...agentStepsRef.current, event];
-            setAgentSteps((prev) => [...prev, event]);
-          }
+            // Common: human_approve_required + append to agentSteps
+            handleAgentEvent(event);
+          },
+          undefined, // conversationId
+          undefined, // globalSearch
+          undefined, // signal
+          undefined, // toolHint
+          undefined, // attachmentIds
+          undefined, // attachmentsMeta
+          true,      // isCopilot
         );
       } catch {
         setMessages((c) =>
@@ -512,7 +550,16 @@ export function CopilotPanel({
                       defaultOpen={isLastAssistant && streaming}
                     />
                   ) : null}
-                  <ChatMessageBubble
+                  {isLastAssistant && streaming && pendingApproval && (
+                    <ApprovalCard
+                      toolCalls={pendingApproval.toolCalls}
+                      onDecision={async (approved) => {
+                        await approveToolCall(pendingApproval.approvalId, approved);
+                        setPendingApproval(null);
+                      }}
+                    />
+                  )}
+                  <CopilotMessageBubble
                     message={message}
                     onInsert={message.role === "assistant" ? onInsertToEditor : undefined}
                     onInsertMindMap={message.role === "assistant" ? onInsertMindMap : undefined}

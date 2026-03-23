@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import random
 from collections.abc import AsyncGenerator
 from uuid import UUID
@@ -26,6 +27,47 @@ logger = logging.getLogger(__name__)
 MEMORY_FLUSH_THRESHOLD = 20
 
 
+# Matches fenced code blocks: ```genui / ```json / ``` followed by a JSON object
+_GENUI_BLOCK_RE = re.compile(r"```(?:genui|json)?\s*\n(\{[\s\S]*?\})\s*\n```", re.MULTILINE)
+
+
+def _is_excalidraw_data(data: object) -> bool:
+    """Return True if *data* is a GenUI excalidraw block (direct or group-wrapped)."""
+    if not isinstance(data, dict):
+        return False
+    node_type = data.get("type", "")
+    if isinstance(node_type, str) and node_type.startswith("excalidraw__"):
+        return True
+    for child in data.get("components", []) or []:
+        if isinstance(child, dict):
+            t = child.get("type", "")
+            if isinstance(t, str) and t.startswith("excalidraw__"):
+                return True
+    return False
+
+
+def _extract_genui_from_content(content: str) -> tuple[str, dict | None]:
+    """Scan LLM text for embedded GenUI JSON blocks and extract the first match.
+
+    When the LLM embeds an excalidraw__* JSON block inside a fenced code block
+    instead of calling a tool, this function detects it, builds an mcp_result
+    payload, and returns the cleaned content (block removed) alongside it.
+
+    Returns (cleaned_content, mcp_result_payload_or_None).
+    """
+    for m in _GENUI_BLOCK_RE.finditer(content):
+        raw = m.group(1).strip()
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not _is_excalidraw_data(data):
+            continue
+        cleaned = (content[: m.start()].rstrip() + "\n" + content[m.end() :].lstrip()).strip()
+        return cleaned, {"tool": "excalidraw__create_view", "data": data}
+    return content, None
+
+
 class ConversationService:
     """Conversation domain business logic."""
 
@@ -36,24 +78,26 @@ class ConversationService:
     # ── Conversation CRUD ─────────────────────────────────────────────────────
 
     async def list_by_notebook(
-        self, notebook_id: UUID, *, offset: int = 0, limit: int = 50
+        self, notebook_id: UUID, *, offset: int = 0, limit: int = 50, source: str = "chat"
     ) -> list[Conversation]:
         await self._assert_notebook_owner(notebook_id)
         result = await self.db.execute(
             select(Conversation)
             .where(Conversation.notebook_id == notebook_id)
+            .where(Conversation.source == source)
             .order_by(Conversation.created_at.desc())
             .offset(offset)
             .limit(limit)
         )
         return list(result.scalars().all())
 
-    async def create(self, notebook_id: UUID, title: str) -> Conversation:
+    async def create(self, notebook_id: UUID, title: str, source: str = "chat") -> Conversation:
         await self._assert_notebook_owner(notebook_id)
         conv = Conversation(
             notebook_id=notebook_id,
             user_id=self.user_id,
             title=title,
+            source=source,
         )
         self.db.add(conv)
         await self.db.flush()
@@ -184,6 +228,10 @@ class ConversationService:
         citations: list[dict] = []
         agent_steps: list[dict] = []
         speed_metrics: dict | None = None
+        mind_map_data: dict | None = None
+        diagram_data: dict | None = None
+        mcp_result_data: dict | None = None
+        ui_elements_data: list[dict] = []
 
         async for event in run_agent(
             query=content,
@@ -238,6 +286,16 @@ class ConversationService:
             elif event_type == "done":
                 content_text = "".join(full_content)
                 reasoning_text = "".join(full_reasoning).strip() or None
+                # If the LLM embedded a GenUI JSON block in text (instead of calling
+                # a tool), extract it now so the frontend can render it properly.
+                if mcp_result_data is None:
+                    content_text, extracted_mcp = _extract_genui_from_content(content_text)
+                    if extracted_mcp:
+                        mcp_result_data = extracted_mcp
+                        # Notify the frontend: set mcpResult and replace the content
+                        # (remove the raw JSON code block that was streamed as tokens).
+                        yield f"data: {json.dumps({'type': 'mcp_result', 'data': extracted_mcp})}\n\n"
+                        yield f"data: {json.dumps({'type': 'content_replace', 'content': content_text})}\n\n"
                 if content_text:
                     assistant_msg = Message(
                         conversation_id=conversation_id,
@@ -247,6 +305,10 @@ class ConversationService:
                         citations=citations,
                         agent_steps=agent_steps or None,
                         speed=speed_metrics,
+                        mind_map=mind_map_data,
+                        diagram=diagram_data,
+                        mcp_result=mcp_result_data,
+                        ui_elements=ui_elements_data or None,
                     )
                     self.db.add(assistant_msg)
                     await self.db.flush()
@@ -259,6 +321,18 @@ class ConversationService:
                 yield f"data: {json.dumps(event)}\n\n"
 
             else:
+                # Capture rich-media payloads so they can be persisted with the message.
+                if event_type == "mind_map" and event.get("data"):
+                    mind_map_data = event["data"]
+                elif event_type == "diagram" and event.get("data"):
+                    diagram_data = event["data"]
+                elif event_type == "mcp_result" and event.get("data"):
+                    mcp_result_data = event["data"]
+                elif event_type == "ui_element" and event.get("element_type"):
+                    ui_elements_data.append({
+                        "element_type": event["element_type"],
+                        "data": event.get("data", {}),
+                    })
                 yield f"data: {json.dumps(event)}\n\n"
 
     # ── History loading ───────────────────────────────────────────────────────

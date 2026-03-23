@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * @file 结构化选项卡片组件
+ * @description 渲染 AI 生成的结构化可点选选项（如多选 prompt），
+ *              选中后禁用其余选项并通过 onSelect 回调触发后续对话。
+ */
+
 import { useState } from "react";
 import { ChevronRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";

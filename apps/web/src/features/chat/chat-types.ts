@@ -1,6 +1,6 @@
 import type { ChatRole } from "@/lib/constants";
-import type { AgentStep, CitationData } from "@/types";
-import type { DrProgress } from "@/features/chat/deep-research-progress";
+import type { AgentStep, CitationData, DiagramData, MindMapData, MCPResultData } from "@/types";
+import type { DrProgress } from "@/components/deep-research/deep-research-progress";
 import { BookOpen, FileText, Globe, Lightbulb } from "lucide-react";
 
 export interface MessageAttachment {
@@ -16,16 +16,20 @@ export interface StreamingMetrics {
 }
 
 export interface LocalMessage {
-  id: string;
-  role: ChatRole;
-  content: string;
-  reasoning?: string;
-  timestamp: Date;
-  citations?: CitationData[];
-  agentSteps?: AgentStep[];
-  deepResearch?: DrProgress;
-  attachments?: MessageAttachment[];
-  speed?: StreamingMetrics;
+  id: string
+  role: ChatRole
+  content: string
+  reasoning?: string
+  timestamp: Date
+  citations?: CitationData[]
+  agentSteps?: AgentStep[]
+  deepResearch?: DrProgress
+  attachments?: MessageAttachment[]
+  speed?: StreamingMetrics
+  uiElements?: Array<{ element_type: string; data: Record<string, unknown> }>
+  mindMap?: MindMapData
+  diagram?: DiagramData
+  mcpResult?: MCPResultData
 }
 
 export const CONVERSATIONS_PAGE_SIZE = 30;

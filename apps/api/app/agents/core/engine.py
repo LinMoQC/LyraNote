@@ -33,6 +33,66 @@ from app.agents.core.tools import ToolContext, execute_tool
 logger = logging.getLogger(__name__)
 
 
+_MCP_HTML_START = "__MCP_HTML_RESOURCE__"
+_MCP_HTML_END = "__/MCP_HTML_RESOURCE__"
+
+
+def _split_mcp_html(result: str) -> tuple[str, str | None]:
+    """Split a tool result string that may embed HTML via the sentinel markers.
+
+    Returns (text_part, html_content_or_None).
+    """
+    start = result.find(_MCP_HTML_START)
+    if start == -1:
+        return result, None
+    end = result.find(_MCP_HTML_END, start)
+    if end == -1:
+        return result[:start].rstrip(), result[start + len(_MCP_HTML_START):]
+    html = result[start + len(_MCP_HTML_START):end]
+    text = result[:start].rstrip()
+    return text, html
+
+
+def _try_parse_mcp_json(tool_name: str, result: str) -> dict | None:
+    """If *tool_name* is an MCP-namespaced tool (contains '__'), return a generic
+    mcp_result payload for the frontend to render.  Supports two modes:
+
+    1. **EmbeddedResource (HTML)** — result contains ``__MCP_HTML_RESOURCE__``
+       sentinels; ``html_content`` is populated so the frontend renders an iframe.
+    2. **JSON text** — result is valid JSON; ``data`` is populated so the frontend
+       can display a structured card or a tool-specific renderer (e.g. Excalidraw).
+
+    Returns None for built-in skills or results that match neither case.
+    """
+    if "__" not in tool_name:
+        return None
+
+    # --- Mode 1: HTML resource -------------------------------------------------
+    text_part, html = _split_mcp_html(result)
+    if html is not None:
+        import json as _json
+        payload: dict = {"tool": tool_name, "html_content": html.strip()}
+        # Optionally attach any JSON from the text part
+        stripped_text = text_part.strip()
+        if stripped_text.startswith(("{", "[")):
+            try:
+                payload["data"] = _json.loads(stripped_text)
+            except (ValueError, _json.JSONDecodeError):
+                pass
+        return payload
+
+    # --- Mode 2: plain JSON ----------------------------------------------------
+    stripped = result.strip()
+    if not stripped.startswith(("{", "[")):
+        return None
+    try:
+        import json
+        data = json.loads(stripped)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return {"tool": tool_name, "data": data}
+
+
 def _build_context(tool_results: list[str], max_total_chars: int = 6000) -> str:
     """
     Build the RAG context string from tool results with source deduplication.
@@ -121,8 +181,32 @@ class AgentEngine:
     async def _exec_call_llm(self, state: AgentState) -> AsyncGenerator[dict, None]:
         from app.providers.llm import chat_with_tools
 
+        # Exclude no-arg MCP tools (e.g. read_me) that have already been called
+        # and are cached.  Presenting them to the LLM again causes re-call loops
+        # because the model ignores in-result "do not call again" instructions.
+        cached_no_arg_tools: set[str] = {
+            key.split("::")[0]
+            for key in state.tool_result_cache
+            if key.endswith("::{}")
+        }
+        tool_schemas = (
+            [s for s in self.tool_schemas
+             if s.get("function", {}).get("name") not in cached_no_arg_tools]
+            if cached_no_arg_tools
+            else self.tool_schemas
+        )
+
+        if state.step_count >= state.max_steps - 2 and state.step_count > 0:
+            state.messages.append({
+                "role": "system",
+                "content": (
+                    f"[系统提示] 你已使用 {state.step_count}/{state.max_steps} 步。"
+                    "请尽快整合已有信息回答用户，避免不必要的额外工具调用。"
+                ),
+            })
+
         try:
-            response = await chat_with_tools(state.messages, self.tool_schemas)
+            response = await chat_with_tools(state.messages, tool_schemas, temperature=0.2)
         except Exception as exc:
             logger.error("LLM call failed: %s", exc)
             state.phase = "error"
@@ -160,21 +244,74 @@ class AgentEngine:
     async def _exec_call_tools(
         self, instruction: CallToolsInstruction, state: AgentState
     ) -> AsyncGenerator[dict, None]:
+
         tool_calls = instruction.tool_calls
 
         for tc in tool_calls:
-            label = self.thought_labels.get(tc["name"], f"⚙️ 调用 {tc['name']}")
-            yield {"type": "thought", "content": label}
-            yield {"type": "tool_call", "tool": tc["name"], "input": tc["arguments"]}
+            # Don't show a "calling tool" UI event for cache hits — the result is
+            # already in the message history from a previous step.
+            is_cached = state.is_tool_cached(tc["name"], tc.get("arguments", {}))
+            if not is_cached:
+                label = self.thought_labels.get(tc["name"], f"⚙️ 调用 {tc['name']}")
+                yield {"type": "thought", "content": label}
+                yield {"type": "tool_call", "tool": tc["name"], "input": tc["arguments"]}
 
-        results = await asyncio.gather(
-            *[execute_tool(tc, self.tool_ctx) for tc in tool_calls]
-        )
+        # Resolve each tool call: use cached result if the same tool+args was
+        # already executed in this session, otherwise execute normally.
+        async def _resolve(tc: dict) -> str:
+            args = tc.get("arguments", {})
+            cache_key = state.tool_cache_key(tc["name"], args)
+            if cache_key in state.tool_result_cache:
+                logger.debug("Tool '%s' already called with same args — returning cached result", tc["name"])
+                return state.tool_result_cache[cache_key]
+            try:
+                result = await execute_tool(tc, self.tool_ctx)
+            except BaseException as exc:
+                from app.mcp.client import _exc_msg
+                msg = _exc_msg(exc)
+                logger.error("Tool '%s' raised error: %s", tc["name"], msg, exc_info=True)
+                result = f"[工具 {tc['name']} 调用失败: {msg}]"
+            state.tool_result_cache[cache_key] = result
+            return result
+
+        # Record which calls are cache hits BEFORE _resolve runs (after _resolve
+        # all keys exist in the cache, making it impossible to distinguish).
+        pre_cached: set[str] = {
+            tc["name"]
+            for tc in tool_calls
+            if state.is_tool_cached(tc["name"], tc.get("arguments", {}))
+        }
+
+        results = await asyncio.gather(*[_resolve(tc) for tc in tool_calls])
 
         for tc, result in zip(tool_calls, results):
             if self.tool_ctx.mind_map_data is not None:
                 yield {"type": "mind_map", "data": self.tool_ctx.mind_map_data}
                 self.tool_ctx.mind_map_data = None
+
+            if self.tool_ctx.diagram_data is not None:
+                yield {"type": "diagram", "data": self.tool_ctx.diagram_data}
+                self.tool_ctx.diagram_data = None
+                state.terminal_tool_called = True
+
+            # For MCP-namespaced tools (name contains '__'), if the result is
+            # valid JSON forward it as a generic mcp_result event so the frontend
+            # can render it without any backend knowledge of the specific tool.
+            _mcp_payload = _try_parse_mcp_json(tc["name"], result)
+            if _mcp_payload is not None:
+                yield {"type": "mcp_result", "data": _mcp_payload}
+                state.terminal_tool_called = True
+                result = f"[工具 {tc['name']} 已执行，返回结构化数据]"
+
+            # MCP action tools (create_view, export, etc.) that return plain-text
+            # confirmations (not JSON) are also terminal — they produce a self-contained
+            # side-effect (e.g. rendering a diagram) and the loop should stop.
+            # Read/list/save tools are NOT terminal; only skip tools that mutate or display.
+            _NON_TERMINAL_PREFIXES = ("read", "list", "get", "fetch", "save", "load")
+            if "__" in tc["name"] and not _mcp_payload and not state.terminal_tool_called:
+                _tool_suffix = tc["name"].rsplit("__", 1)[-1]
+                if not any(_tool_suffix.startswith(p) for p in _NON_TERMINAL_PREFIXES):
+                    state.terminal_tool_called = True
 
             if self.tool_ctx.created_note_id is not None:
                 yield {
@@ -214,6 +351,10 @@ class AgentEngine:
             else:
                 yield {"type": "tool_result", "content": result[:300]}
 
+            for elem in self.tool_ctx.ui_elements:
+                yield {"type": "ui_element", **elem}
+            self.tool_ctx.ui_elements.clear()
+
             state.tool_results.append(result)
             state.messages.append({
                 "role": "tool",
@@ -224,13 +365,32 @@ class AgentEngine:
         state.pending_tool_calls = []
         state.phase = "tool_result"
 
+        # If any tool in this batch was a cache hit (re-call), inject a reminder
+        # into the message history so the next LLM call knows not to repeat it.
+        # This is the most reliable way to prevent re-call loops with models that
+        # ignore in-result instructions (e.g. "Do NOT call me again").
+        if pre_cached:
+            names = ", ".join(f"`{n}`" for n in sorted(pre_cached))
+            state.messages.append({
+                "role": "user",
+                "content": (
+                    f"[系统提示] 工具 {names} 已经调用过，其结果已在上方对话中。"
+                    f"请不要再次调用这些工具。根据已有结果，直接调用下一步工具或回答用户。"
+                ),
+            })
+            state.messages.append({
+                "role": "assistant",
+                "content": f"明白，我不会再重复调用 {names}，将根据已有结果继续下一步。",
+            })
+
     async def _exec_compress_context(
         self, state: AgentState
     ) -> AsyncGenerator[dict, None]:
         """Compress old messages into a summary to free context window space.
 
-        Keeps system prompt + last 4 messages intact, compresses everything
-        in between into a single summary message.
+        Always keeps the current turn intact (from the last user message to the
+        end of messages, including all tool calls and results).  Only history
+        messages from previous turns are summarised.
         """
         from app.providers.llm import chat
 
@@ -242,8 +402,18 @@ class AgentEngine:
             yield  # pragma: no cover
 
         system_msg = msgs[0] if msgs[0].get("role") == "system" else None
-        tail = msgs[-4:]
-        middle = msgs[1:-4] if system_msg else msgs[:-4]
+
+        # Find the start of the current turn: the last "user" role message.
+        # Everything from there to the end must be kept intact so the LLM
+        # always sees the current query + all tool call / result pairs.
+        current_turn_start = 1  # fallback: right after system
+        for i in range(len(msgs) - 1, 0, -1):
+            if msgs[i].get("role") == "user":
+                current_turn_start = i
+                break
+
+        tail = msgs[current_turn_start:]
+        middle = msgs[1:current_turn_start] if system_msg else msgs[:current_turn_start]
 
         if not middle:
             state.context_compressed = True
@@ -291,23 +461,47 @@ class AgentEngine:
     async def _exec_request_approval(
         self, instruction: RequestHumanApprovalInstruction, state: AgentState
     ) -> AsyncGenerator[dict, None]:
-        """Emit an approval-required event and proceed with tool execution.
+        """Pause the agent loop and wait for explicit user approval.
 
-        In the current implementation this is a notification-only step:
-        the tools still execute automatically.  A full HIL implementation
-        would pause the loop here and wait for a WebSocket/SSE confirmation
-        from the frontend before continuing.
+        Flow:
+          1. Register an asyncio.Event in the approval store keyed by approval_id.
+          2. Emit ``human_approve_required`` so the frontend can show the approval card.
+          3. Await the event (120 s timeout — auto-reject on timeout).
+          4a. Approved → set state so Brain emits CallToolsInstruction next iteration.
+          4b. Rejected / timeout → emit a notice token and mark phase "done".
         """
-        tool_names = [tc.get("name", "") for tc in instruction.tool_calls]
+        from app.agents.core import approval_store
+
+        approval_id = instruction.approval_id or str(__import__("uuid").uuid4())
+        approval_store.create(approval_id)
+
         yield {
             "type": "human_approve_required",
-            "tool_names": tool_names,
+            "approval_id": approval_id,
             "tool_calls": instruction.tool_calls,
         }
 
-        # For now, auto-approve and continue with tool execution
-        state.pending_tool_calls = instruction.tool_calls
-        state.phase = "llm_result"
+        try:
+            event = approval_store._events.get(approval_id)
+            if event is not None:
+                await asyncio.wait_for(event.wait(), timeout=120.0)
+            approved = approval_store.get_result(approval_id)
+        except asyncio.TimeoutError:
+            approved = False
+        finally:
+            approval_store.cleanup(approval_id)
+
+        if approved:
+            # Mark each tool call as approved so Brain won't request approval again
+            # on the next iteration when it sees the same pending_tool_calls.
+            for tc in instruction.tool_calls:
+                state.approved_tool_call_ids.add(tc.get("id") or tc.get("name", ""))
+            state.pending_tool_calls = instruction.tool_calls
+            state.phase = "llm_result"
+        else:
+            yield {"type": "token", "content": "\n\n> 工具调用已被拒绝，AI 将直接回答。"}
+            state.pending_tool_calls = []
+            state.phase = "llm_result"  # empty pending → Brain returns StreamAnswerInstruction
 
     async def _exec_call_rag(
         self, instruction: CallRAGInstruction, state: AgentState
@@ -365,6 +559,13 @@ class AgentEngine:
                     "role": "assistant",
                     "content": "好的，我已阅读参考资料，请继续。",
                 })
+
+        # After compression + filtering, the original query may have been lost.
+        # Ensure it is always the last user message so the AI knows what to answer.
+        if state.query:
+            last_msg = clean[-1] if clean else None
+            if not last_msg or last_msg.get("role") != "user" or last_msg.get("content") != state.query:
+                clean.append({"role": "user", "content": state.query})
 
         t0 = time.monotonic()
         token_count = 0

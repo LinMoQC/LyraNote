@@ -23,6 +23,7 @@ def register_all(registry: "SkillRegistry") -> None:
     from app.skills.builtin.deep_read import skill as deep_read
     from app.skills.builtin.compare_sources import skill as compare_sources
     from app.skills.builtin.scheduled_task import skill as scheduled_task
+    from app.skills.builtin.diagram import skill as diagram
 
-    for s in (search_knowledge, web_search, summarize, create_note, mind_map, update_preference, update_memory_doc, deep_read, compare_sources, scheduled_task):
+    for s in (search_knowledge, web_search, summarize, create_note, mind_map, update_preference, update_memory_doc, deep_read, compare_sources, scheduled_task, diagram):
         registry.register(s, override=False)

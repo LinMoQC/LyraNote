@@ -6,7 +6,7 @@
  */
 
 import { Fragment, type ReactNode } from "react";
-import { InlineCitationBadge } from "@/features/copilot/inline-citation";
+import { InlineCitationBadge } from "@/components/message-render/inline-citation";
 import type { CitationData } from "@/types";
 
 /** 引用标记正则表达式，匹配半角 [来源N]/[[N]]/[N] 和全角 【来源N】/【N】 */

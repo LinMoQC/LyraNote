@@ -30,10 +30,25 @@ class AgentState:
     created_note_title: str | None = None
 
     force_finish: bool = False
+    terminal_tool_called: bool = False  # Set by tools that produce self-contained UI (diagram, etc.)
 
     query: str = ""
     global_search: bool = False
     context_compressed: bool = False
+
+    # Cache tool results by (tool_name, args_json) to prevent redundant re-calls.
+    tool_result_cache: dict[str, str] = field(default_factory=dict)
+
+    # Track tool call IDs that have already received user approval this session.
+    # Brain uses this to avoid re-requesting approval for the same tool calls.
+    approved_tool_call_ids: set[str] = field(default_factory=set)
+
+    def tool_cache_key(self, tool_name: str, args: dict) -> str:
+        import json
+        return f"{tool_name}::{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
+
+    def is_tool_cached(self, tool_name: str, args: dict) -> bool:
+        return self.tool_cache_key(tool_name, args) in self.tool_result_cache
 
     def estimate_tokens(self) -> int:
         """Rough token count estimate (1 token ≈ 2 CJK chars or 4 Latin chars)."""

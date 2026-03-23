@@ -192,6 +192,8 @@ class Conversation(Base):
     notebook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notebooks.id", ondelete="CASCADE"))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     title: Mapped[str | None] = mapped_column(String(500))
+    # "chat" (full-screen chat page) | "copilot" (sidebar copilot panel)
+    source: Mapped[str] = mapped_column(String(20), server_default="chat", nullable=False)
     created_at: Mapped[datetime] = now_col()
 
     notebook: Mapped["Notebook"] = relationship(back_populates="conversations")
@@ -219,6 +221,15 @@ class Message(Base):
     attachments: Mapped[list | None] = mapped_column(JSONB)
     # {ttft_ms, tps, tokens} — streaming speed metrics for assistant messages
     speed: Mapped[dict | None] = mapped_column(JSONB)
+    # rich media generated during the stream — persisted so they survive page refresh
+    # {nodes, edges, ...} — mind-map data from the mind_map skill
+    mind_map: Mapped[dict | None] = mapped_column(JSONB)
+    # {type, data, ...} — diagram data (e.g. Excalidraw elements)
+    diagram: Mapped[dict | None] = mapped_column(JSONB)
+    # {tool, html_content, data, ...} — MCP tool result rich payload
+    mcp_result: Mapped[dict | None] = mapped_column(JSONB)
+    # [{element_type, data}] — generic GenUI elements (source-card, web-card, …)
+    ui_elements: Mapped[list | None] = mapped_column(JSONB)
     # Conversation branching: points to the message this branch forked from
     parent_message_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("messages.id", ondelete="SET NULL"), nullable=True, default=None,
@@ -645,3 +656,46 @@ class ProactiveInsight(Base):
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = now_col()
+
+
+# ---------------------------------------------------------------------------
+# MCP Server Config (Model Context Protocol external tool servers)
+# ---------------------------------------------------------------------------
+
+class MCPServerConfig(Base):
+    """
+    User-level configuration for external MCP (Model Context Protocol) servers.
+    Each row represents one MCP server connection the agent can use as tool source.
+
+    Transport types:
+      - stdio: spawns a local process (command + args)
+      - sse:   connects to a remote SSE/HTTP endpoint (url + optional headers)
+    """
+    __tablename__ = "mcp_server_configs"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # Human-readable slug, unique per user
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(200))
+    # "stdio" | "sse"
+    transport: Mapped[str] = mapped_column(String(20), nullable=False, default="stdio")
+    # stdio: executable name, e.g. "npx" or "uvx"
+    command: Mapped[str | None] = mapped_column(String(500))
+    # stdio: argument list, e.g. ["-y", "@modelcontextprotocol/server-filesystem", "/path"]
+    args: Mapped[list | None] = mapped_column(JSONB)
+    # sse: server URL, e.g. "http://localhost:3000/sse"
+    url: Mapped[str | None] = mapped_column(Text)
+    # sse: optional HTTP headers (e.g. auth token)
+    headers: Mapped[dict | None] = mapped_column(JSONB)
+    # stdio: extra environment variables to inject into the subprocess
+    env_vars: Mapped[dict | None] = mapped_column(JSONB)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Cached list of tools discovered from this server, e.g. [{"name": "...", "description": "..."}]
+    # Updated automatically on test-connection and during agent tool loading.
+    discovered_tools: Mapped[list | None] = mapped_column(JSONB)
+    tools_discovered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = now_col()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
