@@ -30,7 +30,7 @@ import { AttachmentImage } from "@/components/message-render/attachment-image";
 import { MarkdownContent } from "@/components/message-render/markdown-content";
 import { CodeBlock } from "@/components/message-render/code-block";
 import { ReasoningBlock } from "@/components/message-render/reasoning-block";
-import { SourceCard, WebCard } from "@/components/message-render/source-cards";
+import { WebCard } from "@/components/message-render/source-cards";
 import { buildMarkdownComponents } from "@/components/genui";
 import type { AgentEvent } from "@/services/ai-service";
 import type { FeedbackRating } from "@/services/feedback-service";
@@ -198,11 +198,10 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               <CitationFooter citations={msg.citations} namespace="chat" />
             )}
 
-            {msg.role === "assistant" && msg.uiElements && msg.uiElements.length > 0 && (
+            {msg.role === "assistant" && msg.uiElements && msg.uiElements.some(el => el.element_type === "web-card") && (
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
                 {msg.uiElements.map((el, i) =>
-                  el.element_type === "source-card" ? <SourceCard key={i} data={el.data} />
-                  : el.element_type === "web-card"   ? <WebCard key={i} data={el.data} />
+                  el.element_type === "web-card" ? <WebCard key={i} data={el.data} />
                   : null,
                 )}
               </div>

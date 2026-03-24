@@ -506,15 +506,35 @@ class AgentEngine:
     async def _exec_call_rag(
         self, instruction: CallRAGInstruction, state: AgentState
     ) -> AsyncGenerator[dict, None]:
+        from app.agents.rag.graph_retrieval import graph_augmented_context
         from app.agents.rag.retrieval import retrieve_chunks
 
-        chunks = await retrieve_chunks(
+        # Run vector/FTS retrieval and graph-context lookup in parallel.
+        # graph_augmented_context is fail-open: returns "" on any error.
+        chunks_coro = retrieve_chunks(
             instruction.query,
             self.tool_ctx.notebook_id,
             self.tool_ctx.db,
             global_search=self.tool_ctx.global_search,
             user_id=self.tool_ctx.user_id,
         )
+        graph_coro = graph_augmented_context(
+            instruction.query,
+            self.tool_ctx.notebook_id,
+            self.tool_ctx.db,
+        )
+        chunks, graph_ctx = await asyncio.gather(
+            chunks_coro, graph_coro, return_exceptions=True
+        )
+
+        # Treat unexpected exceptions as empty results
+        if isinstance(chunks, Exception):
+            logger.warning("retrieve_chunks raised: %s", chunks)
+            chunks = []
+        if isinstance(graph_ctx, Exception):
+            logger.warning("graph_augmented_context raised: %s", graph_ctx)
+            graph_ctx = ""
+
         if chunks:
             state.citations = [
                 {
@@ -526,9 +546,16 @@ class AgentEngine:
                 }
                 for c in chunks
             ]
-            state.tool_results = [c["content"] for c in chunks]
+            tool_results = [c["content"] for c in chunks]
             self.tool_ctx.collected_citations = state.citations
+        else:
+            tool_results = []
 
+        # Prepend graph context so the LLM sees structural knowledge first.
+        if graph_ctx:
+            tool_results.insert(0, graph_ctx)
+
+        state.tool_results = tool_results
         state.phase = "rag_done"
         return
         yield  # pragma: no cover
