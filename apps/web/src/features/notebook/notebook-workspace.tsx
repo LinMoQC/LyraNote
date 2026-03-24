@@ -8,6 +8,7 @@
 
 import type { Editor } from "@tiptap/react";
 import { AnimatePresence, m } from "framer-motion";
+import { Library } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -16,8 +17,10 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { CopilotPanel, DEFAULT_WIDTH } from "@/features/copilot/copilot-panel";
 import { FloatingOrb } from "@/features/copilot/floating-orb";
 import { NoteEditor } from "@/features/editor/note-editor";
-import { NotebookHeader } from "@/features/notebook/notebook-header";
+import { NotebookTopBar } from "@/features/notebook/notebook-header";
+import type { SaveStatus } from "@/features/notebook/notebook-header";
 import { NotebookTOC } from "@/features/notebook/notebook-toc";
+import { FloatingTOC } from "@/features/notebook/floating-toc";
 import { ImportSourceDialog } from "@/features/source/import-source-dialog";
 import { SourceDetailDrawer } from "@/features/source/source-detail-drawer";
 import { SourcesPanel } from "@/features/source/sources-panel";
@@ -27,12 +30,17 @@ import { useUiStore } from "@/store/use-ui-store";
 import { getWritingContext } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
 import { useMarkdownWorker } from "@/hooks/use-markdown-worker";
+import { cn } from "@/lib/utils";
 import type { Message, MindMapData } from "@/types";
+
+export type CopilotMode = "docked" | "floating";
 
 const ACTION_PROMPT_KEYS: Record<string, string> = {
   ask: "selectionExplain",
   polish: "selectionRewrite",
   shorten: "selectionCondense",
+  continue: "continueWritingPrompt",
+  summarize: "summarizeSourcesPrompt",
 };
 
 export function NotebookWorkspace({
@@ -51,22 +59,42 @@ export function NotebookWorkspace({
   const activeSourceId = useNotebookStore((state) => state.activeSourceId);
   const setActiveSourceId = useNotebookStore((state) => state.setActiveSourceId);
   const isMobile = useMediaQuery("(max-width: 767px)");
-  const [copilotOpen, setCopilotOpen] = useState(true);
+  const [copilotOpen, setCopilotOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [copilotMode, setCopilotMode] = useState<CopilotMode>("floating");
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [notebookTitle, setNotebookTitle] = useState(title);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // 移动端默认关闭所有侧面板，确保编辑区占满屏幕
+  // Hydrate copilot state from localStorage after mount to avoid SSR mismatch
+  useEffect(() => {
+    const storedMode = localStorage.getItem("lyra:copilot-mode") as CopilotMode | null;
+    if (storedMode === "floating" || storedMode === "docked") {
+      setCopilotMode(storedMode);
+    }
+    const storedOpen = localStorage.getItem("lyra:copilot-open");
+    if (storedOpen === "true") {
+      setCopilotOpen(true);
+    }
+  }, []);
+
   useEffect(() => {
     if (isMobile) {
       setCopilotOpen(false);
       setSourcesOpen(false);
     }
   }, [isMobile]);
-  // Direct DOM ref for the CopilotPanel wrapper — updated on every spring tick
-  // so there is only ONE spring driving the layout (no double-spring jitter).
-  const copilotWrapperRef = useRef<HTMLDivElement>(null);
-  const handleCopilotWidthChange = useCallback((w: number) => {
-    if (copilotWrapperRef.current) copilotWrapperRef.current.style.width = `${w}px`;
-  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("lyra:copilot-mode", copilotMode);
+  }, [copilotMode]);
+
+  useEffect(() => {
+    localStorage.setItem("lyra:copilot-open", String(copilotOpen));
+  }, [copilotOpen]);
+
+  const editorRef = useRef<Editor | null>(null);
 
   // Fetch sources so we can resolve activeSourceId → Source object for the drawer
   const { data: sources = [] } = useQuery({
@@ -89,7 +117,6 @@ export function NotebookWorkspace({
 
   // Bridge: hold a reference to the Tiptap editor instance
   // Also keep it as state so TOC and other consumers can re-render on change
-  const editorRef = useRef<Editor | null>(null);
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
   const [noteRefreshKey, setNoteRefreshKey] = useState(0);
   const convertMarkdown = useMarkdownWorker();
@@ -165,18 +192,43 @@ export function NotebookWorkspace({
     };
   }, [editorInstance, notebookId, setWritingContext]);
 
+  const effectiveMode: CopilotMode = isMobile ? "floating" : copilotMode;
+  const isDocked = effectiveMode === "docked";
+  const showCopilotInFlow = !isFullscreen && isDocked && copilotOpen;
+
+  // 测量内容区域的视口位置，让面板高度与内容区完全对齐
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerBounds, setContainerBounds] = useState({ top: 0, height: 800 });
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const update = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      setContainerBounds({ top: Math.round(rect.top), height: Math.round(rect.height) });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(containerRef.current);
+    window.addEventListener("resize", update);
+    return () => { ro.disconnect(); window.removeEventListener("resize", update); };
+  }, []);
+
   return (
-    <div className="flex h-full flex-col overflow-hidden dark:border border-border/40">
-      <NotebookHeader
-        title={title}
-        sourcesOpen={sourcesOpen}
-        onToggleSources={() => setSourcesOpen((v) => !v)}
-      />
+    <div ref={containerRef} className="flex h-full flex-col overflow-hidden dark:border border-border/40">
       <ImportSourceDialog notebookId={notebookId} />
+
+      <NotebookTopBar
+        notebookId={notebookId}
+        title={notebookTitle}
+        saveStatus={saveStatus}
+        onTitleChange={setNotebookTitle}
+        isFullscreen={isFullscreen}
+        onToggleFullscreen={() => setIsFullscreen((v) => !v)}
+      />
 
       <div className="relative flex flex-1 overflow-hidden">
         <AnimatePresence initial={false}>
-          {sourcesOpen && (
+          {!isFullscreen && sourcesOpen && (
             <m.div
               key="sources"
               initial={{ width: 0, opacity: 0 }}
@@ -196,34 +248,34 @@ export function NotebookWorkspace({
           )}
         </AnimatePresence>
 
-        <NoteEditor
-          notebookId={notebookId}
-          onEditorReady={handleEditorReady}
-          onAskAI={handleAskAI}
-          refreshKey={noteRefreshKey}
-        />
+        <div className="relative flex flex-1 overflow-hidden">
+          <NoteEditor
+            notebookId={notebookId}
+            notebookTitle={notebookTitle}
+            onEditorReady={handleEditorReady}
+            onAskAI={handleAskAI}
+            onSaveStatusChange={setSaveStatus}
+            refreshKey={noteRefreshKey}
+            onToggleSources={() => setSourcesOpen((v) => !v)}
+            sourcesOpen={sourcesOpen}
+            wideLayout={isFullscreen}
+          />
+          {isFullscreen && <FloatingTOC editor={editorInstance} />}
+        </div>
 
         {/*
-         * CopilotPanel is ALWAYS mounted so scroll position and state are
-         * preserved across open/close. A m.div wrapper animates the
-         * layout width (0 ↔ panel width) so the flex layout shrinks/expands
-         * smoothly toward the right edge — no position:fixed tricks.
+         * 占位 div — 侧边栏模式时在 flex 布局中保留宽度空间。
+         * CopilotPanel 永远 position:fixed，不参与 flex 排列，
+         * 故两者分离：占位控制布局，面板控制视觉位置。
          */}
-        {/*
-         * Plain div — no Framer Motion spring here.
-         * CopilotPanel owns the ONE spring; onWidthChange writes the width
-         * directly to this div's style on every tick so layout & visual stay
-         * perfectly in sync. The right edge never moves.
-         */}
-        <div
-          ref={copilotWrapperRef}
-          className="h-full flex-shrink-0"
-          style={{
-            width: isMobile ? 0 : DEFAULT_WIDTH,
-            pointerEvents: copilotOpen && !isMobile ? "auto" : "none",
-          }}
-        >
-          {!isMobile && (
+        <m.div
+          className="flex-shrink-0 h-full"
+          animate={{ width: showCopilotInFlow ? panelWidth : 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 32, mass: 0.75 }}
+          style={{ pointerEvents: "none", overflow: "hidden" }}
+        />
+
+        {!isFullscreen && (
           <CopilotPanel
             notebookId={notebookId}
             initialMessages={initialMessages}
@@ -231,18 +283,22 @@ export function NotebookWorkspace({
             onClose={() => setCopilotOpen(false)}
             onInsertToEditor={handleInsertToEditor}
             onInsertMindMap={handleInsertMindMap}
-            onWidthChange={handleCopilotWidthChange}
             onNoteCreated={() => setNoteRefreshKey((k) => k + 1)}
             pendingPrompt={pendingPrompt}
             pendingQuote={pendingQuote}
             getEditorContext={getEditorContext}
+            mode={effectiveMode}
+            onModeChange={setCopilotMode}
+            panelWidth={panelWidth}
+            onWidthChange={setPanelWidth}
+            containerTop={containerBounds.top}
+            containerHeight={containerBounds.height}
           />
-          )}
-        </div>
+        )}
 
-        {/* TOC — 移动端不渲染 */}
+        {/* TOC — show when copilot is not taking docked space */}
         <AnimatePresence initial={false}>
-          {!isMobile && !copilotOpen && (
+          {!isFullscreen && !isMobile && !showCopilotInFlow && (
             <m.div
               key="toc"
               initial={{ width: 0, opacity: 0 }}
@@ -260,12 +316,28 @@ export function NotebookWorkspace({
         </AnimatePresence>
 
         <AnimatePresence>
-          {!copilotOpen && (
+          {!isFullscreen && !copilotOpen && (
             <FloatingOrb onClick={() => setCopilotOpen(true)} />
           )}
         </AnimatePresence>
 
-        {/* ── Source detail drawer — portal-based, self-animated ─────────── */}
+        {/* Floating sources toggle */}
+        {!isFullscreen && (
+          <button
+            type="button"
+            onClick={() => setSourcesOpen((v) => !v)}
+            title={tNotebook("tabSources")}
+            className={cn(
+              "absolute bottom-6 left-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border shadow-sm backdrop-blur-sm transition-all",
+              sourcesOpen
+                ? "border-primary/30 bg-primary/10 text-primary"
+                : "border-border/30 bg-card/80 text-muted-foreground/50 hover:text-foreground hover:border-border/60"
+            )}
+          >
+            <Library size={15} />
+          </button>
+        )}
+
         <SourceDetailDrawer
           source={activeSource}
           onClose={() => startTransition(() => setActiveSourceId(null))}

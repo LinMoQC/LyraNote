@@ -2,14 +2,12 @@
 
 /**
  * @file Copilot 面板拖拽调整宽度 Hook
- * @description 实现右侧 Copilot 面板的弹性拖拽调整宽度，
- *              使用 framer-motion 的 useSpring 实现阻尼动画效果。
+ * @description 实现右侧 Copilot 面板的拖拽调整宽度。
  *              拖拽时创建全屏透明覆层防止 Tiptap 编辑器抢夺鼠标事件。
  *              同时支持触摸（Touch）事件，兼容移动端/平板。
  */
 
-import { useSpring } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /** Copilot 面板最小宽度（px） */
 export const MIN_WIDTH = 240;
@@ -19,43 +17,19 @@ export const MAX_WIDTH = 580;
 export const DEFAULT_WIDTH = 300;
 
 /**
- * Copilot 面板弹性拖拽调整宽度
- * @param isOpen - 面板是否展开
- * @param onWidthChange - 宽度变化回调（每帧触发），用于父容器同步布局
- * @param markAllRead - 面板打开时标记所有建议为已读
- * @returns {{ isDragging, asideRef, handleResizeStart, handleResizeTouchStart }} 拖拽状态、面板 ref 和拖拽起始事件处理
+ * Copilot 面板拖拽调整宽度
+ * @param onWidthChange - 宽度变化回调，每次拖拽移动时触发
+ * @param currentWidth  - 当前面板宽度，用于拖拽起点同步
+ * @returns {{ isDragging, handleResizeStart, handleResizeTouchStart }}
  */
 export function useCopilotResize(
-  isOpen: boolean,
   onWidthChange?: (width: number) => void,
-  markAllRead?: () => void
+  currentWidth?: number,
 ) {
   const [isDragging, setIsDragging] = useState(false);
-  const widthRef = useRef(DEFAULT_WIDTH);
-  const asideRef = useRef<HTMLDivElement>(null);
-
-  const springWidth = useSpring(DEFAULT_WIDTH, {
-    stiffness: 280,
-    damping: 28,
-    mass: 0.6,
-  });
-
-  useEffect(() => {
-    if (isOpen) {
-      springWidth.set(widthRef.current);
-      markAllRead?.();
-    } else {
-      springWidth.set(0);
-    }
-  }, [isOpen, springWidth, markAllRead]);
-
-  useEffect(() => {
-    return springWidth.on("change", (v) => {
-      const w = Math.max(0, v);
-      if (asideRef.current) asideRef.current.style.width = `${w}px`;
-      onWidthChange?.(w);
-    });
-  }, [springWidth, onWidthChange]);
+  const widthRef = useRef(currentWidth ?? DEFAULT_WIDTH);
+  // 每次渲染同步最新宽度，确保下次拖拽从正确起点开始
+  widthRef.current = currentWidth ?? DEFAULT_WIDTH;
 
   const startDrag = useCallback((startX: number) => {
     setIsDragging(true);
@@ -70,7 +44,7 @@ export function useCopilotResize(
       const delta = startX - currentX;
       const next = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, startWidth + delta));
       widthRef.current = next;
-      springWidth.set(next);
+      onWidthChange?.(next);
     };
 
     const onMouseMove = (ev: MouseEvent) => applyDelta(ev.clientX);
@@ -92,7 +66,7 @@ export function useCopilotResize(
     document.addEventListener("mouseup", cleanup);
     document.addEventListener("touchmove", onTouchMove, { passive: true });
     document.addEventListener("touchend", cleanup);
-  }, [springWidth]);
+  }, [onWidthChange]);
 
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -103,5 +77,5 @@ export function useCopilotResize(
     if (e.touches[0]) startDrag(e.touches[0].clientX);
   }, [startDrag]);
 
-  return { isDragging, asideRef, handleResizeStart, handleResizeTouchStart };
+  return { isDragging, handleResizeStart, handleResizeTouchStart };
 }

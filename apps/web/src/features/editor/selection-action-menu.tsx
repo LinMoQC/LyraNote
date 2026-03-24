@@ -2,120 +2,252 @@
 
 import { BubbleMenu } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
-import { Loader2, MessageSquare, Quote, Sparkles, X } from "lucide-react";
+import { NodeSelection } from "@tiptap/pm/state";
+import {
+  Bold,
+  CheckCircle2,
+  Code,
+  Italic,
+  Link2,
+  Loader2,
+  MessageSquare,
+  MoreHorizontal,
+  PenLine,
+  Sigma,
+  Sparkles,
+  Strikethrough,
+  Underline,
+  WandSparkles,
+  X,
+} from "lucide-react";
 
 import { useInlinePolish } from "@/hooks/use-inline-polish";
-import { useTranslations } from "next-intl";
 
 type Props = {
   editor: Editor | null;
   onAskAI?: (text: string, action: string) => void;
 };
 
+function IconBtn({
+  active,
+  onClick,
+  title,
+  children,
+}: {
+  active?: boolean;
+  onClick: () => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className={`flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+        active
+          ? "bg-accent/80 text-foreground"
+          : "text-foreground/55 hover:bg-accent/50 hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function AiBtn({
+  icon,
+  label,
+  onClick,
+  disabled,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-[13px] text-foreground/65 transition-colors hover:bg-accent/50 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+    >
+      <span className="flex-shrink-0 opacity-60">{icon}</span>
+      {label}
+    </button>
+  );
+}
+
 export function SelectionActionMenu({ editor, onAskAI }: Props) {
-  const t = useTranslations("editor");
   const { polish, cancel, isPolishing } = useInlinePolish(editor);
 
   if (!editor) return null;
 
-  const handleAsk = () => {
-    const text = editor.state.doc.textBetween(
+  const getSelectedText = () =>
+    editor.state.doc.textBetween(
       editor.state.selection.from,
       editor.state.selection.to,
       " "
     );
+
+  const handleAI = (action: string) => {
+    const text = getSelectedText();
     if (!text.trim()) return;
-    onAskAI?.(text, "ask");
+    onAskAI?.(text, action);
+  };
+
+  const handleLink = () => {
+    const prev = editor.getAttributes("link").href as string | undefined;
+    const url = window.prompt("URL", prev ?? "https://");
+    if (url === null) return;
+    if (url === "") {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    } else {
+      editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    }
   };
 
   return (
     <BubbleMenu
       editor={editor}
-      tippyOptions={{ duration: 120, placement: "top-start", zIndex: 40 }}
-      // Hide when a mind-map node is selected (atom node with no real text)
+      tippyOptions={{
+        duration: [160, 110],
+        animation: "scale-subtle",
+        placement: "bottom-end",
+        offset: [160, 20],
+        zIndex: 40,
+      }}
       shouldShow={({ editor: e, state }) => {
         const { selection } = state;
-        // If the selected node type is our mindMap node, don't show
-        const nodeType = state.doc.nodeAt(selection.from)?.type
-        if (nodeType?.name === "mindMap") return false
-        // Also hide on empty selection
-        if (selection.empty) return false
-        return e.isEditable
+        if (selection instanceof NodeSelection) return false;
+        const nodeType = state.doc.nodeAt(selection.from)?.type;
+        if (nodeType?.name === "mindMap") return false;
+        if (selection.empty) return false;
+        return e.isEditable;
       }}
-      className="flex items-center gap-0.5 overflow-hidden rounded-lg border border-border/60 bg-card p-0.5 shadow-lg shadow-black/20"
+      className="w-[150px] overflow-hidden rounded-xl border border-border/60 bg-card/95 p-1 shadow-xl shadow-black/30 backdrop-blur-sm"
     >
-      {/* Formatting */}
-      <button
-        type="button"
-        onClick={() => editor.chain().focus().toggleBold().run()}
-        className={`rounded-md px-2 py-1 text-xs font-bold transition-colors ${editor.isActive("bold") ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
-      >
-        B
-      </button>
-      <button
-        type="button"
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-        className={`rounded-md px-2 py-1 text-xs italic transition-colors ${editor.isActive("italic") ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
-      >
-        I
-      </button>
-      <button
-        type="button"
-        onClick={() => editor.chain().focus().toggleStrike().run()}
-        className={`rounded-md px-2 py-1 text-xs line-through transition-colors ${editor.isActive("strike") ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
-      >
-        S
-      </button>
-
-      <div className="mx-0.5 h-3.5 w-px bg-border/60" />
-
-      {/* Ask AI */}
-      <button
-        type="button"
-        onClick={handleAsk}
-        disabled={isPolishing}
-        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary disabled:pointer-events-none disabled:opacity-40"
-      >
-        <MessageSquare size={11} />
-        Ask AI
-      </button>
-
-      {/* Inline polish — streams AI rewrite directly into editor */}
-      {isPolishing ? (
-        <button
-          type="button"
-          onClick={cancel}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-violet-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
-          title="停止优化"
+      {/* ── Row 1: text style + basic inline marks ──────────────── */}
+      <div className="flex items-center px-0.5 pt-0.5">
+        {/* T — plain text indicator, never shown as "active" to avoid visual noise */}
+        <IconBtn
+          active={false}
+          onClick={() => editor.chain().focus().setParagraph().run()}
+          title="Text"
         >
-          <Loader2 size={11} className="animate-spin" />
-          <span className="tabular-nums">{t("optimizing")}</span>
-          <X size={10} className="opacity-60" />
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={polish}
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-          title="AI 直接在文中优化选中内容"
+          <span className="text-[15px] font-normal leading-none">T</span>
+        </IconBtn>
+        <IconBtn
+          active={editor.isActive("highlight")}
+          onClick={() => editor.chain().focus().toggleHighlight().run()}
+          title="Highlight"
         >
-          <Sparkles size={11} />
-          优化
-        </button>
-      )}
+          <span className="rounded bg-primary/25 px-[3px] text-[12px] font-bold leading-none text-primary">
+            A
+          </span>
+        </IconBtn>
+        <IconBtn
+          active={editor.isActive("bold")}
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          title="Bold"
+        >
+          <Bold size={13} strokeWidth={2.5} />
+        </IconBtn>
+        <IconBtn
+          active={editor.isActive("italic")}
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          title="Italic"
+        >
+          <Italic size={13} />
+        </IconBtn>
+        <IconBtn
+          active={editor.isActive("underline")}
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          title="Underline"
+        >
+          <Underline size={13} />
+        </IconBtn>
+      </div>
 
-      <div className="mx-0.5 h-3.5 w-px bg-border/60" />
+      {/* ── Row 2: link, strikethrough, code, math, more ──────────── */}
+      <div className="flex items-center px-0.5 pb-0.5">
+        <IconBtn
+          active={editor.isActive("link")}
+          onClick={handleLink}
+          title="Link"
+        >
+          <Link2 size={13} />
+        </IconBtn>
+        <IconBtn
+          active={editor.isActive("strike")}
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+          title="Strikethrough"
+        >
+          <Strikethrough size={13} />
+        </IconBtn>
+        <IconBtn
+          active={editor.isActive("code")}
+          onClick={() => editor.chain().focus().toggleCode().run()}
+          title="Inline code"
+        >
+          <Code size={13} />
+        </IconBtn>
+        <IconBtn active={false} onClick={() => {}} title="Math (coming soon)">
+          <Sigma size={13} />
+        </IconBtn>
+        <IconBtn active={false} onClick={() => {}} title="More">
+          <MoreHorizontal size={13} />
+        </IconBtn>
+      </div>
 
-      {/* Blockquote */}
-      <button
-        type="button"
-        onClick={() => editor.chain().focus().toggleBlockquote().run()}
-        disabled={isPolishing}
-        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-      >
-        <Quote size={11} />
-        引用
-      </button>
+      {/* ── Divider ─────────────────────────────────────────────── */}
+      <div className="my-0.5 h-px bg-border/40" />
+
+      {/* ── AI actions ──────────────────────────────────────────── */}
+      <div className="flex flex-col pb-0.5">
+        {isPolishing ? (
+          <button
+            type="button"
+            onClick={cancel}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-[13px] text-violet-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
+          >
+            <Loader2 size={13} className="animate-spin flex-shrink-0" />
+            Improving…
+            <X size={11} className="ml-auto opacity-60" />
+          </button>
+        ) : (
+          <AiBtn
+            icon={<WandSparkles size={13} />}
+            label="Improve writing"
+            onClick={polish}
+          />
+        )}
+        <AiBtn
+          icon={<CheckCircle2 size={13} />}
+          label="Proofread"
+          onClick={() => handleAI("proofread")}
+          disabled={isPolishing}
+        />
+        <AiBtn
+          icon={<MessageSquare size={13} />}
+          label="Explain"
+          onClick={() => handleAI("explain")}
+          disabled={isPolishing}
+        />
+        <AiBtn
+          icon={<Sparkles size={13} />}
+          label="Reformat"
+          onClick={() => handleAI("reformat")}
+          disabled={isPolishing}
+        />
+        <AiBtn
+          icon={<PenLine size={13} />}
+          label="Edit with AI"
+          onClick={() => handleAI("ask")}
+          disabled={isPolishing}
+        />
+      </div>
     </BubbleMenu>
   );
 }

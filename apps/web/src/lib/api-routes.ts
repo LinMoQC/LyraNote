@@ -255,3 +255,19 @@ export const PUBLIC = {
   /** GET - 公开笔记本详情 */
   notebook: (id: string) => `/public/notebooks/${id}`,
 } as const;
+
+// ── 活动心跳 ──────────────────────────────────────────────────────────────────
+
+export const ACTIVITY = {
+  /** POST - 上报用户活动快照 */
+  HEARTBEAT: "/activity/heartbeat",
+  /** GET - 读取当前活动快照（调试） */
+  CURRENT: "/activity/current",
+} as const;
+
+// ── 全局 SSE 事件总线 ─────────────────────────────────────────────────────────
+
+export const EVENTS = {
+  /** GET - 建立 SSE 长连接（订阅 Lyra 推送） */
+  STREAM: "/events/stream",
+} as const;

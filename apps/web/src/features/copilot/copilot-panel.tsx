@@ -7,18 +7,20 @@
  *              支持弹性拖拽调整宽度。
  */
 
-import { AnimatePresence, m } from "framer-motion";
-import { ChevronDown, Sparkles, X } from "lucide-react";
+import { AnimatePresence, m, MotionConfig } from "framer-motion";
+import { ChevronDown, PanelRight, PictureInPicture2, Sparkles, X } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCopilotResize, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
+import type { CopilotMode } from "@/features/notebook/notebook-workspace";
 
 import { ChatInput } from "@/components/chat-input";
 import { AgentSteps } from "@/components/message-render/agent-steps";
 import { ApprovalCard } from "@/components/message-render/approval-card";
 import { CopilotMessageBubble } from "@/features/copilot/copilot-message-bubble";
 import { ProactiveCard } from "@/features/copilot/proactive-card";
+import { SoulCard } from "@/features/copilot/soul-card";
 import { WritingContextBar } from "@/features/copilot/writing-context-bar";
 import { approveToolCall, getContextGreeting, getInsights, getRelatedKnowledge, sendMessageStream, type CrossNotebookChunk, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
 import { cn } from "@/lib/utils";
@@ -51,22 +53,33 @@ export function CopilotPanel({
   pendingPrompt,
   pendingQuote,
   getEditorContext,
+  mode = "docked",
+  onModeChange,
+  panelWidth: externalPanelWidth,
+  containerTop = 0,
+  containerHeight,
 }: {
   notebookId?: string;
   initialMessages: Message[];
-  /** Controls open/close animation via the internal spring */
   isOpen: boolean;
   onClose: () => void;
   onInsertToEditor?: (content: string) => void | Promise<void>;
   onInsertMindMap?: (data: MindMapData) => void;
-  /** Called on every spring tick so the workspace wrapper tracks the live width */
   onWidthChange?: (width: number) => void;
-  /** Called when AI creates/updates a note so the editor can reload */
   onNoteCreated?: () => void;
   pendingPrompt?: { text: string; key: number } | null;
   pendingQuote?: { text: string; key: number } | null;
   getEditorContext?: () => string;
+  mode?: CopilotMode;
+  onModeChange?: (mode: CopilotMode) => void;
+  /** 面板宽度（px），由父组件管理，用于侧边栏模式定位 */
+  panelWidth?: number;
+  /** 内容区域顶部距视口的偏移量（px），用于侧边栏模式对齐 */
+  containerTop?: number;
+  /** 内容区域高度（px），用于侧边栏模式对齐 */
+  containerHeight?: number;
 }) {
+  const isFloating = mode === "floating";
   const t = useTranslations("copilot");
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState("");
@@ -138,8 +151,17 @@ export function CopilotPanel({
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  // ── Resize ────────────────────────────────────────────────
-  const { isDragging, asideRef, handleResizeStart, handleResizeTouchStart } = useCopilotResize(isOpen, onWidthChange, markAllRead);
+  const effectivePanelWidth = externalPanelWidth ?? DEFAULT_WIDTH;
+
+  const { isDragging, handleResizeStart, handleResizeTouchStart } = useCopilotResize(
+    onWidthChange,
+    effectivePanelWidth,
+  );
+
+  // 打开面板时标记所有主动建议为已读
+  useEffect(() => {
+    if (isOpen) markAllRead?.();
+  }, [isOpen, markAllRead]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -340,55 +362,96 @@ export function CopilotPanel({
 
   const hasMessages = messages.length > 0;
 
+  // ── Window height (SSR 安全) ─────────────────────────────────
+  const [windowH, setWindowH] = useState(800);
+  useEffect(() => {
+    setWindowH(window.innerHeight);
+    const handleResize = () => setWindowH(window.innerHeight);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const SPRING = { type: "spring", stiffness: 300, damping: 32, mass: 0.75 } as const;
+
+  // ── 动画参数：两种状态均使用 top+height 锚点，Framer Motion 可数值插值 ──
+  const FLOAT_H = Math.min(550, windowH * 0.65);
+  const FLOAT_W = 440;
+  const floatTop = Math.max(24, windowH - 24 - FLOAT_H);
+  // 侧边栏模式：与内容区域完全对齐（使用父组件传入的容器尺寸）
+  const dockedH = containerHeight ?? windowH;
+
+  const dockedAnim = isOpen
+    ? { top: containerTop, right: 0, width: effectivePanelWidth, height: dockedH, borderRadius: 0, opacity: 1, scale: 1 }
+    : { top: containerTop, right: -(effectivePanelWidth + 8), width: effectivePanelWidth, height: dockedH, borderRadius: 0, opacity: 0, scale: 1 };
+
+  const floatingAnim = isOpen
+    ? { top: floatTop, right: 24, width: FLOAT_W, height: FLOAT_H, borderRadius: 16, opacity: 1, scale: 1 }
+    : { top: floatTop + 16, right: 24, width: FLOAT_W, height: FLOAT_H, borderRadius: 16, opacity: 0, scale: 0.93 };
+
   return (
-    <m.aside
-      ref={asideRef}
-      animate={{ opacity: isOpen ? 1 : 0 }}
-      initial={false}
-      transition={{ duration: 0.22, ease: "easeInOut" }}
-      className="relative flex h-full flex-shrink-0 flex-col border-l border-border/40 bg-card"
-      style={{ width: DEFAULT_WIDTH }}
-    >
-      {/* ── Resize handle ─────────────────────────────────────────────────── */}
-      <div
-        onMouseDown={handleResizeStart}
-        onTouchStart={handleResizeTouchStart}
-        className="group absolute inset-y-0 -left-2.5 z-20 w-5 cursor-col-resize touch-none"
+    <MotionConfig transition={SPRING}>
+      {/* ── Panel ─────────────────────────────────────────────── */}
+      {/*
+       * 永远 position:fixed，通过 animate 对坐标数值插值：
+       * 侧边栏: top=0, right=0,  width=panelW, height=windowH → 弹簧附着到屏幕右侧
+       * 浮窗:   top=floatTop, right=24, width=360, height=520 → 右下角小卡片
+       * 切换时所有数值由弹簧平滑过渡，避免 FLIP 跨 context 跳位问题
+       */}
+      <m.aside
+        initial={false}
+        animate={isFloating ? floatingAnim : dockedAnim}
+        transition={SPRING}
+        className={cn(
+          "fixed z-50 flex flex-col bg-card overflow-hidden",
+          isFloating
+            ? "border border-border/60 shadow-2xl shadow-black/30"
+            : "border-l border-border/40",
+        )}
+        style={{
+          pointerEvents: isOpen ? "auto" : "none",
+          transformOrigin: isFloating ? "bottom right" : "top right",
+        }}
       >
-        {/* Full-height hover line */}
+      {/* ── Resize handle (docked only) ─────────────────────────────────── */}
+      {!isFloating && (
         <div
-          className={cn(
-            "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-all duration-200",
-            isDragging
-              ? "bg-primary/60 shadow-[0_0_6px_hsl(var(--primary)/0.4)]"
-              : "bg-transparent group-hover:bg-primary/25"
-          )}
-        />
-        {/* Center grip dots */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-[3px]">
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className={cn(
-                "rounded-full transition-all duration-200",
-                isDragging
-                  ? "h-[5px] w-[5px] bg-primary shadow-[0_0_4px_hsl(var(--primary)/0.6)]"
-                  : "h-1 w-1 bg-muted group-hover:h-[5px] group-hover:w-[5px] group-hover:bg-primary/60"
-              )}
-            />
-          ))}
+          onMouseDown={handleResizeStart}
+          onTouchStart={handleResizeTouchStart}
+          className="group absolute inset-y-0 -left-2.5 z-20 w-5 cursor-col-resize touch-none"
+        >
+          <div
+            className={cn(
+              "absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-all duration-200",
+              isDragging
+                ? "bg-primary/60 shadow-[0_0_6px_hsl(var(--primary)/0.4)]"
+                : "bg-transparent group-hover:bg-primary/25"
+            )}
+          />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-[3px]">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className={cn(
+                  "rounded-full transition-all duration-200",
+                  isDragging
+                    ? "h-[5px] w-[5px] bg-primary shadow-[0_0_4px_hsl(var(--primary)/0.6)]"
+                    : "h-1 w-1 bg-muted group-hover:h-[5px] group-hover:w-[5px] group-hover:bg-primary/60"
+                )}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Header ────────────────────────────────────────── */}
-      <div className="relative flex flex-shrink-0 items-center justify-between overflow-hidden px-3 py-2.5">
-        {/* Subtle gradient top accent */}
+      <div className={cn(
+        "relative flex flex-shrink-0 items-center justify-between overflow-hidden px-3 py-2.5",
+        isFloating && "rounded-t-2xl"
+      )}>
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
         <div className="flex min-w-0 items-center gap-2">
-          {/* Logo */}
           <div className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center">
-            {/* Soft glow behind logo */}
             <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 blur-sm" />
             <Image
               src="/lyra.png"
@@ -398,8 +461,6 @@ export function CopilotPanel({
               className="relative h-5 w-5 rounded object-contain"
             />
           </div>
-
-          {/* Title + status */}
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-[13px] font-semibold leading-none tracking-tight text-foreground/90">
               Lyra
@@ -407,16 +468,28 @@ export function CopilotPanel({
           </div>
         </div>
 
-        <button
-          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
-          onClick={onClose}
-          type="button"
-          title={t("closePanel")}
-        >
-          <X size={12} />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Mode toggle */}
+          {onModeChange && (
+            <button
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
+              onClick={() => onModeChange(isFloating ? "docked" : "floating")}
+              type="button"
+              title={isFloating ? t("dockPanel") : t("floatPanel")}
+            >
+              {isFloating ? <PanelRight size={12} /> : <PictureInPicture2 size={12} />}
+            </button>
+          )}
+          <button
+            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
+            onClick={onClose}
+            type="button"
+            title={t("closePanel")}
+          >
+            <X size={12} />
+          </button>
+        </div>
 
-        {/* Bottom divider */}
         <div className="absolute inset-x-0 bottom-0 h-px bg-border/30" />
       </div>
 
@@ -452,13 +525,21 @@ export function CopilotPanel({
             {unreadSuggestions.length > 0 && (
               <div className="mb-3 space-y-2">
                 <AnimatePresence>
-                  {unreadSuggestions.map((s) => (
-                    <ProactiveCard
-                      key={s.id}
-                      suggestion={s}
-                      onAskQuestion={(q) => void submit(q)}
-                    />
-                  ))}
+                  {unreadSuggestions.map((s) =>
+                    s.type === "insight" ? (
+                      <SoulCard
+                        key={s.id}
+                        suggestion={s}
+                        onReply={(text) => void submit(text)}
+                      />
+                    ) : (
+                      <ProactiveCard
+                        key={s.id}
+                        suggestion={s}
+                        onAskQuestion={(q) => void submit(q)}
+                      />
+                    )
+                  )}
                 </AnimatePresence>
               </div>
             )}
@@ -535,13 +616,21 @@ export function CopilotPanel({
             {/* Proactive cards above messages */}
             {unreadSuggestions.length > 0 && (
               <AnimatePresence>
-                {unreadSuggestions.map((s) => (
-                  <ProactiveCard
-                    key={s.id}
-                    suggestion={s}
-                    onAskQuestion={(q) => void submit(q)}
-                  />
-                ))}
+                {unreadSuggestions.map((s) =>
+                  s.type === "insight" ? (
+                    <SoulCard
+                      key={s.id}
+                      suggestion={s}
+                      onReply={(text) => void submit(text)}
+                    />
+                  ) : (
+                    <ProactiveCard
+                      key={s.id}
+                      suggestion={s}
+                      onAskQuestion={(q) => void submit(q)}
+                    />
+                  )
+                )}
               </AnimatePresence>
             )}
             {messages.map((message, idx) => {
@@ -629,6 +718,7 @@ export function CopilotPanel({
           }
         />
       </div>
-    </m.aside>
+      </m.aside>
+    </MotionConfig>
   );
 }

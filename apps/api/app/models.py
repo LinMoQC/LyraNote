@@ -57,6 +57,8 @@ class User(Base):
     evaluations: Mapped[list["AgentEvaluation"]] = relationship(back_populates="user", passive_deletes=True)
     message_feedbacks: Mapped[list["MessageFeedback"]] = relationship(back_populates="user", passive_deletes=True)
     scheduled_tasks: Mapped[list["ScheduledTask"]] = relationship(back_populates="user", passive_deletes=True)
+    agent_thoughts: Mapped[list["AgentThought"]] = relationship(back_populates="user", passive_deletes=True)
+    portrait: Mapped["UserPortrait | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)
 
 
 class AppConfig(Base):
@@ -699,3 +701,61 @@ class MCPServerConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Agent Thought (Lyra Soul 思维记录)
+# ---------------------------------------------------------------------------
+
+class AgentThought(Base):
+    """
+    记录 Lyra Soul 思维循环产生的每一条思想。
+
+    surface=True  → 已推送给用户（Redis Pub/Sub → SSE）
+    surface=False → 内化保存，仅用于上下文积累
+    """
+    __tablename__ = "agent_thoughts"
+
+    id: Mapped[uuid.UUID] = uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    # internal | surfaced | dismissed
+    visibility: Mapped[str] = mapped_column(String(20), default="internal", nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # 触发本次思考的用户活动上下文（JSON 快照）
+    activity_context: Mapped[dict | None] = mapped_column(JSONB)
+    # 本次思考关联的笔记本（可选）
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notebooks.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = now_col()
+
+    user: Mapped["User"] = relationship(back_populates="agent_thoughts")
+
+
+# ---------------------------------------------------------------------------
+# User Portrait (用户画像 — 长期交互的立体画像)
+# ---------------------------------------------------------------------------
+
+class UserPortrait(Base):
+    """
+    基于长期交互数据合成的用户立体画像（六维结构）。
+    每个用户只有一条记录，由 Celery Beat 每周合成更新。
+    """
+    __tablename__ = "user_portraits"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    # 六维画像 JSON，结构见 docs/lyra-soul-system.md
+    portrait_json: Mapped[dict | None] = mapped_column(JSONB)
+    # 合成摘要（供 Lyra 直接引用的自然语言描述）
+    synthesis_summary: Mapped[str | None] = mapped_column(Text)
+    # 画像版本号（每次合成 +1）
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    synthesized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = now_col()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    user: Mapped["User"] = relationship(back_populates="portrait")
