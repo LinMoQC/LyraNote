@@ -84,21 +84,6 @@ class SearchKnowledgeSkill(SkillBase):
             if not any(x["chunk_id"] == c["chunk_id"] for x in ctx.collected_citations)
         )
 
-        seen_source_ids: set = set()
-        for c in chunks:
-            sid = c["source_id"]
-            if sid not in seen_source_ids:
-                seen_source_ids.add(sid)
-                ctx.ui_elements.append({
-                    "element_type": "source-card",
-                    "data": {
-                        "title":     c["source_title"],
-                        "excerpt":   c["content"][:120],
-                        "score":     round(float(c.get("score") or 0), 2),
-                        "source_id": str(sid),
-                    }
-                })
-
         result_parts = []
 
         # Prepend graph context so the LLM sees structural knowledge first.
