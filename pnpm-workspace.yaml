@@ -1,4 +1,8 @@
 packages:
   - 'apps/web'
   - 'apps/docs'
+  - 'apps/desktop'
+  - 'apps/mobile'
   - 'packages/cli'
+  - 'packages/types'
+  - 'packages/api-client'
