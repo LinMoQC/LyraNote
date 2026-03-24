@@ -73,6 +73,8 @@ export function CopilotPanel({
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  // Persist the copilot's conversation ID so history is maintained across messages
+  const [copilotConvId, setCopilotConvId] = useState<string | undefined>(undefined);
   const {
     agentSteps,
     pendingApproval,
@@ -151,6 +153,8 @@ export function CopilotPanel({
 
   useEffect(() => {
     if (!notebookId) { chatLoadedRef.current = true; return; }
+    // Reset conversation when switching notebooks so messages don't bleed across
+    setCopilotConvId(undefined);
     try {
       const stored = localStorage.getItem(`chat:${notebookId}`);
       if (stored) {
@@ -224,7 +228,7 @@ export function CopilotPanel({
       const pendingMCPResult = { current: null as import("@/types").MCPResultData | null };
 
       try {
-        await sendMessageStream(
+        const newConvId = await sendMessageStream(
           apiPrompt,
           (token) => {
             setMessages((c) =>
@@ -289,7 +293,7 @@ export function CopilotPanel({
             // Common: human_approve_required + append to agentSteps
             handleAgentEvent(event);
           },
-          undefined, // conversationId
+          copilotConvId,  // reuse existing conversation for context continuity
           undefined, // globalSearch
           undefined, // signal
           undefined, // toolHint
@@ -297,6 +301,10 @@ export function CopilotPanel({
           undefined, // attachmentsMeta
           true,      // isCopilot
         );
+        // Persist the conversation ID so subsequent messages stay in the same conversation
+        if (newConvId && newConvId !== copilotConvId) {
+          setCopilotConvId(newConvId);
+        }
       } catch {
         setMessages((c) =>
           c.map((m) =>
@@ -306,8 +314,9 @@ export function CopilotPanel({
         setStreaming(false);
       }
     },
+    // notebookId is included so the callback always uses the current notebook context
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [streaming, quotedText, getEditorContext]
+    [streaming, quotedText, getEditorContext, notebookId, copilotConvId]
   );
 
   // Auto-submit when parent sends a pending prompt (polish / shorten)

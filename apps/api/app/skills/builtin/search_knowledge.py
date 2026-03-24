@@ -69,6 +69,12 @@ class SearchKnowledgeSkill(SkillBase):
         if isinstance(graph_ctx, Exception):
             graph_ctx = ""
 
+        # If the primary search returned nothing, try a direct DB fetch so that
+        # content which exists but scores below the similarity threshold is still
+        # surfaced (prevents false "no content" answers).
+        if not chunks and not graph_ctx and not ctx.global_search:
+            chunks = await self._fetch_chunks_direct(ctx, query)
+
         if not chunks and not graph_ctx:
             return "未找到相关内容。"
 
@@ -100,6 +106,51 @@ class SearchKnowledgeSkill(SkillBase):
                 f"[片段{i}] 来源：{source_label}（相关度 {c['score']:.2f}）\n{c['content'][:400]}"
             )
         return "\n\n".join(result_parts)
+
+    @staticmethod
+    async def _fetch_chunks_direct(ctx, query: str = "") -> list[dict]:
+        """Direct DB fallback when similarity search returns empty."""
+        from uuid import UUID
+        from sqlalchemy import select
+        from app.models import Chunk, Source
+
+        try:
+            # Order by chunk_index so we get representative content spread
+            result = await ctx.db.execute(
+                select(
+                    Chunk.id,
+                    Chunk.content,
+                    Chunk.source_id,
+                    Chunk.source_type,
+                    Chunk.metadata_,
+                    Source.title.label("source_title"),
+                )
+                .outerjoin(Source, Chunk.source_id == Source.id)
+                .where(
+                    Chunk.notebook_id == UUID(ctx.notebook_id),
+                    (Source.status == "indexed") | (Chunk.source_type == "note"),
+                )
+                .order_by(Chunk.chunk_index)
+                .limit(8)
+            )
+            rows = result.all()
+            return [
+                {
+                    "chunk_id": str(r.id),
+                    "source_id": str(r.source_id) if r.source_id else "",
+                    "source_title": r.source_title or (
+                        "📝 笔记" if r.source_type == "note" else "未知来源"
+                    ),
+                    "excerpt": r.content[:300],
+                    "content": r.content,
+                    "score": 0.5,
+                    "metadata_": r.metadata_,
+                }
+                for r in rows
+                if r.content
+            ]
+        except Exception:
+            return []
 
 
 skill = SearchKnowledgeSkill()
