@@ -6,6 +6,8 @@ always=True — core capability, cannot be disabled.
 
 from __future__ import annotations
 
+import asyncio
+
 from app.skills.base import SkillBase, SkillMeta
 
 
@@ -47,17 +49,27 @@ class SearchKnowledgeSkill(SkillBase):
         }
 
     async def execute(self, args: dict, ctx) -> str:
+        from app.agents.rag.graph_retrieval import graph_augmented_context
         from app.agents.rag.retrieval import retrieve_chunks
 
         query = args.get("query", "")
-        chunks = await retrieve_chunks(
-            query, ctx.notebook_id, ctx.db,
-            global_search=ctx.global_search,
-            user_id=ctx.user_id,
-            history=getattr(ctx, "history", None),
+        chunks, graph_ctx = await asyncio.gather(
+            retrieve_chunks(
+                query, ctx.notebook_id, ctx.db,
+                global_search=ctx.global_search,
+                user_id=ctx.user_id,
+                history=getattr(ctx, "history", None),
+            ),
+            graph_augmented_context(query, ctx.notebook_id, ctx.db),
+            return_exceptions=True,
         )
 
-        if not chunks:
+        if isinstance(chunks, Exception):
+            chunks = []
+        if isinstance(graph_ctx, Exception):
+            graph_ctx = ""
+
+        if not chunks and not graph_ctx:
             return "未找到相关内容。"
 
         ctx.collected_citations.extend(
@@ -88,6 +100,11 @@ class SearchKnowledgeSkill(SkillBase):
                 })
 
         result_parts = []
+
+        # Prepend graph context so the LLM sees structural knowledge first.
+        if graph_ctx:
+            result_parts.append(graph_ctx)
+
         for i, c in enumerate(chunks, 1):
             meta = c.get("metadata_") or {}
             page_info = f"第 {meta['page']} 页" if meta.get("page") else ""
