@@ -176,7 +176,9 @@
     },
     "selectionExplain": "解释或讨论以下内容：\n\n\"{text}\"",
     "selectionRewrite": "把这段话改写得更清晰流畅，保持原意：\n\n\"{text}\"",
-    "selectionCondense": "把这段话精简缩短，保留核心信息：\n\n\"{text}\""
+    "selectionCondense": "把这段话精简缩短，保留核心信息：\n\n\"{text}\"",
+    "continueWritingPrompt": "请基于当前笔记的上下文，继续写作下一段内容",
+    "summarizeSourcesPrompt": "请总结笔记本中所有来源资料的核心内容和关键洞察"
   },
   "settings": {
     "title": "设置",
@@ -200,6 +202,12 @@
     "themeOptions": {
       "dark": "深色",
       "light": "浅色"
+    },
+    "themePreset": "主题风格",
+    "themePresetDesc": "选择 LyraNote 或 Notion 视觉风格",
+    "themePresetOptions": {
+      "lyra": "LyraNote",
+      "notion": "Notion"
     },
     "languages": {
       "zh": "中文",
@@ -585,6 +593,8 @@
     "sendHint": "Enter 发送 · Shift+Enter 换行",
     "notebookLabel": "笔记本",
     "closePanel": "关闭",
+    "dockPanel": "固定到侧栏",
+    "floatPanel": "悬浮窗口",
     "summarize": "总结关键洞察",
     "generateOutline": "生成演示大纲",
     "extractArguments": "提炼核心论点",
@@ -618,10 +628,18 @@
   },
   "editor": {
     "untitled": "无标题",
+    "titlePlaceholder": "笔记标题",
     "linkPlaceholder": "输入链接地址",
     "saveFailed": "保存失败",
     "startWriting": "开始写作……",
-    "optimizing": "优化中"
+    "optimizing": "优化中",
+    "more": "更多",
+    "needHelp": "需要帮忙吗？",
+    "continueWriting": "继续写",
+    "searchMaterial": "搜资料",
+    "stopPolish": "停止优化",
+    "polishTitle": "AI 直接在文中优化选中内容",
+    "polish": "优化"
   },
   "source": {
     "importing": "正在导入…",

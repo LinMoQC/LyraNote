@@ -1,20 +1,14 @@
 "use client";
 
 import { Moon, Sun } from "lucide-react";
-import { useTheme } from "next-themes";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { useTheme } from "@/lib/theme";
 
 export function ThemeToggle({ collapsed }: { collapsed?: boolean }) {
   const { theme, setTheme } = useTheme();
   const t = useTranslations("ui");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => { setMounted(true); }, []);
-
-  if (!mounted) return null;
 
   const isDark = theme === "dark";
 

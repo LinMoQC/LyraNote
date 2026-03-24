@@ -176,7 +176,9 @@
     },
     "selectionExplain": "Explain or discuss the following:\n\n\"{text}\"",
     "selectionRewrite": "Rewrite this passage more clearly while preserving the meaning:\n\n\"{text}\"",
-    "selectionCondense": "Condense this passage to keep only the core information:\n\n\"{text}\""
+    "selectionCondense": "Condense this passage to keep only the core information:\n\n\"{text}\"",
+    "continueWritingPrompt": "Please continue writing the next paragraph based on the current note context",
+    "summarizeSourcesPrompt": "Please summarize the key content and insights from all source materials in this notebook"
   },
   "settings": {
     "title": "Settings",
@@ -200,6 +202,12 @@
     "themeOptions": {
       "dark": "Dark",
       "light": "Light"
+    },
+    "themePreset": "Theme Style",
+    "themePresetDesc": "Choose between LyraNote or Notion visual style",
+    "themePresetOptions": {
+      "lyra": "LyraNote",
+      "notion": "Notion"
     },
     "languages": {
       "zh": "中文",
@@ -585,6 +593,8 @@
     "sendHint": "Enter to send · Shift+Enter for new line",
     "notebookLabel": "Notebook",
     "closePanel": "Close",
+    "dockPanel": "Dock to sidebar",
+    "floatPanel": "Floating window",
     "summarize": "Summarize key insights",
     "generateOutline": "Generate presentation outline",
     "extractArguments": "Extract core arguments",
@@ -618,10 +628,18 @@
   },
   "editor": {
     "untitled": "Untitled",
+    "titlePlaceholder": "Note title",
     "linkPlaceholder": "Enter link URL",
     "saveFailed": "Save failed",
     "startWriting": "Start writing…",
-    "optimizing": "Optimizing"
+    "optimizing": "Optimizing",
+    "more": "More",
+    "needHelp": "Need help?",
+    "continueWriting": "Continue",
+    "searchMaterial": "Search",
+    "stopPolish": "Stop polishing",
+    "polishTitle": "AI polishes selected text in place",
+    "polish": "Polish"
   },
   "source": {
     "importing": "Importing…",
