@@ -271,3 +271,14 @@ export const EVENTS = {
   /** GET - 建立 SSE 长连接（订阅 Lyra 推送） */
   STREAM: "/events/stream",
 } as const;
+
+// ── 用户画像 ──────────────────────────────────────────────────────────────────
+
+export const PORTRAIT = {
+  /** GET - 获取当前用户画像 */
+  ME: "/portrait",
+  /** GET - 画像历史版本 */
+  HISTORY: "/portrait/history",
+  /** POST - 手动触发画像合成（测试用） */
+  TRIGGER: "/portrait/trigger",
+} as const;

@@ -37,6 +37,11 @@ celery_app.conf.update(
             "task": "check_scheduled_tasks",
             "schedule": 60.0,
         },
+        "weekly-portrait-synthesis": {
+            "task": "synthesize_all_user_portraits",
+            # Every Monday at 03:00 UTC (86400*7 = 604800s)
+            "schedule": 604800.0,
+        },
     },
 )
 
@@ -831,3 +836,76 @@ def execute_scheduled_task(self, task_id: str):
                 raise self.retry(exc=exc, countdown=300)
 
     _run_async(_run())
+
+
+# ---------------------------------------------------------------------------
+# 用户画像合成（每周一次 Celery Beat 任务）
+# ---------------------------------------------------------------------------
+
+@celery_app.task(name="synthesize_all_user_portraits", bind=True, max_retries=1)
+def synthesize_all_user_portraits(self):
+    """
+    Celery Beat 每周任务：为所有有足够记忆数据的活跃用户合成用户画像。
+    活跃定义：过去 30 天内有对话记录。
+    """
+    async def _run():
+        import logging
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select, func
+        from app.models import User, Message, Conversation
+
+        logger = logging.getLogger(__name__)
+        from app.agents.portrait.synthesizer import synthesize_portrait
+        from app.agents.portrait.loader import invalidate_portrait_cache
+
+        async with _task_db() as db:
+            try:
+                since = datetime.now(timezone.utc) - timedelta(days=30)
+                # 查找 30 天内有对话活动的用户
+                active_user_ids = (
+                    await db.execute(
+                        select(Conversation.user_id)
+                        .where(Conversation.created_at >= since)
+                        .distinct()
+                    )
+                ).scalars().all()
+
+                success_count = 0
+                for user_id in active_user_ids:
+                    try:
+                        result = await synthesize_portrait(user_id, db)
+                        if result:
+                            await invalidate_portrait_cache(user_id)
+                            success_count += 1
+                    except Exception as exc:
+                        logger.warning("Portrait synthesis failed for user=%s: %s", user_id, exc)
+
+                logger.info(
+                    "Weekly portrait synthesis complete: %d/%d users updated",
+                    success_count, len(active_user_ids),
+                )
+            except Exception as exc:
+                raise self.retry(exc=exc, countdown=300)
+
+    _run_async(_run())
+
+
+@celery_app.task(name="synthesize_user_portrait", bind=True, max_retries=2)
+def synthesize_user_portrait(self, user_id: str):
+    """
+    为单个用户合成用户画像（由对话服务在用户完成 20 次对话后触发）。
+    """
+    async def _run():
+        import uuid
+        from app.agents.portrait.synthesizer import synthesize_portrait
+        from app.agents.portrait.loader import invalidate_portrait_cache
+
+        async with _task_db() as db:
+            try:
+                await synthesize_portrait(uuid.UUID(user_id), db)
+                await invalidate_portrait_cache(user_id)
+            except Exception as exc:
+                raise self.retry(exc=exc, countdown=60)
+
+    _run_async(_run())
+

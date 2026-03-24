@@ -131,6 +131,7 @@ from app.domains.knowledge_graph.router import router as knowledge_graph_router
 from app.domains.mcp.router import router as mcp_router
 from app.domains.activity.router import router as activity_router
 from app.domains.events.router import router as events_router
+from app.domains.portrait.router import router as portrait_router
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(setup_router, prefix="/api/v1")
@@ -152,6 +153,7 @@ app.include_router(knowledge_graph_router, prefix="/api/v1")
 app.include_router(mcp_router, prefix="/api/v1")
 app.include_router(activity_router, prefix="/api/v1")
 app.include_router(events_router, prefix="/api/v1")
+app.include_router(portrait_router, prefix="/api/v1")
 
 
 @app.get("/health")
