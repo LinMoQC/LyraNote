@@ -46,6 +46,50 @@
   --sidebar:            224 30% 6%;
 }
 
+/* ─── Notion theme preset — Light ────────────────────────────────────────── */
+[data-theme-preset="notion"] {
+  --background:         0   0%  100%;
+  --foreground:         40  6%  22%;
+  --card:               0   0%  100%;
+  --card-foreground:    40  6%  22%;
+  --border:             60  5%  92%;
+  --input:              60  4%  90%;
+  --primary:            207 75% 51%;
+  --primary-foreground: 0   0%  100%;
+  --secondary:          36  20% 96%;
+  --secondary-foreground: 40 6%  22%;
+  --muted:              36  20% 97%;
+  --muted-foreground:   40  4%  48%;
+  --accent:             36  15% 94%;
+  --accent-foreground:  40  6%  22%;
+  --destructive:        0   68% 52%;
+  --destructive-foreground: 0 0% 100%;
+  --ring:               207 75% 51%;
+  --sidebar:            36  20% 97%;
+}
+
+/* ─── Notion theme preset — Dark ─────────────────────────────────────────── */
+html.dark[data-theme-preset="notion"] {
+  --background:         0   0%  9.8%;  /* #191919  content area (darker)   */
+  --foreground:         40  9%  94%;   /* #f0efed  --c-texPri              */
+  --card:               0   0%  14.5%; /* #252525  --cl-palGra200          */
+  --card-foreground:    40  9%  94%;   /* #f0efed                          */
+  --border:             60  1%  22%;   /* #383836  --c-borPri              */
+  --input:              0   0%  18%;   /* #2f2f2f  --cl-palGra300          */
+  --primary:            207 75% 51%;   /* #2383e2  Notion blue             */
+  --primary-foreground: 0   0%  100%;
+  --secondary:          0   0%  14.5%; /* #252525                          */
+  --secondary-foreground: 37  6%  66%; /* #ada9a3  --c-texSec              */
+  --muted:              0   0%  14.5%; /* #252525                          */
+  --muted-foreground:   37  6%  66%;   /* #ada9a3  --c-texSec              */
+  --accent:             60  1%  17%;   /* #2c2c2b  hover                   */
+  --accent-foreground:  40  9%  94%;   /* #f0efed                          */
+  --destructive:        1   71% 59%;   /* #de5550  --c-palRed800           */
+  --destructive-foreground: 0 0% 100%;
+  --ring:               207 75% 51%;   /* #2383e2                          */
+  --sidebar:            0   0%  12.5%; /* #202020  sidebar (lighter)       */
+}
+
 /* ─── View Transition (directional theme reveal) ─────────────────────────── */
 @keyframes reveal-from-bottom-left {
   from { clip-path: circle(0%   at 0%    100%); }
@@ -117,12 +161,21 @@ body {
     hsl(var(--background));
 }
 
+html.dark[data-theme-preset="notion"] body,
+html.dark[data-theme-preset="notion"] {
+  background: hsl(var(--background));
+}
+
 a {
   @apply text-inherit no-underline;
 }
 
 ::selection {
   background: hsl(243 68% 62% / 0.3);
+}
+
+html[data-theme-preset="notion"] ::selection {
+  background: hsl(207 75% 51% / 0.3);
 }
 
 /* ─── Utilities ──────────────────────────────────────────────────────────── */
@@ -136,6 +189,23 @@ a {
 
 .tiptap {
   @apply min-h-[320px] outline-none;
+}
+
+/* ─── Block hover highlight ─────────────────────────────────────────────── */
+.tiptap > .lyra-block-hover,
+.tiptap .lyra-block-hover {
+  background-color: hsl(var(--foreground) / 0.06) !important;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+/* ─── Block selected (via :: grip menu) ─────────────────────────────────── */
+.tiptap > .lyra-block-selected,
+.tiptap .lyra-block-selected {
+  background-color: hsl(var(--primary) / 0.15) !important;
+  border-radius: 4px;
+  outline: 2px solid hsl(var(--primary) / 0.35);
+  outline-offset: 0px;
 }
 
 /* ─── Tiptap editor content styles ──────────────────────────────────────── */
@@ -225,6 +295,23 @@ a {
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ─── Tippy scale animation ──────────────────────────────────────────────── */
+.tippy-box[data-animation='scale-subtle'][data-placement^='top'] { transform-origin: bottom; }
+.tippy-box[data-animation='scale-subtle'][data-placement^='bottom'] { transform-origin: top; }
+.tippy-box[data-animation='scale-subtle'][data-placement^='left'] { transform-origin: right; }
+.tippy-box[data-animation='scale-subtle'][data-placement^='right'] { transform-origin: left; }
+.tippy-box[data-animation='scale-subtle'][data-state='hidden'] {
+  opacity: 0;
+  transform: scale(0.94);
+}
+
+.hide-scrollbar {
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 .no-scrollbar {

@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { getLocale, getMessages, getTimeZone } from "next-intl/server";
 
 import { Providers } from "@/app/providers";
+import type { ColorTheme } from "@/lib/theme";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
@@ -26,10 +28,32 @@ export default async function RootLayout({
   const messages = await getMessages();
   const timeZone = await getTimeZone();
 
+  const cookieStore = await cookies();
+
+  // ── Dark / light ──────────────────────────────────────────────────────────
+  const themeCookie = cookieStore.get("lyra:theme")?.value;
+  const defaultTheme: ColorTheme =
+    themeCookie === "light" ? "light" : "dark";
+
+  // ── Theme preset ──────────────────────────────────────────────────────────
+  const presetCookie = cookieStore.get("lyra:theme-preset")?.value;
+  const themePresetAttr =
+    presetCookie && presetCookie !== "lyra" ? presetCookie : undefined;
+
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html
+      lang={locale}
+      className={defaultTheme === "dark" ? "dark" : ""}
+      suppressHydrationWarning
+      {...(themePresetAttr ? { "data-theme-preset": themePresetAttr } : {})}
+    >
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
-        <Providers messages={messages} locale={locale} timeZone={timeZone}>
+        <Providers
+          messages={messages}
+          locale={locale}
+          timeZone={timeZone}
+          defaultTheme={defaultTheme}
+        >
           {children}
         </Providers>
       </body>
