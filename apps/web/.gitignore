@@ -1,7 +1,6 @@
 .next
 node_modules
 .env*.local
-.env.prod
 dist
 coverage
 *.log
