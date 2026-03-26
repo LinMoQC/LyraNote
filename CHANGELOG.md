@@ -8,19 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Interactive `lyra` CLI with TUI menu for project management
-- `scripts/start.sh` with Docker and local dev modes
-- husky + lint-staged pre-commit TypeScript type checking
-- `storage_s3_public_url` configuration field to separate internal MinIO endpoint from browser-accessible presigned URL
-- Mobile-responsive layout: bottom-fixed chat input on home page, conversation sheet on chat page
-- Mobile header right-slot injection system for page-specific actions
+- N/A
 
 ### Fixed
-- MinIO upload 500 error caused by using `localhost:9000` inside Docker containers (now uses service name `minio:9000`)
+- N/A
 
 ### Changed
-- Chat page mobile conversation selector replaced with bottom sheet for better UX
-- Toolbar labels on mobile replaced with icon-only circular buttons
+- N/A
+
+---
+
+## [0.3.0] - 2026-03-26
+
+### Added
+- Lyra Soul System（P0-P3）多智能体编排与用户画像能力
+- Portrait / Events / Activity 等新领域 API 路由与对应数据模型迁移
+- GraphRAG 检索增强、GenUI SSE 组件协议、MCP 集成能力
+- `lyra` CLI 与本地/容器启动脚本能力增强
+- 前端移动端布局优化（底部输入区与对话选择底部弹层）
+
+### Fixed
+- PR #26 CI 阻塞问题：修复前端 `rules-of-hooks` 错误并补充回归测试
+- API CI 的 Ruff 步骤收敛为致命规则集，恢复流水线可执行性
+- MinIO 容器网络地址导致的上传失败问题（`localhost:9000` -> `minio:9000`）
+
+### Changed
+- API 架构重构：agents / workers / models 模块化拆分
+- 前端与后端依赖及质量门禁（lint/typecheck/test）流程更新
+- Chat 页面移动端交互从下拉切换为底部 Sheet 交互
 
 ---
 
@@ -40,5 +55,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker Compose dev and production configurations
 - Bilingual UI (Chinese / English) with next-intl
 
-[Unreleased]: https://github.com/LinMoQC/LyraNote/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/LinMoQC/LyraNote/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/LinMoQC/LyraNote/compare/v0.2.0...v0.3.0
 [0.1.0]: https://github.com/LinMoQC/LyraNote/releases/tag/v0.1.0
