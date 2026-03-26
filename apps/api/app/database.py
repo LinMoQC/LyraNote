@@ -9,7 +9,7 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
-    **({} if _is_sqlite else {"pool_size": 10, "max_overflow": 20}),
+    **({} if _is_sqlite else {"pool_size": settings.db_pool_size, "max_overflow": settings.db_max_overflow}),
 )
 
 AsyncSessionLocal = async_sessionmaker(

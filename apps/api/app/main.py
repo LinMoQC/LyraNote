@@ -20,6 +20,12 @@ async def lifespan(app: FastAPI):
     from app.logging_config import setup_logging
     setup_logging(debug=settings.debug)
 
+    if not settings.jwt_secret:
+        logger.warning(
+            "jwt_secret is empty — a random secret will be used and all tokens "
+            "will be invalidated on every process restart. Set JWT_SECRET in .env for production."
+        )
+
     from app.database import engine, AsyncSessionLocal
     from sqlalchemy import text
 
@@ -159,4 +165,35 @@ app.include_router(portrait_router, prefix="/api/v1")
 @app.get("/health")
 async def health():
     from app.schemas.response import success
-    return success({"status": "ok", "version": "0.1.0"})
+    from fastapi.responses import JSONResponse
+
+    checks: dict[str, str] = {}
+
+    # DB ping
+    try:
+        from app.database import AsyncSessionLocal
+        from sqlalchemy import text
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+        checks["db"] = "ok"
+    except Exception as e:
+        logger.warning("Health check DB failed: %s", e)
+        checks["db"] = "error"
+
+    # Redis ping
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
+        await r.ping()
+        await r.aclose()
+        checks["redis"] = "ok"
+    except Exception as e:
+        logger.warning("Health check Redis failed: %s", e)
+        checks["redis"] = "error"
+
+    all_ok = all(v == "ok" for v in checks.values())
+    payload = {"status": "ok" if all_ok else "degraded", "version": "0.1.0", **checks}
+
+    if not all_ok:
+        return JSONResponse(status_code=503, content={"code": 503, "message": "service degraded", "data": payload})
+    return success(payload)

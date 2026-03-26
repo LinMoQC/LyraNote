@@ -5,8 +5,12 @@ All routes here are PUBLIC (no auth required).
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Response, status
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 from app.dependencies import DbDep
 from app.domains.setup.schemas import (
@@ -48,7 +52,7 @@ RUNTIME_CONFIG_KEYS = [
     "tavily_api_key",
     "perplexity_api_key",
     "storage_backend",
-    "storage_region",
+    "storage_s3_region",
     "storage_s3_endpoint_url",
     "storage_s3_bucket",
     "storage_s3_access_key",
@@ -89,8 +93,8 @@ async def load_settings_from_db(db) -> None:
         if row.value:
             try:
                 setattr(settings, row.key, row.value)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Config key %r from DB could not be applied: %s", row.key, e)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────

@@ -1,0 +1,31 @@
+# Ruff configuration for LyraNote API (Python 3.12)
+# https://docs.astral.sh/ruff/
+
+[lint]
+# Rule sets:
+# E - pycodestyle errors
+# F - pyflakes (undefined names, unused imports, etc.)
+# I - isort (import ordering)
+# UP - pyupgrade (modernize Python syntax)
+# B - flake8-bugbear (likely bugs and design issues)
+select = ["E", "F", "I", "UP", "B"]
+
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # do not perform function calls in default arguments (FastAPI Depends pattern)
+    "B904",   # raise from exception — not always applicable
+]
+
+[lint.per-file-ignores]
+# Test files can have longer functions and assert patterns
+"tests/**/*.py" = ["B", "F811"]
+# __init__.py files often re-export symbols
+"*/__init__.py" = ["F401"]
+
+[lint.isort]
+known-first-party = ["app"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

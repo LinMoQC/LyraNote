@@ -15,7 +15,7 @@ import logging
 
 from langgraph.graph import END, START, StateGraph
 
-from app.agents.orchestrator import MultiAgentState, orchestrator_node, synthesis_node
+from .orchestrator import MultiAgentState, orchestrator_node, synthesis_node
 from app.agents.specialists.direct_agent import direct_agent_node
 from app.agents.specialists.research_agent import research_agent_node
 

@@ -35,6 +35,9 @@ jobs:
       - name: ESLint
         run: pnpm exec next lint
 
+      - name: Frontend tests
+        run: pnpm test
+
   # ── API tests ───────────────────────────────────────────────────────────────
   api-tests:
     name: API — Tests
@@ -78,7 +81,10 @@ jobs:
           cache-dependency-path: apps/api/requirements*.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt ruff
+
+      - name: Ruff lint
+        run: ruff check .
 
       - name: Run migrations
         env:

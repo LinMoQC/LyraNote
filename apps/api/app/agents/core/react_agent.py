@@ -87,7 +87,7 @@ async def run_agent(
     # Deep research: the only case where multi-agent graph is beneficial
     if not use_single and _is_deep_research(query):
         try:
-            from app.agents.multi_agent_graph import MULTI_AGENT_GRAPH
+            from app.agents.graph.multi_agent_graph import MULTI_AGENT_GRAPH
             if MULTI_AGENT_GRAPH is not None:
                 async for event in _run_agent_multi(
                     query=query,
@@ -153,9 +153,9 @@ async def _run_agent_multi(
     global_search: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """Run the LangGraph multi-agent graph and stream SSE events."""
-    from app.agents.multi_agent_graph import MULTI_AGENT_GRAPH
+    from app.agents.graph.multi_agent_graph import MULTI_AGENT_GRAPH
     from app.agents.portrait.loader import load_latest_portrait
-    from app.agents.orchestrator import MultiAgentState
+    from app.agents.graph.orchestrator import MultiAgentState
 
     # Pre-load user portrait to inject into orchestrator context
     user_portrait: dict | None = None

@@ -56,10 +56,10 @@ def _make_stub_modules() -> None:
 _make_stub_modules()
 
 # Force re-import if already cached without stubs
-if "app.agents.deep_research" in sys.modules:
-    del sys.modules["app.agents.deep_research"]
+if "app.agents.research.deep_research" in sys.modules:
+    del sys.modules["app.agents.research.deep_research"]
 
-from app.agents.deep_research import _extract_finding, LEARNING_MAX_CHARS  # noqa: E402
+from app.agents.research.deep_research import _extract_finding, LEARNING_MAX_CHARS  # noqa: E402
 
 
 # ── Tests for _extract_finding ─────────────────────────────────────────────────

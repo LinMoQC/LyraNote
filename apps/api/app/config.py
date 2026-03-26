@@ -115,8 +115,12 @@ class Settings(BaseSettings):
         return f"{base}{prefix.rstrip('/')}"
 
     # App
-    debug: bool = True
+    debug: bool = False
     cors_origins: str = "http://localhost:3000"
+
+    # Database connection pool (ignored for SQLite)
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
 
     @property
     def cors_origins_list(self) -> list[str]:

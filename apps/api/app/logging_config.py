@@ -6,8 +6,12 @@ Provides clean, colorized log output with:
   - Color-coded log levels
   - Suppressed noisy loggers (sqlalchemy echo, httpx, etc.)
   - Daily rotating file logs written to apps/api/logs/YYYY-MM-DD.log
+
+When debug=False (production), file output uses structured JSON format
+so logs can be ingested by Loki / Datadog / any log aggregator.
 """
 
+import json as _json
 import logging
 import sys
 from datetime import datetime
@@ -91,6 +95,27 @@ class PlainFormatter(logging.Formatter):
         return f"{ts} {symbol} {level} {msg}  ({name}){exc}"
 
 
+class JsonFormatter(logging.Formatter):
+    """Structured JSON formatter for production file output.
+
+    Each log line is a single JSON object — compatible with Loki, Datadog,
+    and any log aggregation pipeline.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: dict = {
+            "time": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and not record.exc_text:
+            record.exc_text = self.formatException(record.exc_info)
+        if record.exc_text:
+            payload["exc"] = record.exc_text
+        return _json.dumps(payload, ensure_ascii=False)
+
+
 class AccessLogFormatter(logging.Formatter):
     """Compact formatter for uvicorn access logs."""
 
@@ -116,7 +141,7 @@ class AccessLogFormatter(logging.Formatter):
         return f"{self.DIM}{ts}{self.RESET} {color}{msg}{self.RESET}"
 
 
-def _make_file_handler(logs_dir: Path) -> TimedRotatingFileHandler:
+def _make_file_handler(logs_dir: Path, use_json: bool = False) -> TimedRotatingFileHandler:
     """Create a daily file handler: each day gets its own YYYY-MM-DD.log file."""
     import os
     import time
@@ -149,7 +174,7 @@ def _make_file_handler(logs_dir: Path) -> TimedRotatingFileHandler:
             self.rolloverAt = self.computeRollover(int(time.time()))
 
     handler = _DailyHandler(logs_dir)
-    handler.setFormatter(PlainFormatter())
+    handler.setFormatter(JsonFormatter() if use_json else PlainFormatter())
     return handler
 
 
@@ -167,8 +192,9 @@ def setup_logging(debug: bool = False) -> None:
     root.addHandler(handler)
 
     # Daily rotating file handler — apps/api/logs/YYYY-MM-DD.log (WARNING+ only)
+    # Production: JSON structured format; development: plain text
     logs_dir = Path(__file__).resolve().parent.parent / "logs"
-    file_handler = _make_file_handler(logs_dir)
+    file_handler = _make_file_handler(logs_dir, use_json=not debug)
     file_handler.setLevel(logging.WARNING)
     root.addHandler(file_handler)
 
