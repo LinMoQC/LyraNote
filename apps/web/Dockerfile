@@ -54,6 +54,8 @@ RUN corepack enable
 
 WORKDIR /app
 ENV NODE_ENV=production
+# Docker 会注入 HOSTNAME=容器短 ID；Next 用它做 listen 时往往只绑定该名字解析到的网卡 IP，127.0.0.1 健康检查会连不上
+ENV HOSTNAME=0.0.0.0
 
 # 关键：standalone 输出
 COPY --from=builder /app/apps/web/.next/standalone ./

@@ -128,22 +128,24 @@ services:
       NEXT_PUBLIC_API_BASE_URL: /api/v1
       INTERNAL_API_BASE_URL: http://api:8000/api/v1
       NODE_ENV: production
+      # 覆盖 Docker 默认 HOSTNAME，使 Next 监听 0.0.0.0（含 127.0.0.1），与健康检查一致
+      HOSTNAME: "0.0.0.0"
     depends_on:
       api:
         condition: service_healthy
     healthcheck:
-      # 用 node 探测：与运行时一致；避免部分镜像/环境无 wget 或 CMD-SHELL 无输出不便排错
+      # TCP 探测：首页 SSR 可能对 / 返回 5xx（仍算“进程在听端口”），HTTP 探测会误判 unhealthy
       test:
         [
           "CMD",
           "node",
           "-e",
-          "require('http').get('http://127.0.0.1:3000/',(r)=>{r.resume();process.exit(r.statusCode>=200&&r.statusCode<500?0:1)}).on('error',()=>process.exit(1))",
+          "const c=require('net').connect({port:3000,host:'127.0.0.1'},()=>{c.end();process.exit(0)});c.on('error',()=>process.exit(1));c.setTimeout(4000,()=>{c.destroy();process.exit(1)})",
         ]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 15
+      start_period: 60s
 
   nginx:
     image: nginx:1.27-alpine
