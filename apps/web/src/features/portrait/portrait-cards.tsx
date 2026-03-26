@@ -202,11 +202,10 @@ export function KnowledgeMapCard({ portrait }: { portrait: UserPortrait }) {
 
 export function ThoughtStream({ portrait }: { portrait: UserPortrait }) {
   const t = useTranslations("portraitCards");
-  const rt = portrait.research_trajectory;
-  if (!rt) return null;
-
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
+  const rt = portrait.research_trajectory;
+  if (!rt) return null;
 
   const thoughts = [
     rt.current_focus && { type: "focus" as const, text: rt.current_focus },

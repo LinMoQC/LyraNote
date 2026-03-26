@@ -20,13 +20,32 @@
         "paths": [
           {
             "name": "axios",
-            "message": "禁止直接导入 axios。请使用 @/lib/axios 中封装的 apiClient。"
+            "message": "禁止直接导入 axios。请使用 @/lib/http-client 导出的 http。"
           }
         ]
       }
     ]
   },
   "overrides": [
+    {
+      "files": [
+        "src/lib/http-client.ts",
+        "src/lib/request-error.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["openai", "@anthropic-ai/*", "litellm"],
+                "message": "禁止在前端导入 AI SDK。AI 调用只在后端 providers/ 层进行。"
+              }
+            ]
+          }
+        ]
+      }
+    },
     {
       "files": ["src/features/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}"],
       "rules": {
