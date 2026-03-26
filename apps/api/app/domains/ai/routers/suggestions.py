@@ -17,38 +17,19 @@ from app.domains.ai.schemas import (
 )
 from app.models import Chunk, Notebook, Note, Source, Conversation, NotebookSummary
 from app.schemas.response import ApiResponse, success
-from app.providers.llm import get_client, get_model
+from app.providers.llm import get_client, get_model, get_utility_model, get_utility_client
 
 router = APIRouter()
 
 # ── Suggestions cache ─────────────────────────────────────────────────────────
 _suggestions_cache: dict[str, tuple[list[str], datetime, int]] = {}
-_CACHE_TTL = timedelta(hours=6)
+_CACHE_TTL = timedelta(minutes=30)
 
 
 @router.get("/ai/suggestions", response_model=ApiResponse[SuggestionsOut])
 async def get_suggestions(current_user: CurrentUser, db: DbDep):
     """Return 4 personalised suggested questions based on the user's knowledge base."""
     user_id = str(current_user.id)
-
-    src_count_result = await db.execute(
-        select(Source)
-        .join(Notebook, Source.notebook_id == Notebook.id)
-        .where(Notebook.user_id == current_user.id, Source.status == "indexed")
-    )
-    source_count = len(src_count_result.scalars().all())
-
-    if user_id in _suggestions_cache:
-        cached_suggestions, generated_at, cached_source_count = _suggestions_cache[user_id]
-        if (
-            datetime.utcnow() - generated_at < _CACHE_TTL
-            and cached_source_count == source_count
-            and cached_suggestions
-        ):
-            return success(SuggestionsOut(suggestions=cached_suggestions))
-
-    sources_context = ""
-    convs_context = ""
 
     src_rows_result = await db.execute(
         select(Source.title, Source.summary)
@@ -58,6 +39,23 @@ async def get_suggestions(current_user: CurrentUser, db: DbDep):
         .limit(8)
     )
     src_rows = src_rows_result.all()
+
+    # fingerprint on titles — new imports bust the cache even with same count
+    fp = hashlib.md5("|".join(t or "" for t, _ in src_rows).encode()).hexdigest()
+
+    if user_id in _suggestions_cache:
+        cached_suggestions, generated_at, cached_fp = _suggestions_cache[user_id]
+        age_s = (datetime.utcnow() - generated_at).total_seconds()
+        if (
+            datetime.utcnow() - generated_at < _CACHE_TTL
+            and cached_fp == fp
+            and cached_suggestions
+        ):
+            return success(SuggestionsOut(suggestions=cached_suggestions))
+
+    sources_context = ""
+    convs_context = ""
+
     if src_rows:
         lines = []
         for title, summary in src_rows:
@@ -84,7 +82,7 @@ async def get_suggestions(current_user: CurrentUser, db: DbDep):
             "对比不同来源中的相似观点",
             "根据笔记内容生成学习计划",
         ]
-        _suggestions_cache[user_id] = (fallback, datetime.utcnow(), source_count)
+        # Don't cache fallback — next request will try again (user may have imported sources)
         return success(SuggestionsOut(suggestions=fallback))
 
     prompt_parts = []
@@ -102,36 +100,53 @@ async def get_suggestions(current_user: CurrentUser, db: DbDep):
     )
     user_prompt = "\n\n".join(prompt_parts)
 
-    client = get_client()
+    client = get_utility_client()
     try:
         resp = await client.chat.completions.create(
-            model=get_model() or "gpt-4o-mini",
+            model=get_utility_model(),
             messages=[
-                {"role": "system", "content": "你是一个知识发现助手，根据用户的知识库生成有价值的探索问题。只返回 JSON 数组，不含任何额外文字。"},
+                {
+                    "role": "system",
+                    "content": (
+                        "你是一个知识发现助手。"
+                        "你的任务只有一件事：输出一个合法的 JSON 数组，包含4个中文问题字符串。"
+                        "格式示例：[\"问题1\", \"问题2\", \"问题3\", \"问题4\"]。"
+                        "绝对不要输出任何其他内容，不要输出英文，不要解释，只输出 JSON 数组。"
+                    ),
+                },
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.7,
-            max_tokens=256,
+            max_tokens=8000,
         )
         raw = resp.choices[0].message.content or ""
         raw = raw.strip()
+        # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
+            raw = raw.strip()
+        # Fallback: extract the first JSON array from the response
+        if not raw.startswith("["):
+            import re as _re
+            m = _re.search(r'\[.*?\]', raw, _re.DOTALL)
+            if m:
+                raw = m.group(0)
         suggestions: list[str] = json.loads(raw.strip())
         if not isinstance(suggestions, list):
             raise ValueError("not a list")
         suggestions = [str(s) for s in suggestions[:4]]
-    except Exception:
-        suggestions = [
+    except Exception as _exc:
+        # Don't cache fallback on LLM failure — next request will retry
+        return success(SuggestionsOut(suggestions=[
             "帮我分析知识库中的核心主题",
             "为我的研究生成一份结构化摘要",
             "对比不同来源中的相似观点",
             "根据笔记内容生成学习计划",
-        ]
+        ]))
 
-    _suggestions_cache[user_id] = (suggestions, datetime.utcnow(), source_count)
+    _suggestions_cache[user_id] = (suggestions, datetime.utcnow(), fp)
     return success(SuggestionsOut(suggestions=suggestions))
 
 
@@ -229,16 +244,16 @@ async def get_context_greeting(notebook_id: UUID, current_user: CurrentUser, db:
         "不要输出其他内容。"
     )
 
-    client = get_client()
+    client = get_utility_client()
     try:
         resp = await client.chat.completions.create(
-            model=get_model() or "gpt-4o-mini",
+            model=get_utility_model(),
             messages=[
                 {"role": "system", "content": "你是一个智能笔记助手，根据用户笔记本状态生成个性化建议。只返回JSON。"},
                 {"role": "user", "content": "\n\n".join(prompt_parts)},
             ],
             temperature=0.7,
-            max_tokens=300,
+            max_tokens=4000,
         )
         raw = resp.choices[0].message.content or "{}"
         raw = raw.strip()
@@ -288,10 +303,10 @@ async def get_source_suggestions(source_id: UUID, current_user: CurrentUser, db:
     )
     context = "\n".join(row[0][:500] for row in chunks_result.all())
 
-    client = get_client()
+    client = get_utility_client()
     try:
         resp = await client.chat.completions.create(
-            model=get_model() or "gpt-4o-mini",
+            model=get_utility_model(),
             messages=[
                 {"role": "system", "content": "你是一个研究助手。根据资料内容生成探索性问题。只返回JSON数组。"},
                 {
@@ -307,7 +322,7 @@ async def get_source_suggestions(source_id: UUID, current_user: CurrentUser, db:
                 },
             ],
             temperature=0.7,
-            max_tokens=200,
+            max_tokens=4000,
         )
         raw = resp.choices[0].message.content or "[]"
         raw = raw.strip()

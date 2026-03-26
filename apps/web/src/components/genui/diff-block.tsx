@@ -1,6 +1,7 @@
 "use client"
 
 import { memo, useMemo } from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { safeParseJSON } from "./utils"
 
@@ -50,10 +51,11 @@ function computeWordDiff(before: string, after: string): DiffToken[] {
 }
 
 function DiffBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   if (isStreaming) {
     return (
       <div className="my-3 flex h-20 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成对比...
+        {t("diffStreaming")}
       </div>
     )
   }
@@ -69,11 +71,11 @@ function DiffBlockInner({ code, isStreaming }: { code: string; isStreaming?: boo
       <div className="mb-2 flex gap-4 text-[10px] text-muted-foreground/50">
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-red-500/30" />
-          {data.label_before ?? "原文"}
+          {data.label_before ?? t("diffBefore")}
         </span>
         <span className="flex items-center gap-1">
           <span className="inline-block h-2 w-2 rounded-sm bg-emerald-500/30" />
-          {data.label_after ?? "修改后"}
+          {data.label_after ?? t("diffAfter")}
         </span>
       </div>
       <div className="text-sm leading-relaxed text-foreground/80">

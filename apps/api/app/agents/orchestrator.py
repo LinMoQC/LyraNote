@@ -1,18 +1,16 @@
 """
-Lyra 主 Agent / Orchestrator
+Lyra 深度研究 Orchestrator（多 Agent 图专用）
 
-核心职责：
-  1. 加载用户画像 + 场景识别
-  2. 一次 LLM function-calling 决定路由（temperature=0，约 100ms）
-  3. 下发子任务给专家 Agent
-  4. 接收专家结果，流式输出最终回答（synthesis_node）
+此 Orchestrator 仅在 react_agent.py 检测到深度研究请求时被调用。
+职责：确认是否需要多步深度研究（research），还是实际上可直接回答（direct）。
+
+普通 Q&A / RAG / 闲聊 / 联网搜索均由单 Agent ReAct 循环处理，不经过此图。
 
 MultiAgentState 是贯穿整个图的共享状态，通过 TypedDict 定义。
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any, TypedDict
 
@@ -46,95 +44,88 @@ class MultiAgentState(TypedDict, total=False):
 
 
 # ---------------------------------------------------------------------------
-# 路由决策 schema（function-calling）
+# 深度研究决策工具（两选一）
 # ---------------------------------------------------------------------------
 
-_ROUTE_TOOLS = [
+_ORCHESTRATOR_TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "route_to_specialist",
-            "description": "将用户请求路由到最合适的专家 Agent",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "route": {
-                        "type": "string",
-                        "enum": ["rag", "research", "writing", "memory", "web"],
-                        "description": (
-                            "rag=本地知识库问答（默认）, "
-                            "research=需要多步骤深度分析或跨文档对比, "
-                            "writing=生成摘要/大纲/FAQ等结构化内容, "
-                            "memory=用户明确要求记住某事或更新偏好, "
-                            "web=需要互联网实时信息"
-                        ),
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": "路由原因（内部日志）",
-                    },
-                },
-                "required": ["route"],
-            },
+            "name": "run_deep_research",
+            "description": (
+                "启动深度研究模式：需要跨多文档综合分析、对比梳理或系统性深度探讨时使用。"
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "answer_directly",
+            "description": "问题相对简单，已有资料可直接回答，无需多步深度研究。",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
-_ROUTE_SYSTEM = """你是 Lyra，一个智能路由器。
-根据用户的问题，决定将请求路由到哪个专家：
-- rag：大多数知识库问答，默认选择
-- research：需要跨文档深度对比分析
-- writing：用户明确要求生成摘要/大纲/FAQ
-- memory：用户要求「记住」或更新偏好设置
-- web：需要最新互联网信息（新闻/实时数据）
-只调用 route_to_specialist 工具，不要回复任何文字。"""
+_ORCHESTRATOR_SYSTEM = """你是深度研究路由器，判断是否启动多步深度研究模式：
+
+调用 run_deep_research：
+- 需要跨多个文档综合对比分析
+- 需要系统性梳理某领域全貌
+- 用户明确要求深度/全面/综合分析
+
+调用 answer_directly：
+- 问题较为聚焦，单次检索即可回答
+- 实际上不需要多步分析
+
+只调用一个工具，不要回复任何文字。"""
 
 
 async def orchestrator_node(state: MultiAgentState) -> dict:
     """
-    Lyra 主 Agent 节点：做出路由决策。
-
-    使用 LLM function-calling（temperature=0）确保路由稳定，
-    延迟约 100-150ms，对用户体验影响可忽略。
+    深度研究路由器：确认是否需要多步深度研究。
+    进入此图的请求已被 react_agent 初步判断为研究类，默认走 research。
     """
     from app.providers.llm import chat_with_tools
+    from langchain_core.callbacks.manager import adispatch_custom_event
 
     query: str = state.get("query", "")
     portrait: dict | None = state.get("user_portrait")
 
-    # 构建路由消息（含画像上下文提示）
-    system = _ROUTE_SYSTEM
+    system = _ORCHESTRATOR_SYSTEM
     if portrait:
         identity = portrait.get("identity", {})
         role = identity.get("primary_role", "")
         level = identity.get("expertise_level", "")
-        focus = portrait.get("research_trajectory", {}).get("current_focus", "")
-        if role or level or focus:
-            system += f"\n用户背景：{role}，{level}，研究重心：{focus}"
+        if role or level:
+            system += f"\n用户背景：{role}，{level}"
 
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": query},
     ]
 
-    route = "rag"  # 默认路由
+    route = "research"  # 默认：进入此图说明已初步判断为研究类
     try:
         result = await chat_with_tools(
             messages=messages,
-            tools=_ROUTE_TOOLS,
+            tools=_ORCHESTRATOR_TOOLS,
             temperature=0,
         )
         tool_calls = result.get("tool_calls") or []
         if tool_calls:
-            args = json.loads(tool_calls[0].get("function", {}).get("arguments", "{}"))
-            route = args.get("route", "rag")
-            logger.info(
-                "Orchestrator routed query to=%s reason=%s",
-                route,
-                args.get("reasoning", ""),
-            )
+            fn_name = tool_calls[0].get("function", {}).get("name", "")
+            route = "direct" if fn_name == "answer_directly" else "research"
+            logger.info("Research orchestrator decided route=%s for query=%r", route, query[:60])
     except Exception:
-        logger.warning("Orchestrator routing failed, defaulting to rag", exc_info=True)
+        logger.warning("Research orchestrator failed, defaulting to research", exc_info=True)
+
+    if route == "research":
+        await adispatch_custom_event("sse", {
+            "type": "thought",
+            "content": "分析请求 → 启动**深度研究**模式",
+        })
 
     return {"route": route}
 
@@ -145,10 +136,7 @@ async def orchestrator_node(state: MultiAgentState) -> dict:
 
 async def synthesis_node(state: MultiAgentState) -> dict:
     """
-    Lyra 汇总节点：将专家输出合成为流式回答。
-
-    使用 adispatch_custom_event 推送 SSE 事件，
-    run_agent() 监听 'on_custom_event' 并 yield 给前端。
+    汇总节点：将深度研究专家的输出合成为流式回答。
     """
     from langchain_core.callbacks.manager import adispatch_custom_event
     from app.agents.writing.composer import build_system_prompt, _build_context
@@ -162,18 +150,11 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     db = state.get("db")
     specialist: dict = state.get("specialist_result") or {}
 
-    spec_type = specialist.get("type", "rag")
+    spec_type = specialist.get("type", "research")
     chunks: list[dict] = specialist.get("chunks") or []
     web_context: str | None = specialist.get("web_context")
-    format_hint: str = specialist.get("format_hint", "")
 
-    # ── 特殊处理：memory 场景直接回复确认 ────────────────────────────────────
-    if spec_type == "memory":
-        msg = specialist.get("message", "好的，我已经记住了。")
-        await adispatch_custom_event("sse", {"type": "token", "content": msg})
-        await adispatch_custom_event("sse", {"type": "citations", "citations": []})
-        await adispatch_custom_event("sse", {"type": "done"})
-        return {}
+    is_direct = spec_type == "direct"
 
     # ── 构建系统 prompt（含画像）─────────────────────────────────────────────
     try:
@@ -183,50 +164,46 @@ async def synthesis_node(state: MultiAgentState) -> dict:
             scene_instruction=scene_instruction,
             db=db,
             user_portrait=user_portrait,
+            tool_schemas=[],
         )
     except Exception:
         system_prompt = ""
 
-    # ── 构建用户消息（含检索上下文）────────────────────────────────────────────
+    # ── 构建检索上下文 ─────────────────────────────────────────────────────
     context_parts: list[str] = []
     citations: list[dict] = []
 
-    if chunks:
-        try:
-            ctx_text, citations = _build_context(chunks)
-            context_parts.append(ctx_text)
-        except Exception:
-            pass
+    if not is_direct:
+        if chunks:
+            try:
+                ctx_text, citations = _build_context(chunks)
+                context_parts.append(ctx_text)
+            except Exception:
+                pass
+        if web_context:
+            context_parts.append(f"\n=== 互联网搜索结果 ===\n{web_context}")
+        if context_parts:
+            context_parts.insert(0, "请对以下资料进行深度综合分析：\n")
 
-    if web_context:
-        context_parts.append(f"\n=== 互联网搜索结果 ===\n{web_context}")
-
-    if spec_type == "research":
-        context_parts.insert(0, "请对以下资料进行深度综合分析：\n")
-    elif spec_type == "writing" and format_hint:
-        context_parts.insert(0, f"{format_hint}\n")
-
-    # 组装 LLM 消息
+    # ── 组装 LLM 消息 ────────────────────────────────────────────────────────
     from app.providers.llm import chat_stream
 
     llm_messages: list[dict] = []
     if system_prompt:
         llm_messages.append({"role": "system", "content": system_prompt})
-
-    # 插入历史（最近 6 条）
     llm_messages.extend(history[-6:])
 
     user_content = query
     if context_parts:
-        context_str = "\n\n".join(context_parts)
-        user_content = f"{query}\n\n参考资料：\n{context_str}"
-
+        user_content = f"{query}\n\n参考资料：\n" + "\n\n".join(context_parts)
     llm_messages.append({"role": "user", "content": user_content})
 
     # ── 流式输出 ────────────────────────────────────────────────────────────
+    if not is_direct:
+        await adispatch_custom_event("sse", {"type": "thought", "content": "整合研究资料，生成深度回答…"})
     try:
         async for chunk in chat_stream(llm_messages):
-            if chunk.get("type") == "token":
+            if chunk.get("type") in ("token", "reasoning"):
                 await adispatch_custom_event("sse", chunk)
     except Exception:
         logger.exception("SynthesisNode streaming failed")

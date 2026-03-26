@@ -10,6 +10,7 @@
 import { Brain, MessageCircle, X } from "lucide-react";
 import { m } from "framer-motion";
 import { memo } from "react";
+import { useTranslations } from "next-intl";
 import type { ProactiveSuggestion } from "@/store/use-proactive-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 
@@ -20,6 +21,7 @@ export const SoulCard = memo(function SoulCard({
   suggestion: ProactiveSuggestion;
   onReply?: (text: string) => void;
 }) {
+  const t = useTranslations("copilot");
   const dismiss = useProactiveStore((s) => s.dismissSuggestion);
 
   const content = suggestion.message ?? suggestion.summary;
@@ -47,7 +49,7 @@ export const SoulCard = memo(function SoulCard({
         type="button"
         onClick={() => dismiss(suggestion.id)}
         className="absolute right-2 top-2 z-10 rounded-md p-0.5 text-muted-foreground/30 transition-colors hover:text-muted-foreground/60"
-        aria-label="关闭"
+        aria-label={t("close")}
       >
         <X size={11} />
       </button>
@@ -58,7 +60,7 @@ export const SoulCard = memo(function SoulCard({
           <Brain size={11} className="text-violet-400" />
         </div>
         <span className="text-[10px] font-semibold uppercase tracking-wider text-violet-400/80">
-          Lyra 在想
+          {t("lyraThinking")}
         </span>
       </div>
 
@@ -75,7 +77,7 @@ export const SoulCard = memo(function SoulCard({
           className="flex items-center gap-1.5 rounded-lg border border-violet-500/15 bg-violet-500/[0.06] px-2.5 py-1.5 text-[11px] text-violet-300/80 transition-colors hover:border-violet-500/25 hover:bg-violet-500/10 hover:text-violet-300"
         >
           <MessageCircle size={10} />
-          与 Lyra 聊聊
+          {t("chatWithLyra")}
         </button>
       )}
     </m.div>

@@ -2,6 +2,7 @@
 
 import { memo, useState } from "react"
 import { CheckCircle2, XCircle } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { safeParseJSON } from "./utils"
 
@@ -29,12 +30,13 @@ function normalizeQuestion(raw: Record<string, unknown>): QuizQuestion {
 }
 
 function QuizBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   const [answers, setAnswers] = useState<Record<number, number>>({})
 
   if (isStreaming) {
     return (
       <div className="my-3 flex h-24 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成测验...
+        {t("quizStreaming")}
       </div>
     )
   }
@@ -109,10 +111,10 @@ function QuizBlockInner({ code, isStreaming }: { code: string; isStreaming?: boo
       {allDone && (
         <div className="rounded-xl bg-gradient-to-r from-indigo-500/10 to-violet-500/10 p-3 text-center">
           <p className="text-sm font-semibold text-foreground/80">
-            得分：{totalCorrect}/{data.questions.length}
+            {t("quizScore", { correct: totalCorrect, total: data.questions.length })}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground/60">
-            {totalCorrect === data.questions.length ? "全部正确！" : "继续加油！"}
+            {totalCorrect === data.questions.length ? t("quizAllCorrect") : t("quizKeepGoing")}
           </p>
         </div>
       )}

@@ -139,7 +139,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({ message
                     ? "cursor-wait text-muted-foreground/40"
                     : "text-muted-foreground/50 hover:bg-accent/60 hover:text-foreground"
                   }`}
-                title="插入文字内容到编辑器"
+                title={t("insertToEditor")}
               >
                 {insertState === "loading" ? (
                   <Loader2 size={11} className="animate-spin" />
@@ -161,7 +161,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({ message
                     ? "text-emerald-400"
                     : "text-muted-foreground/50 hover:bg-accent/60 hover:text-foreground"
                   }`}
-                title="将思维导图嵌入编辑器"
+                title={t("insertMindMapToEditor")}
               >
                 {insertMindMapState === "done" ? (
                   <Check size={11} />

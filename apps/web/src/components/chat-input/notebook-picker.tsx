@@ -78,7 +78,7 @@ export const NotebookPicker = forwardRef<NotebookPickerHandle, NotebookPickerPro
         </p>
         {notebooks.length === 0 ? (
           <p className="px-4 pb-3 pt-1 text-xs text-muted-foreground/50">
-            暂无笔记本
+          {t("noNotebooks")}
           </p>
         ) : (
           <div className="max-h-[200px] overflow-y-auto">
@@ -96,7 +96,7 @@ export const NotebookPicker = forwardRef<NotebookPickerHandle, NotebookPickerPro
                 <span className="min-w-0 flex-1 truncate text-left">{nb.title}</span>
                 {nb.sourceCount > 0 && (
                   <span className="flex-shrink-0 text-[10px] text-muted-foreground/40">
-                    {nb.sourceCount} 源
+                    {t("sourcesShort", { count: nb.sourceCount })}
                   </span>
                 )}
               </button>

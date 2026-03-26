@@ -3,6 +3,7 @@
 import { AnimatePresence, m } from "framer-motion"
 import { Code2, Eye, Loader2, X } from "lucide-react"
 import { memo, useEffect, useMemo, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import type { ArtifactPayload } from "./markdown-components"
 
@@ -34,6 +35,7 @@ interface ArtifactPanelProps {
 }
 
 function ArtifactPanelInner({ artifact, onClose }: ArtifactPanelProps) {
+  const t = useTranslations("genui")
   const [tab, setTab] = useState<"preview" | "source">("source")
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const codeRef = useRef<HTMLPreElement>(null)
@@ -85,7 +87,7 @@ function ArtifactPanelInner({ artifact, onClose }: ArtifactPanelProps) {
                 )}
               >
                 <Eye size={12} />
-                预览
+                {t("artifactPreview")}
               </button>
               <button
                 type="button"
@@ -96,7 +98,7 @@ function ArtifactPanelInner({ artifact, onClose }: ArtifactPanelProps) {
                 )}
               >
                 <Code2 size={12} />
-                源码
+                {t("artifactSource")}
               </button>
             </div>
             <button
@@ -114,7 +116,7 @@ function ArtifactPanelInner({ artifact, onClose }: ArtifactPanelProps) {
                 {!iframeReady && (
                   <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background">
                     <Loader2 size={24} className="animate-spin text-indigo-400" />
-                    <span className="text-xs text-muted-foreground/60">正在加载预览…</span>
+                    <span className="text-xs text-muted-foreground/60">{t("artifactLoadingPreview")}</span>
                   </div>
                 )}
                 <iframe

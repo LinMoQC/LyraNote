@@ -191,14 +191,16 @@ class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[uuid.UUID] = uuid_pk()
-    notebook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notebooks.id", ondelete="CASCADE"))
+    notebook_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notebooks.id", ondelete="SET NULL"), nullable=True
+    )
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     title: Mapped[str | None] = mapped_column(String(500))
     # "chat" (full-screen chat page) | "copilot" (sidebar copilot panel)
     source: Mapped[str] = mapped_column(String(20), server_default="chat", nullable=False)
     created_at: Mapped[datetime] = now_col()
 
-    notebook: Mapped["Notebook"] = relationship(back_populates="conversations")
+    notebook: Mapped["Notebook | None"] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(back_populates="conversation", order_by="Message.created_at", passive_deletes=True)
 
 

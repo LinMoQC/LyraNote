@@ -11,7 +11,7 @@ import { AnimatePresence, m } from "framer-motion";
 import { Library } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { CopilotPanel, DEFAULT_WIDTH } from "@/features/copilot/copilot-panel";
@@ -29,6 +29,8 @@ import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { getWritingContext } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
+import { listNotes } from "@/services/note-service";
+import type { NoteRecord } from "@/services/note-service";
 import { useMarkdownWorker } from "@/hooks/use-markdown-worker";
 import { cn } from "@/lib/utils";
 import type { Message, MindMapData } from "@/types";
@@ -120,6 +122,45 @@ export function NotebookWorkspace({
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
   const [noteRefreshKey, setNoteRefreshKey] = useState(0);
   const convertMarkdown = useMarkdownWorker();
+
+  // Active note state — drives both NotePickerDropdown and NoteEditor
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [activeNoteTitle, setActiveNoteTitle] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // On mount, load the first note to populate the picker
+  useEffect(() => {
+    if (activeNoteId !== null) return;
+    listNotes(notebookId).then((notes) => {
+      if (notes[0]) {
+        setActiveNoteId(notes[0].id);
+        setActiveNoteTitle(notes[0].title ?? null);
+      }
+    });
+  }, [notebookId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleNoteSelect = useCallback((note: NoteRecord) => {
+    setActiveNoteId(note.id);
+    setActiveNoteTitle(note.title ?? null);
+  }, []);
+
+  const handleNoteCreated = useCallback((note: NoteRecord) => {
+    setActiveNoteId(note.id);
+    setActiveNoteTitle(note.title ?? null);
+    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+  }, [notebookId, queryClient]);
+
+  const handleNoteDeleted = useCallback((deletedNoteId: string) => {
+    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    if (activeNoteId === deletedNoteId) {
+      // Fall back to the next available note
+      listNotes(notebookId).then((notes) => {
+        const next = notes.find((n) => n.id !== deletedNoteId) ?? null;
+        setActiveNoteId(next?.id ?? null);
+        setActiveNoteTitle(next?.title ?? null);
+      });
+    }
+  }, [notebookId, activeNoteId, queryClient]);
 
   const handleEditorReady = useCallback((editor: Editor) => {
     editorRef.current = editor;
@@ -224,6 +265,11 @@ export function NotebookWorkspace({
         onTitleChange={setNotebookTitle}
         isFullscreen={isFullscreen}
         onToggleFullscreen={() => setIsFullscreen((v) => !v)}
+        activeNoteId={activeNoteId}
+        activeNoteTitle={activeNoteTitle}
+        onNoteSelect={handleNoteSelect}
+        onNoteCreated={handleNoteCreated}
+        onNoteDeleted={handleNoteDeleted}
       />
 
       <div className="relative flex flex-1 overflow-hidden">
@@ -251,6 +297,7 @@ export function NotebookWorkspace({
         <div className="relative flex flex-1 overflow-hidden">
           <NoteEditor
             notebookId={notebookId}
+            noteId={activeNoteId}
             notebookTitle={notebookTitle}
             onEditorReady={handleEditorReady}
             onAskAI={handleAskAI}
@@ -283,7 +330,12 @@ export function NotebookWorkspace({
             onClose={() => setCopilotOpen(false)}
             onInsertToEditor={handleInsertToEditor}
             onInsertMindMap={handleInsertMindMap}
-            onNoteCreated={() => setNoteRefreshKey((k) => k + 1)}
+            onNoteCreated={(noteId, noteTitle) => {
+              setActiveNoteId(noteId);
+              setActiveNoteTitle(noteTitle);
+              void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+              setNoteRefreshKey((k) => k + 1);
+            }}
             pendingPrompt={pendingPrompt}
             pendingQuote={pendingQuote}
             getEditorContext={getEditorContext}

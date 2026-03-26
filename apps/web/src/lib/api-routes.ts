@@ -47,6 +47,8 @@ export const CONFIG = {
   BASE: "/config",
   /** POST - 测试已保存的 LLM 配置 */
   TEST_LLM: "/config/test-llm",
+  /** POST - 测试已保存的小模型配置 */
+  TEST_UTILITY_LLM: "/config/test-utility-llm",
   /** POST - 测试已保存的 Embedding 配置 */
   TEST_EMBEDDING: "/config/test-embedding",
   /** POST - 测试已保存的 Reranker 配置 */
@@ -75,7 +77,7 @@ export const NOTEBOOKS = {
 export const NOTES = {
   /** GET / POST - 笔记本下的笔记列表 / 创建笔记 */
   list: (notebookId: string) => `/notebooks/${notebookId}/notes`,
-  /** PATCH - 更新笔记 */
+  /** GET / PATCH / DELETE - 单篇笔记 */
   detail: (noteId: string) => `/notes/${noteId}`,
 } as const;
 
@@ -111,6 +113,8 @@ export const SOURCES = {
 export const CONVERSATIONS = {
   /** GET / POST - 笔记本下的对话列表 / 创建对话 */
   list: (notebookId: string) => `/notebooks/${notebookId}/conversations`,
+  /** GET / POST - 全局对话列表 / 创建（无笔记本） */
+  GLOBAL_LIST: "/conversations",
   /** DELETE - 删除对话 */
   detail: (conversationId: string) => `/conversations/${conversationId}`,
   /** GET - 对话消息列表 */

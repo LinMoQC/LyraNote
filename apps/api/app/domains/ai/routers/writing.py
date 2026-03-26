@@ -16,7 +16,7 @@ from app.domains.ai.schemas import (
 )
 from app.models import Chunk, Source
 from app.schemas.response import ApiResponse, success
-from app.providers.llm import get_client
+from app.providers.llm import get_client, get_utility_model, get_utility_client
 
 router = APIRouter()
 
@@ -26,11 +26,11 @@ router = APIRouter()
 @router.post("/ai/polish")
 async def polish_text(body: PolishRequest, current_user: CurrentUser):
     """Stream-polish a piece of text inline in the editor."""
-    client = get_client()
+    client = get_utility_client()
 
     async def generate():
         stream = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=get_utility_model(),
             messages=[
                 {
                     "role": "system",

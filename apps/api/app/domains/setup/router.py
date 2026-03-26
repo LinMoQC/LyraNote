@@ -35,6 +35,10 @@ RUNTIME_CONFIG_KEYS = [
     "openai_api_key",
     "openai_base_url",
     "llm_model",
+    # Utility model (optional small/fast model for utility tasks)
+    "llm_utility_model",
+    "llm_utility_api_key",
+    "llm_utility_base_url",
     "embedding_model",
     "embedding_api_key",
     "embedding_base_url",
@@ -201,8 +205,9 @@ async def setup_test_llm(body: SetupTestLlmRequest):
             call_kw: dict = dict(
                 model=body.model,
                 messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
+                max_tokens=100,
                 api_key=body.api_key,
+                drop_params=True,
             )
             if body.model.startswith("gemini/"):
                 call_kw["custom_llm_provider"] = "gemini"
@@ -220,7 +225,7 @@ async def setup_test_llm(body: SetupTestLlmRequest):
             resp = await client.chat.completions.create(
                 model=body.model,
                 messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
+                max_tokens=100,
             )
             reply = (resp.choices[0].message.content or "").strip()
         return success(SetupTestLlmResponse(ok=True, message=reply or "OK"))

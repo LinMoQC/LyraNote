@@ -26,7 +26,6 @@ export interface ClarifyingState {
 }
 
 interface UseDeepResearchOpts {
-  globalNotebookId: string | undefined;
   activeConvId: string | null;
   drMode: "quick" | "deep";
   streaming: boolean;
@@ -41,7 +40,6 @@ interface UseDeepResearchOpts {
 const getDrState = () => useDeepResearchStore.getState();
 
 export function useDeepResearch({
-  globalNotebookId,
   activeConvId,
   drMode,
   streaming,
@@ -110,8 +108,8 @@ export function useDeepResearch({
       }
 
       // Refresh messages from server (backend already saved user + assistant messages)
-      if (convId && globalNotebookId) {
-        queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+      if (convId) {
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
 
       const finalize = () => {
@@ -163,14 +161,14 @@ export function useDeepResearch({
     deliverableMessageIdRef.current = null;
 
     try {
-      await getDrState().start(text, globalNotebookId ?? undefined, drMode, clarificationContext ?? undefined);
+      await getDrState().start(text, undefined, drMode, clarificationContext ?? undefined);
 
       const { conversationId } = getDrState();
       if (conversationId) {
         setActiveConvId(conversationId);
         saveActiveConversation(conversationId);
         drPersistedRef.current = true;
-        queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
       }
     } catch (error) {
       if (isAbortError(error)) return;
@@ -181,7 +179,7 @@ export function useDeepResearch({
       streamLifecycle.finish();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globalNotebookId, drMode, streamLifecycle, streamAbortRef, setStreaming, setActiveConvId, queryClient, t]);
+  }, [drMode, streamLifecycle, streamAbortRef, setStreaming, setActiveConvId, queryClient, t]);
 
   const handleDeepResearch = useCallback(async (overrideText?: string) => {
     const text = overrideText ?? "";
@@ -222,14 +220,15 @@ export function useDeepResearch({
   }, [clarifyingState, _startResearch]);
 
   const handleSaveAsNote = useCallback(async (reportOverride?: string, titleOverride?: string) => {
-    if (!globalNotebookId) throw new Error("No notebook");
     const state = getDrState();
+    const notebookId = state.notebookId;
     const report = reportOverride ?? state.reportTokens ?? lastReportRef.current?.tokens;
     const title = titleOverride ?? state.progress?.deliverable?.title ?? lastReportRef.current?.title ?? t("reportLabel");
     if (!report) throw new Error("No report content");
+    if (!notebookId) throw new Error("No notebook");
     try {
       await saveNote({
-        notebookId: globalNotebookId,
+        notebookId,
         noteId: null,
         title,
         contentJson: {
@@ -242,7 +241,7 @@ export function useDeepResearch({
       notifyError(tc("saveFailed"));
       throw e;
     }
-  }, [globalNotebookId, t, tc]);
+  }, [t, tc]);
 
   const handleDrRate = useCallback(async (rating: "like" | "dislike") => {
     const msgId = deliverableMessageIdRef.current;

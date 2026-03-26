@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { memo, useMemo } from "react"
 import dynamic from "next/dynamic"
 import { safeParseJSON } from "./utils"
@@ -23,10 +25,11 @@ const COLOR_SCHEMES: Record<string, string[]> = {
 }
 
 function HeatmapBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   if (isStreaming) {
     return (
       <div className="my-3 flex h-40 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成热力图...
+        {t("heatmapStreaming")}
       </div>
     )
   }

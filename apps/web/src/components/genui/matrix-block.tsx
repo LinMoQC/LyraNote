@@ -1,6 +1,7 @@
 "use client"
 
 import { memo, useMemo } from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { safeParseJSON } from "./utils"
 
@@ -24,10 +25,11 @@ function scoreColor(score: number, max: number = 10): string {
 }
 
 function MatrixBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   if (isStreaming) {
     return (
       <div className="my-3 flex h-32 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成评估矩阵...
+        {t("matrixStreaming")}
       </div>
     )
   }
@@ -50,7 +52,7 @@ function MatrixBlockInner({ code, isStreaming }: { code: string; isStreaming?: b
       <table className="w-full border-collapse text-sm">
         <thead className="bg-white/[0.04]">
           <tr>
-            <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-foreground/70">方案</th>
+            <th className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold text-foreground/70">{t("matrixOption")}</th>
             {data.criteria.map((c, i) => (
               <th key={i} className="whitespace-nowrap px-3 py-2 text-center text-xs font-semibold text-foreground/70">
                 {c}
@@ -59,7 +61,7 @@ function MatrixBlockInner({ code, isStreaming }: { code: string; isStreaming?: b
                 )}
               </th>
             ))}
-            <th className="whitespace-nowrap px-3 py-2 text-center text-xs font-semibold text-foreground/70">综合分</th>
+            <th className="whitespace-nowrap px-3 py-2 text-center text-xs font-semibold text-foreground/70">{t("matrixTotal")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-white/[0.06]">

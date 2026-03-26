@@ -21,7 +21,6 @@ import { groupByDate } from "./chat-helpers";
 export interface ChatSidebarPanelProps {
   conversationList: ConversationRecord[];
   activeConvId: string | null;
-  globalNotebookId: string | undefined;
   hasMoreConversations: boolean;
   deletePending: boolean;
   onSelectConv: (conv: ConversationRecord) => void;
@@ -33,7 +32,6 @@ export interface ChatSidebarPanelProps {
 export function ChatSidebarPanel({
   conversationList,
   activeConvId,
-  globalNotebookId,
   hasMoreConversations,
   deletePending,
   onSelectConv,
@@ -183,12 +181,7 @@ export function ChatSidebarPanel({
             </div>
           )}
 
-          {conversationList.length === 0 && !globalNotebookId && (
-            <div className="flex flex-col items-center gap-2 py-10">
-              <Loader2 size={16} className="animate-spin text-muted-foreground/25" />
-            </div>
-          )}
-          {conversationList.length === 0 && globalNotebookId && (
+          {conversationList.length === 0 && (
             <div className="flex flex-col items-center gap-2 px-4 py-10">
               <MessageSquare size={18} className="text-muted-foreground/20" />
               <p className="text-center text-[12px] text-muted-foreground/35">

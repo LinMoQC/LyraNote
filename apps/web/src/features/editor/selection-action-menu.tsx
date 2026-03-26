@@ -20,6 +20,7 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { useInlinePolish } from "@/hooks/use-inline-polish";
 
@@ -80,6 +81,7 @@ function AiBtn({
 }
 
 export function SelectionActionMenu({ editor, onAskAI }: Props) {
+  const t = useTranslations("editor");
   const { polish, cancel, isPolishing } = useInlinePolish(editor);
 
   if (!editor) return null;
@@ -134,7 +136,7 @@ export function SelectionActionMenu({ editor, onAskAI }: Props) {
         <IconBtn
           active={false}
           onClick={() => editor.chain().focus().setParagraph().run()}
-          title="Text"
+          title={t("blockTypeText")}
         >
           <span className="text-[15px] font-normal leading-none">T</span>
         </IconBtn>
@@ -213,37 +215,37 @@ export function SelectionActionMenu({ editor, onAskAI }: Props) {
             className="flex w-full items-center gap-2 rounded-md px-2 py-[5px] text-[13px] text-violet-400 transition-colors hover:bg-red-500/10 hover:text-red-400"
           >
             <Loader2 size={13} className="animate-spin flex-shrink-0" />
-            Improving…
+            {t("selectionImproving")}
             <X size={11} className="ml-auto opacity-60" />
           </button>
         ) : (
           <AiBtn
             icon={<WandSparkles size={13} />}
-            label="Improve writing"
+            label={t("selectionImprove")}
             onClick={polish}
           />
         )}
         <AiBtn
           icon={<CheckCircle2 size={13} />}
-          label="Proofread"
+          label={t("selectionProofread")}
           onClick={() => handleAI("proofread")}
           disabled={isPolishing}
         />
         <AiBtn
           icon={<MessageSquare size={13} />}
-          label="Explain"
+          label={t("selectionExplain")}
           onClick={() => handleAI("explain")}
           disabled={isPolishing}
         />
         <AiBtn
           icon={<Sparkles size={13} />}
-          label="Reformat"
+          label={t("selectionReformat")}
           onClick={() => handleAI("reformat")}
           disabled={isPolishing}
         />
         <AiBtn
           icon={<PenLine size={13} />}
-          label="Edit with AI"
+          label={t("selectionEditAI")}
           onClick={() => handleAI("ask")}
           disabled={isPolishing}
         />

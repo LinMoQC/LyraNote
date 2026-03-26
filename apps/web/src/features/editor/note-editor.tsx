@@ -16,7 +16,7 @@ import { Pen, Search } from "lucide-react";
 import { SelectionActionMenu } from "@/features/editor/selection-action-menu";
 import { tiptapExtensions } from "@/lib/tiptap";
 import { getInlineSuggestion } from "@/services/ai-service";
-import { getNoteForNotebook, saveNote } from "@/services/note-service";
+import { getNoteForNotebook, getNote, saveNote } from "@/services/note-service";
 import { BlockHandle } from "./block-handle";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error"
@@ -26,6 +26,7 @@ const MAX_NUDGES_PER_SESSION = 3;
 
 type NoteEditorProps = {
   notebookId: string;
+  noteId?: string | null;
   notebookTitle?: string;
   onEditorReady?: (editor: Editor) => void;
   onAskAI?: (text: string, action: string) => void;
@@ -38,6 +39,7 @@ type NoteEditorProps = {
 
 export function NoteEditor({
   notebookId,
+  noteId,
   notebookTitle,
   onEditorReady,
   onAskAI,
@@ -79,11 +81,20 @@ export function NoteEditor({
     if (editor) onEditorReadyRef.current?.(editor);
   }, [editor]);
 
-  // Load existing note for this notebook (re-runs when refreshKey changes)
+  // Load note: by explicit noteId if provided, otherwise load first note for notebook
   useEffect(() => {
     if (!editor) return
-    getNoteForNotebook(notebookId).then((note) => {
-      if (!note) return
+    const loadFn = noteId
+      ? () => getNote(noteId)
+      : () => getNoteForNotebook(notebookId)
+    loadFn().then((note) => {
+      if (!note) {
+        noteIdRef.current = null
+        setTitle("")
+        titleRef.current = ""
+        editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, true)
+        return
+      }
       noteIdRef.current = note.id
       setTitle(note.title ?? "")
       titleRef.current = note.title ?? ""
@@ -91,7 +102,7 @@ export function NoteEditor({
         editor.commands.setContent(note.contentJson, true)
       }
     })
-  }, [editor, notebookId, refreshKey])
+  }, [editor, notebookId, noteId, refreshKey])
 
   // Immediate save (used by Cmd+S)
   const saveNow = useCallback(async () => {
@@ -265,7 +276,7 @@ export function NoteEditor({
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* ── Editor body ──────────────────────────────────────── */}
       <div className="hide-scrollbar flex-1 overflow-y-auto">
-        <div className={`mx-auto px-10 py-8 ${wideLayout ? "max-w-[980px]" : "max-w-[680px]"}`}>
+        <div className={`mx-auto px-10 py-8 ${wideLayout ? "max-w-[980px] xl:max-w-[1200px] 2xl:max-w-[1500px]" : "max-w-[680px] xl:max-w-[800px] 2xl:max-w-[960px]"}`}>
           <input
             className="mb-8 w-full bg-transparent text-[30px] font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-foreground/15"
             value={title}

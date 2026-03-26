@@ -15,6 +15,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { safeParseJSON } from "./utils"
 
@@ -73,10 +74,11 @@ function SortableCard({ card }: { card: KanbanCard }) {
 }
 
 function KanbanBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   if (isStreaming) {
     return (
       <div className="my-3 flex h-32 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成看板...
+        {t("kanbanStreaming")}
       </div>
     )
   }

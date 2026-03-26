@@ -66,7 +66,7 @@ export function CopilotPanel({
   onInsertToEditor?: (content: string) => void | Promise<void>;
   onInsertMindMap?: (data: MindMapData) => void;
   onWidthChange?: (width: number) => void;
-  onNoteCreated?: () => void;
+  onNoteCreated?: (noteId: string, noteTitle: string | null) => void;
   pendingPrompt?: { text: string; key: number } | null;
   pendingQuote?: { text: string; key: number } | null;
   getEditorContext?: () => string;
@@ -309,7 +309,7 @@ export function CopilotPanel({
               );
             }
             if (event.type === "note_created") {
-              onNoteCreated?.();
+              onNoteCreated?.(event.note_id as string, (event.note_title as string | null) ?? null);
               return;
             }
             // Common: human_approve_required + append to agentSteps

@@ -36,6 +36,7 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
   const router = useRouter();
   const t = useTranslations("notebooks");
   const tc = useTranslations("common");
+  const tn = useTranslations("nav");
   const [view, setView] = useState<ViewMode>("grid");
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -71,7 +72,7 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             <SlidersHorizontal size={14} />
-            最近
+            {tn("recent")}
           </button>
 
           {/* View toggle */}
@@ -121,7 +122,7 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
           variants={container}
           initial="hidden"
           animate="show"
-          className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 w-full"
         >
           <m.div variants={item} className="h-full">
             <NewNotebookCard onClick={() => setCreateOpen(true)} />
@@ -152,7 +153,7 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
 
       {/* ── Create dialog ───────────────────────────────────────────────── */}
       <Dialog
-        description="新建一个笔记本开始整理你的知识。"
+        description={t("createDesc")}
         open={createOpen}
         title={t("dialog.title")}
       >

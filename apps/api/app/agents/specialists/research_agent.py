@@ -19,6 +19,7 @@ async def research_agent_node(state: dict) -> dict:
     LangGraph 节点：执行快速研究（RAG + 可选 Web 搜索）。
     """
     from app.agents.rag.retrieval import retrieve_chunks
+    from langchain_core.callbacks.manager import adispatch_custom_event
 
     query: str = state["query"]
     notebook_id: str = state["notebook_id"]
@@ -28,6 +29,11 @@ async def research_agent_node(state: dict) -> dict:
     history: list[dict] = state.get("messages", [])[-6:]
 
     # ── 1. RAG 检索（本地知识优先）────────────────────────────────────────────
+    await adispatch_custom_event("sse", {
+        "type": "tool_call",
+        "tool": "rag_search",
+        "input": {"query": query, "global_search": True, "top_k": 12},
+    })
     try:
         chunks = await retrieve_chunks(
             query=query,
@@ -42,9 +48,28 @@ async def research_agent_node(state: dict) -> dict:
         logger.warning("ResearchAgent RAG retrieval failed", exc_info=True)
         chunks = []
 
+    await adispatch_custom_event("sse", {
+        "type": "tool_result",
+        "content": (
+            f"检索到 {len(chunks)} 条相关片段"
+            + (
+                "\n" + "\n".join(
+                    f"· {c.get('source_title', '未知来源')}"
+                    for c in chunks[:5]
+                )
+                if chunks else ""
+            )
+        ),
+    })
+
     # ── 2. Web 搜索补充（可选，仅当本地结果不足时）──────────────────────────────
     web_context: str | None = None
     if len(chunks) < 4:
+        await adispatch_custom_event("sse", {
+            "type": "tool_call",
+            "tool": "web_search",
+            "input": {"query": query, "max_results": 5},
+        })
         try:
             from app.skills.builtin.web_search import skill as web_search_skill
             from app.agents.core.tools import ToolContext
@@ -57,6 +82,10 @@ async def research_agent_node(state: dict) -> dict:
                 history=history,
             )
             web_context = await web_search_skill.execute({"query": query, "max_results": 5}, ctx)
+            await adispatch_custom_event("sse", {
+                "type": "tool_result",
+                "content": "互联网搜索完成",
+            })
         except Exception:
             logger.debug("ResearchAgent web search failed (non-fatal)", exc_info=True)
 

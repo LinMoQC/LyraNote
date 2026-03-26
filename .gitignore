@@ -68,5 +68,8 @@ api/storage/
 # agent memory (runtime data, user-specific — not for version control)
 api/data/memory/
 
+# daily rotating log files
+api/logs/
+
 # design docs (internal only)
 docs/

@@ -18,6 +18,25 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+
+try:
+    from json_repair import repair_json as _repair_json
+
+    def _loads(s: str) -> dict:
+        repaired = _repair_json(s)
+        data = json.loads(repaired)
+        # LLM sometimes wraps the object in a list: [{...}]
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    return item
+            raise ValueError(f"Expected JSON object, got non-empty list without dict items")
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected JSON object, got {type(data).__name__}")
+        return data
+except ImportError:
+    def _loads(s: str) -> dict:  # type: ignore[misc]
+        return json.loads(s)
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -102,7 +121,7 @@ async def reflect_on_conversation(
             max_tokens=300,
         )
         raw = raw.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
-        data: dict = json.loads(raw)
+        data: dict = _loads(raw)
     except Exception as exc:
         logger.warning("Reflection LLM call failed: %s", exc)
         return

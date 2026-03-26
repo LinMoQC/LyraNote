@@ -92,6 +92,9 @@ async def rechunk_source(
         strategy=body.strategy,
         chunk_size=body.chunk_size,
         chunk_overlap=body.chunk_overlap,
+        splitter_type=body.splitter_type,
+        separators=body.separators,
+        min_chunk_size=body.min_chunk_size,
     )
     return success({"status": "queued", "chunk_size": chunk_size, "chunk_overlap": chunk_overlap})
 

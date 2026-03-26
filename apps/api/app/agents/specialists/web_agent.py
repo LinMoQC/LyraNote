@@ -19,6 +19,7 @@ async def web_agent_node(state: dict) -> dict:
     """
     from app.skills.builtin.web_search import skill as web_search_skill
     from app.agents.core.tools import ToolContext
+    from langchain_core.callbacks.manager import adispatch_custom_event
 
     query: str = state["query"]
     notebook_id: str = state["notebook_id"]
@@ -27,6 +28,12 @@ async def web_agent_node(state: dict) -> dict:
 
     web_context: str | None = None
     search_results: list[dict] = []
+
+    await adispatch_custom_event("sse", {
+        "type": "tool_call",
+        "tool": "web_search",
+        "input": {"query": query, "max_results": 8},
+    })
 
     try:
         ctx = ToolContext(
@@ -41,6 +48,10 @@ async def web_agent_node(state: dict) -> dict:
             ctx,
         )
         web_context = raw if isinstance(raw, str) else str(raw)
+        await adispatch_custom_event("sse", {
+            "type": "tool_result",
+            "content": "互联网搜索完成",
+        })
     except Exception:
         logger.warning("WebAgent search failed", exc_info=True)
         web_context = None

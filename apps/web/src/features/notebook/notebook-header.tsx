@@ -11,12 +11,15 @@ import {
   Type,
 } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, m } from "framer-motion";
 
 import { deleteNotebook, renameNotebook } from "@/services/notebook-service";
+import { NotePickerDropdown } from "@/features/notebook/note-picker-dropdown";
+import type { NoteRecord } from "@/services/note-service";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -37,6 +40,11 @@ export function NotebookTopBar({
   onTitleChange,
   isFullscreen = false,
   onToggleFullscreen,
+  activeNoteId,
+  activeNoteTitle,
+  onNoteSelect,
+  onNoteCreated,
+  onNoteDeleted,
 }: {
   notebookId: string;
   title: string;
@@ -44,7 +52,14 @@ export function NotebookTopBar({
   onTitleChange?: (title: string) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  activeNoteId?: string | null;
+  activeNoteTitle?: string | null;
+  onNoteSelect?: (note: NoteRecord) => void;
+  onNoteCreated?: (note: NoteRecord) => void;
+  onNoteDeleted?: (noteId: string) => void;
 }) {
+  const t = useTranslations("notebook");
+  const tc = useTranslations("common");
   const router = useRouter();
   const [title, setTitle] = useState(externalTitle);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -105,7 +120,7 @@ export function NotebookTopBar({
 
   const handleDelete = async () => {
     setMenuOpen(false);
-    if (confirm("确认将此笔记本移入回收站？此操作不可恢复。")) {
+    if (confirm(t("trashConfirm"))) {
       await deleteNotebook(notebookId);
       router.push("/app/notebooks");
     }
@@ -119,7 +134,7 @@ export function NotebookTopBar({
   const menuItems: MenuItem[] = [
     {
       id: "smallText",
-      label: "小号文字",
+      label: t("smallText"),
       icon: Type,
       toggle: true,
       checked: smallText,
@@ -130,13 +145,13 @@ export function NotebookTopBar({
     },
     {
       id: "copyLink",
-      label: "复制链接",
+      label: t("copyLink"),
       icon: Copy,
       action: handleCopyLink,
     },
     {
       id: "rename",
-      label: "重命名",
+      label: t("rename"),
       icon: Pencil,
       action: () => {
         setIsRenaming(true);
@@ -145,7 +160,7 @@ export function NotebookTopBar({
     },
     {
       id: "fullscreen",
-      label: "全屏",
+      label: t("fullscreen"),
       icon: Expand,
       toggle: true,
       checked: isFullscreen,
@@ -156,7 +171,7 @@ export function NotebookTopBar({
     },
     {
       id: "delete",
-      label: "移入回收站",
+      label: t("moveToTrash"),
       icon: Trash2,
       danger: true,
       action: handleDelete,
@@ -182,7 +197,7 @@ export function NotebookTopBar({
           className="flex items-center gap-0.5 rounded-sm px-1.5 py-1 transition-colors hover:bg-accent/60 hover:text-foreground/80"
         >
           <ChevronLeft size={13} />
-          <span>返回</span>
+          <span>{t("back")}</span>
         </Link>
         <span className="px-0.5 text-muted-foreground/30">/</span>
 
@@ -197,7 +212,7 @@ export function NotebookTopBar({
               setIsRenaming(false);
             }}
           >
-            {title || "无标题笔记本"}
+            {title || t("untitled")}
           </button>
         ) : (
           <button
@@ -205,10 +220,22 @@ export function NotebookTopBar({
             type="button"
             className="max-w-[280px] truncate rounded-sm px-1.5 py-1 text-[13px] text-foreground/75 transition-colors hover:bg-accent/60 hover:text-foreground"
             onClick={() => setIsRenaming(true)}
-            title="点击重命名"
+            title={t("clickToRename")}
           >
-            {title || "无标题笔记本"}
+            {title || t("untitled")}
           </button>
+        )}
+
+        {/* Note picker: shown only when not renaming */}
+        {!isRenaming && onNoteSelect && onNoteCreated && onNoteDeleted && (
+          <NotePickerDropdown
+            notebookId={notebookId}
+            activeNoteId={activeNoteId ?? null}
+            activeNoteTitle={activeNoteTitle ?? null}
+            onSelect={onNoteSelect}
+            onCreated={onNoteCreated}
+            onDeleted={onNoteDeleted}
+          />
         )}
 
         {renamePos && createPortal(
@@ -227,7 +254,7 @@ export function NotebookTopBar({
                 <input
                   ref={renameInputRef}
                   className="w-full rounded-lg bg-muted/40 px-3 py-2 text-[13px] text-foreground outline-none ring-1 ring-primary/40 placeholder:text-muted-foreground/40"
-                  placeholder="笔记本名称…"
+                  placeholder={t("namePlaceholder")}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
                   onBlur={() => {
@@ -258,17 +285,17 @@ export function NotebookTopBar({
         {saveStatus === "saving" && (
           <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40" />
-            保存中…
+            {tc("saving")}
           </span>
         )}
         {saveStatus === "saved" && (
           <span className="flex items-center gap-1.5 text-[11px] text-emerald-400/70">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/70" />
-            已保存
+            {tc("saved")}
           </span>
         )}
         {saveStatus === "error" && (
-          <span className="text-[11px] text-red-400/70">保存失败</span>
+          <span className="text-[11px] text-red-400/70">{t("saveFailedShort")}</span>
         )}
 
         {/* ... menu */}
@@ -292,7 +319,7 @@ export function NotebookTopBar({
               setMenuOpen(true);
             }}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-accent/60 hover:text-foreground"
-            title="更多选项"
+            title={t("moreOptions")}
           >
             <MoreHorizontal size={15} />
           </button>
@@ -317,7 +344,7 @@ export function NotebookTopBar({
                   <input
                     ref={searchRef}
                     className="flex-1 bg-transparent text-[12px] text-foreground/80 outline-none placeholder:text-muted-foreground/40"
-                    placeholder="搜索操作…"
+                    placeholder={t("commandSearch")}
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     onKeyDown={(e) => e.key === "Escape" && setMenuOpen(false)}
@@ -376,7 +403,7 @@ export function NotebookTopBar({
 
               {filtered.length === 0 && (
                 <p className="px-4 py-4 text-center text-[12px] text-muted-foreground/40">
-                  未找到匹配操作
+                  {t("commandNoResults")}
                 </p>
               )}
             </m.div>

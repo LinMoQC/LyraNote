@@ -123,7 +123,10 @@ export async function sendMessageStream(
 
   // If no existing conversation, create one first
   if (!convId) {
-    const convRaw = await http.fetchJson<{ id: string }>(CONVERSATIONS.list(notebookId!), {
+    const createUrl = notebookId
+      ? CONVERSATIONS.list(notebookId)
+      : CONVERSATIONS.GLOBAL_LIST;
+    const convRaw = await http.fetchJson<{ id: string }>(createUrl, {
       method: "POST",
       body: JSON.stringify({ title: prompt.slice(0, 60), source: isCopilot ? "copilot" : "chat" }),
       signal,

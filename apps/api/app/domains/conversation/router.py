@@ -41,6 +41,36 @@ async def create_conversation(
     return success(await svc.create(notebook_id, body.title, source=body.source))
 
 
+# ── Notebook-free chat (global chat page) ─────────────────────────────────────
+
+@router.get(
+    "/conversations",
+    response_model=ApiResponse[list[ConversationOut]],
+)
+async def list_global_conversations(
+    db: DbDep,
+    current_user: CurrentUser,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """List conversations that are not tied to any notebook (global chat page)."""
+    svc = ConversationService(db, current_user.id)
+    return success(await svc.list_global(offset=offset, limit=limit))
+
+
+@router.post(
+    "/conversations",
+    response_model=ApiResponse[ConversationOut],
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_global_conversation(
+    body: ConversationCreate, db: DbDep, current_user: CurrentUser
+):
+    """Create a conversation not tied to any notebook (global chat page)."""
+    svc = ConversationService(db, current_user.id)
+    return success(await svc.create(None, body.title, source=body.source))
+
+
 @router.get(
     "/conversations/{conversation_id}/messages",
     response_model=ApiResponse[list[MessageOut]],

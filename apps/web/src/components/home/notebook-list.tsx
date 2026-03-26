@@ -2,6 +2,7 @@
 
 import { m } from "framer-motion";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 import type { Notebook } from "@/types";
 
@@ -34,6 +35,7 @@ const itemVariants = {
 };
 
 export function NotebookList({ notebooks }: { notebooks: Notebook[] }) {
+  const t = useTranslations("home");
   return (
     <m.div
       className="flex flex-col"
@@ -58,7 +60,7 @@ export function NotebookList({ notebooks }: { notebooks: Notebook[] }) {
                   {notebook.title}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground/60">
-                  {formatDate(notebook.updatedAt)} · {notebook.sourceCount} 个来源
+                  {formatDate(notebook.updatedAt)} · {t("sources", { count: notebook.sourceCount })}
                 </p>
               </div>
             </Link>

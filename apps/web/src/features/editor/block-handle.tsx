@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslations } from "next-intl";
 
 type BlockInfo = {
   top: number;
@@ -121,6 +122,7 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
 }
 
 export function BlockHandle({ editor, onAskAI }: Props) {
+  const t = useTranslations("editor");
   const [hoverBlock, setHoverBlock] = useState<BlockInfo | null>(null);
   const [anchoredBlock, setAnchoredBlock] = useState<BlockInfo | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -288,7 +290,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
           content = { type };
           break;
         case "mindMap":
-          content = { type, attrs: attrs ?? { data: JSON.stringify({ title: "新思维导图", branches: [] }) } };
+          content = { type, attrs: attrs ?? { data: JSON.stringify({ title: t("mindMapDefaultTitle"), branches: [] }) } };
           break;
         default:
           content = attrs ? { type, attrs } : { type, content: [] };
@@ -300,7 +302,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
       setAddMenuOpen(false);
       setAddFilter("");
     },
-    [editor, block],
+    [editor, block, t],
   );
 
   // ── Turn into ─────────────────────────────────────────────────────────────
@@ -419,13 +421,13 @@ export function BlockHandle({ editor, onAskAI }: Props) {
 
   // ── Turn-into items ─────────────────────────────────────────────────────
   const turnIntoItems = [
-    { label: "Text", icon: Pilcrow, action: () => handleTurnInto("paragraph") },
+    { label: t("blockTypeText"), icon: Pilcrow, action: () => handleTurnInto("paragraph") },
     { label: "H1", icon: Heading1, action: () => handleTurnInto("heading", { level: 1 }) },
     { label: "H2", icon: Heading2, action: () => handleTurnInto("heading", { level: 2 }) },
     { label: "H3", icon: Heading3, action: () => handleTurnInto("heading", { level: 3 }) },
-    { label: "Bullet List", icon: List, action: () => handleTurnInto("bulletList") },
-    { label: "Numbered List", icon: ListOrdered, action: () => handleTurnInto("orderedList") },
-    { label: "Quote", icon: Quote, action: () => handleTurnInto("blockquote") },
+    { label: t("blockTypeBulletList"), icon: List, action: () => handleTurnInto("bulletList") },
+    { label: t("blockTypeNumberedList"), icon: ListOrdered, action: () => handleTurnInto("orderedList") },
+    { label: t("blockTypeQuote"), icon: Quote, action: () => handleTurnInto("blockquote") },
   ];
 
   // ── Main menu items (filterable) ──────────────────────────────────────────
@@ -436,14 +438,14 @@ export function BlockHandle({ editor, onAskAI }: Props) {
     | { type: "section"; label: string };
 
   const allMenuItems: MenuItem[] = [
-    { type: "section", label: "Text" },
-    { type: "sub", label: "Turn into", icon: Pilcrow, onHover: () => setTurnIntoOpen(true) },
+    { type: "section", label: t("blockSectionText") },
+    { type: "sub", label: t("blockTurnInto"), icon: Pilcrow, onHover: () => setTurnIntoOpen(true) },
     { type: "divider" },
-    { type: "action", label: "Copy link to block", icon: Link2, action: handleCopyLink, shortcut: "⌘⌥L" },
-    { type: "action", label: "Duplicate", icon: Copy, action: handleDuplicate, shortcut: "⌘D" },
-    { type: "action", label: "Delete", icon: Trash2, action: handleDelete, danger: true, shortcut: "Del" },
+    { type: "action", label: t("blockCopyLink"), icon: Link2, action: handleCopyLink, shortcut: "⌘⌥L" },
+    { type: "action", label: t("blockDuplicate"), icon: Copy, action: handleDuplicate, shortcut: "⌘D" },
+    { type: "action", label: t("blockDelete"), icon: Trash2, action: handleDelete, danger: true, shortcut: "Del" },
     { type: "divider" },
-    { type: "action", label: "Ask AI", icon: Sparkles, action: handleAskAIBlock, ai: true, shortcut: "⌘J" },
+    { type: "action", label: t("blockAskAI"), icon: Sparkles, action: handleAskAIBlock, ai: true, shortcut: "⌘J" },
   ];
 
   const mf = menuFilter.toLowerCase();
@@ -456,20 +458,20 @@ export function BlockHandle({ editor, onAskAI }: Props) {
 
   // ── Add-block data ─────────────────────────────────────────────────────────
   const basicBlocks = [
-    { label: "Text", hint: "", icon: Pilcrow, action: () => insertBlock("paragraph") },
-    { label: "Heading 1", hint: "#", icon: Heading1, action: () => insertBlock("heading", { level: 1 }) },
-    { label: "Heading 2", hint: "##", icon: Heading2, action: () => insertBlock("heading", { level: 2 }) },
-    { label: "Heading 3", hint: "###", icon: Heading3, action: () => insertBlock("heading", { level: 3 }) },
-    { label: "Bullet List", hint: "-", icon: List, action: () => insertBlock("bulletList") },
-    { label: "Numbered List", hint: "1.", icon: ListOrdered, action: () => insertBlock("orderedList") },
-    { label: "Quote", hint: '"', icon: Quote, action: () => insertBlock("blockquote") },
-    { label: "Code Block", hint: "```", icon: Code2, action: () => insertBlock("codeBlock") },
-    { label: "Divider", hint: "---", icon: Minus, action: () => insertBlock("horizontalRule") },
+    { label: t("blockTypeText"), hint: "", icon: Pilcrow, action: () => insertBlock("paragraph") },
+    { label: t("blockTypeHeading1"), hint: "#", icon: Heading1, action: () => insertBlock("heading", { level: 1 }) },
+    { label: t("blockTypeHeading2"), hint: "##", icon: Heading2, action: () => insertBlock("heading", { level: 2 }) },
+    { label: t("blockTypeHeading3"), hint: "###", icon: Heading3, action: () => insertBlock("heading", { level: 3 }) },
+    { label: t("blockTypeBulletList"), hint: "-", icon: List, action: () => insertBlock("bulletList") },
+    { label: t("blockTypeNumberedList"), hint: "1.", icon: ListOrdered, action: () => insertBlock("orderedList") },
+    { label: t("blockTypeQuote"), hint: '"', icon: Quote, action: () => insertBlock("blockquote") },
+    { label: t("blockTypeCode"), hint: "```", icon: Code2, action: () => insertBlock("codeBlock") },
+    { label: t("blockTypeDivider"), hint: "---", icon: Minus, action: () => insertBlock("horizontalRule") },
   ];
   const lyranoteBlocks = [
-    { label: "Mind Map", hint: "", icon: GitFork, action: () => insertBlock("mindMap") },
-    { label: "AI Continue Writing", hint: "", icon: Pen, action: () => { onAskAI?.("", "continue"); setAddMenuOpen(false); } },
-    { label: "AI Summarize Sources", hint: "", icon: Sparkles, action: () => { onAskAI?.("", "summarize"); setAddMenuOpen(false); } },
+    { label: t("blockTypeMindMap"), hint: "", icon: GitFork, action: () => insertBlock("mindMap") },
+    { label: t("blockAIContinue"), hint: "", icon: Pen, action: () => { onAskAI?.("", "continue"); setAddMenuOpen(false); } },
+    { label: t("blockAISummarize"), hint: "", icon: Sparkles, action: () => { onAskAI?.("", "summarize"); setAddMenuOpen(false); } },
   ];
 
   const lc = addFilter.toLowerCase();
@@ -536,7 +538,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
                 editor.commands.setTextSelection(after + 1);
               }}
               className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/30 transition-colors hover:bg-muted/50 hover:text-foreground/60"
-              title="Insert paragraph below"
+              title={t("blockInsertBelow")}
             >
               <Plus size={16} />
             </button>
@@ -560,7 +562,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
                 }
               }}
               className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/30 transition-colors hover:bg-muted/50 hover:text-foreground/60"
-              title="Block menu"
+              title={t("blockMenu")}
             >
               <GripVertical size={16} />
             </button>
@@ -585,7 +587,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
                 ref={addFilterRef}
                 value={addFilter}
                 onChange={(e) => setAddFilter(e.target.value)}
-                placeholder="Type to filter..."
+                placeholder={t("blockFilter")}
                 className="w-full bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/35"
               />
             </div>
@@ -593,7 +595,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
               {filteredBasic.length > 0 && (
                 <>
                   {!addFilter && (
-                    <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium text-muted-foreground/40">Basic blocks</p>
+                    <p className="px-2 pb-1 pt-1.5 text-[11px] font-medium text-muted-foreground/40">{t("blockSectionBasic")}</p>
                   )}
                   {filteredBasic.map((item) => (
                     <button key={item.label} type="button" onClick={item.action} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] text-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground">
@@ -607,7 +609,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
               {filteredLyranote.length > 0 && (
                 <>
                   {!addFilter && (
-                    <p className="px-2 pb-1 pt-2 text-[11px] font-medium text-muted-foreground/40">LyraNote</p>
+                    <p className="px-2 pb-1 pt-2 text-[11px] font-medium text-muted-foreground/40">{t("blockSectionLyranote")}</p>
                   )}
                   {filteredLyranote.map((item) => (
                     <button key={item.label} type="button" onClick={item.action} className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] transition-colors hover:bg-primary/8 hover:text-primary">
@@ -618,12 +620,12 @@ export function BlockHandle({ editor, onAskAI }: Props) {
                 </>
               )}
               {!hasResults && (
-                <p className="py-3 text-center text-[12px] text-muted-foreground/40">No results</p>
+                <p className="py-3 text-center text-[12px] text-muted-foreground/40">{t("blockNoResults")}</p>
               )}
             </div>
             <div className="border-t border-border/30">
               <button type="button" onClick={() => { setAddMenuOpen(false); setAddFilter(""); }} className="flex w-full items-center justify-between px-3 py-1.5 text-[12px] text-muted-foreground/50 transition-colors hover:bg-muted/40 hover:text-foreground/70">
-                <span>Close menu</span>
+                <span>{t("blockClose")}</span>
                 <span className="text-[11px] text-muted-foreground/30">esc</span>
               </button>
             </div>
@@ -656,7 +658,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
                     ref={menuFilterRef}
                     value={menuFilter}
                     onChange={(e) => { setMenuFilter(e.target.value); setTurnIntoOpen(false); }}
-                    placeholder="Search actions..."
+                    placeholder={t("blockSearch")}
                     className="w-full bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/35"
                   />
                 </div>
@@ -713,7 +715,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
                   );
                 })}
                 {mf && filteredMenuItems.length === 0 && (
-                  <p className="py-3 text-center text-[12px] text-muted-foreground/40">No results</p>
+                  <p className="py-3 text-center text-[12px] text-muted-foreground/40">{t("blockNoResults")}</p>
                 )}
               </div>
             </m.div>
@@ -740,7 +742,7 @@ export function BlockHandle({ editor, onAskAI }: Props) {
               }}
             >
               <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/40">
-                Turn into
+                {t("blockTurnInto")}
               </p>
               {turnIntoItems.map((ti) => (
                 <button

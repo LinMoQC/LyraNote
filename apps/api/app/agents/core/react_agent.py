@@ -48,7 +48,7 @@ TOOL_HINT_PROMPTS: dict[str, str] = {
 
 async def run_agent(
     query: str,
-    notebook_id: str,
+    notebook_id: str | None,
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,
@@ -65,12 +65,27 @@ async def run_agent(
     Routing logic:
       - With attachments → always use single-agent (image/file context needed)
       - With tool_hint → always use single-agent (explicit tool override)
-      - Otherwise → try multi-agent graph, fall back to single-agent on failure
+      - Visualization requests (mind map / diagram / etc.) → single-agent (needs ReAct tool loop)
+      - Deep research queries → try multi-agent graph (research specialist), fall back to single-agent
+      - Everything else → single-agent (default, handles RAG/web/chat/writing via ReAct tools)
     """
-    # Attachments and tool_hint require the full Brain/Engine loop
+    # Single-agent is the default. Multi-agent is only used for deep research.
     use_single = bool(attachment_ids) or bool(tool_hint)
 
+    # Visualization / tool-heavy queries need the ReAct loop to actually execute tools.
+    # Multi-agent synthesis_node is text-only and cannot call skills like generate_mind_map.
     if not use_single:
+        _VIZ_KEYWORDS = (
+            "思维导图", "mindmap", "mind map",
+            "流程图", "diagram", "知识图谱", "关系图",
+        )
+        q_lower = query.lower()
+        if any(kw in q_lower for kw in _VIZ_KEYWORDS):
+            use_single = True
+            logger.info("Visualization request detected, routing to single-agent: %s", query[:60])
+
+    # Deep research: the only case where multi-agent graph is beneficial
+    if not use_single and _is_deep_research(query):
         try:
             from app.agents.multi_agent_graph import MULTI_AGENT_GRAPH
             if MULTI_AGENT_GRAPH is not None:
@@ -88,7 +103,7 @@ async def run_agent(
                     yield event
                 return
         except Exception:
-            logger.warning("Multi-agent graph failed, falling back to single-agent", exc_info=True)
+            logger.warning("Multi-agent graph failed for deep research, falling back to single-agent", exc_info=True)
 
     async for event in _run_agent_single(
         query=query,
@@ -106,13 +121,29 @@ async def run_agent(
         yield event
 
 
+def _is_deep_research(query: str) -> bool:
+    """Detect whether a query warrants the multi-agent deep research path.
+
+    Uses keyword matching as a fast, zero-latency heuristic.
+    The multi-agent orchestrator will further refine the routing.
+    """
+    _RESEARCH_KEYWORDS = (
+        "深度研究", "深度分析", "综合分析", "系统性分析", "全面分析",
+        "对比分析", "跨文档", "综述", "研究报告", "系统梳理", "全面梳理",
+        "deep research", "comprehensive analysis", "in-depth analysis",
+        "compare and contrast", "systematic review",
+    )
+    q = query.lower()
+    return any(kw in q for kw in _RESEARCH_KEYWORDS)
+
+
 # ---------------------------------------------------------------------------
 # Multi-Agent implementation (LangGraph)
 # ---------------------------------------------------------------------------
 
 async def _run_agent_multi(
     query: str,
-    notebook_id: str,
+    notebook_id: str | None,
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,
@@ -164,7 +195,7 @@ async def _run_agent_multi(
 
 async def _run_agent_single(
     query: str,
-    notebook_id: str,
+    notebook_id: str | None,
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,

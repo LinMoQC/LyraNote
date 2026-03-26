@@ -34,6 +34,9 @@ async def ingest(
     db: AsyncSession,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    splitter_type: str = "auto",
+    separators: list[str] | None = None,
+    min_chunk_size: int = 50,
 ) -> None:
     result = await db.execute(select(Source).where(Source.id == UUID(source_id)))
     source = result.scalar_one_or_none()
@@ -57,7 +60,12 @@ async def ingest(
         source.raw_text = text
 
         chunks_with_meta = _chunk_text_with_metadata(
-            text, chunk_metadata, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+            text, chunk_metadata,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            splitter_type=splitter_type,
+            separators=separators,
+            min_chunk_size=min_chunk_size,
         )
         chunk_texts = [c["text"] for c in chunks_with_meta]
         chunk_metas = [c["metadata"] for c in chunks_with_meta]
@@ -305,62 +313,97 @@ def _chunk_text_with_metadata(
     source_metadata: list[dict],
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    splitter_type: str = "auto",
+    separators: list[str] | None = None,
+    min_chunk_size: int = 50,
 ) -> list[dict]:
     """
     Split text into chunks and attach per-chunk metadata.
 
-    Uses SemanticChunker when langchain_experimental is available; falls back
-    to RecursiveCharacterTextSplitter (same as the original implementation).
+    splitter_type controls which splitter is used:
+      auto     – try SemanticChunker first, fall back to recursive
+      semantic – force SemanticChunker
+      recursive – force RecursiveCharacterTextSplitter
 
     Returns a list of {"text": str, "metadata": dict} dicts.
     """
-    chunks = _semantic_split(text, chunk_size, chunk_overlap)
+    chunks = _split_text(text, chunk_size, chunk_overlap, splitter_type, separators)
+
+    # Filter out fragments shorter than min_chunk_size
+    if min_chunk_size > 0:
+        chunks = [c for c in chunks if len(c.strip()) >= min_chunk_size]
 
     result: list[dict] = []
     char_offset = 0
     for chunk_text in chunks:
-        # Find the most recent metadata entry that precedes this chunk's offset
         meta = _resolve_chunk_metadata(char_offset, source_metadata)
         result.append({"text": chunk_text, "metadata": meta})
-        # Advance offset (approximate — actual offset shifts with overlap)
         char_offset += max(1, len(chunk_text) - chunk_overlap)
 
     return result
 
 
-def _semantic_split(
+def _split_text(
     text: str,
     chunk_size: int,
     chunk_overlap: int,
+    splitter_type: str = "auto",
+    separators: list[str] | None = None,
 ) -> list[str]:
-    """
-    Attempt SemanticChunker first; fall back to RecursiveCharacterTextSplitter.
-    """
-    try:
-        from langchain_experimental.text_splitter import SemanticChunker
-        from langchain_openai import OpenAIEmbeddings
-        from app.config import settings
+    """Route to the correct splitter based on splitter_type."""
+    if splitter_type == "semantic":
+        return _semantic_split(text, chunk_size, chunk_overlap)
+    if splitter_type == "recursive":
+        return _recursive_split(text, chunk_size, chunk_overlap, separators=separators)
+    # auto: try semantic, fall back to recursive
+    return _semantic_split_with_fallback(text, chunk_size, chunk_overlap, separators=separators)
 
-        embeddings = OpenAIEmbeddings(
-            model=settings.embedding_model,
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-        )
-        splitter = SemanticChunker(
-            embeddings=embeddings,
-            breakpoint_threshold_type="percentile",
-            breakpoint_threshold_amount=95,
-        )
-        return splitter.split_text(text)
+
+def _semantic_split(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+    """Force SemanticChunker; raises on failure (no fallback)."""
+    from langchain_experimental.text_splitter import SemanticChunker
+    from langchain_openai import OpenAIEmbeddings
+    from app.config import settings
+
+    embeddings = OpenAIEmbeddings(
+        model=settings.embedding_model,
+        api_key=settings.openai_api_key,
+        base_url=settings.openai_base_url,
+    )
+    splitter = SemanticChunker(
+        embeddings=embeddings,
+        breakpoint_threshold_type="percentile",
+        breakpoint_threshold_amount=95,
+    )
+    return splitter.split_text(text)
+
+
+def _semantic_split_with_fallback(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    separators: list[str] | None = None,
+) -> list[str]:
+    """Try SemanticChunker; fall back to RecursiveCharacterTextSplitter on any error."""
+    try:
+        return _semantic_split(text, chunk_size, chunk_overlap)
     except (ImportError, Exception) as exc:
         if not isinstance(exc, ImportError):
             logger.debug("SemanticChunker failed (%s), falling back to recursive splitter", exc)
-        return _recursive_split(text, chunk_size, chunk_overlap)
+        return _recursive_split(text, chunk_size, chunk_overlap, separators=separators)
 
 
-def _recursive_split(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:
+def _recursive_split(
+    text: str,
+    chunk_size: int,
+    chunk_overlap: int,
+    separators: list[str] | None = None,
+) -> list[str]:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+    default_seps = ["\n\n", "\n", "。", "，", " ", ""]
     splitter = RecursiveCharacterTextSplitter(
+        separators=separators if separators is not None else default_seps,
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
         length_function=len,

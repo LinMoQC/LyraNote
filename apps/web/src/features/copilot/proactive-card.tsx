@@ -3,6 +3,7 @@
 import { Lightbulb, MessageCircle, X } from "lucide-react";
 import { m } from "framer-motion";
 import { memo } from "react";
+import { useTranslations } from "next-intl";
 import type { ProactiveSuggestion } from "@/store/use-proactive-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 
@@ -13,6 +14,7 @@ export const ProactiveCard = memo(function ProactiveCard({
   suggestion: ProactiveSuggestion;
   onAskQuestion: (question: string) => void;
 }) {
+  const t = useTranslations("copilot");
   const dismiss = useProactiveStore((s) => s.dismissSuggestion);
 
   return (
@@ -36,13 +38,13 @@ export const ProactiveCard = memo(function ProactiveCard({
           <Lightbulb size={11} className="text-primary" />
         </div>
         <span className="text-[11px] font-medium text-primary/80">
-          {suggestion.type === "source_indexed" ? "资料已就绪" : "AI 洞察"}
+          {suggestion.type === "source_indexed" ? t("sourceReady") : t("aiInsight")}
         </span>
       </div>
 
       {suggestion.sourceName && (
         <p className="mb-1.5 text-[12px] font-medium text-foreground/80">
-          「{suggestion.sourceName}」已索引完成
+          {t("sourceIndexed", { name: suggestion.sourceName })}
         </p>
       )}
 

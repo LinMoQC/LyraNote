@@ -34,7 +34,6 @@ export function ChatView() {
       <ChatSidebarPanel
         conversationList={p.conversationList}
         activeConvId={p.activeConvId}
-        globalNotebookId={p.globalNotebookId}
         hasMoreConversations={p.hasMoreConversations}
         deletePending={p.deletePending}
         onSelectConv={p.handleSelectConv}
@@ -140,7 +139,7 @@ export function ChatView() {
             onChange={p.setInput}
             onSubmit={p.handleSubmit}
             placeholder={p.isDeepResearch ? t("deepResearchPlaceholder") : t("placeholder")}
-            disabled={!p.globalNotebookId || p.fileAttachments.isUploading || !!p.dr.clarifyingState || p.dr.isFetchingClarifications}
+            disabled={p.fileAttachments.isUploading || !!p.dr.clarifyingState || p.dr.isFetchingClarifications}
             streaming={p.streaming}
             onCancel={p.chat.handleCancelStreaming}
             variant="default"
@@ -195,7 +194,7 @@ export function ChatView() {
                   onNotebookSelect={p.setSelectedNotebook}
                   notebookLabel={p.th("notebook")}
                   notebookEmptyLabel={p.tn("empty")}
-                  clearNotebookLabel="清除笔记本限制"
+                  clearNotebookLabel={p.th("clearNotebook")}
                 />
               </>
             }

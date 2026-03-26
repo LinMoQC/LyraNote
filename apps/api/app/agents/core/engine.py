@@ -288,6 +288,7 @@ class AgentEngine:
             if self.tool_ctx.mind_map_data is not None:
                 yield {"type": "mind_map", "data": self.tool_ctx.mind_map_data}
                 self.tool_ctx.mind_map_data = None
+                state.terminal_tool_called = True
 
             if self.tool_ctx.diagram_data is not None:
                 yield {"type": "diagram", "data": self.tool_ctx.diagram_data}
@@ -318,12 +319,15 @@ class AgentEngine:
                     "type": "note_created",
                     "note_id": self.tool_ctx.created_note_id,
                     "note_title": self.tool_ctx.created_note_title,
-                    "notebook_id": self.tool_ctx.notebook_id,
+                    # Use newly created notebook_id (global chat) or original one
+                    "notebook_id": self.tool_ctx.created_notebook_id or self.tool_ctx.notebook_id,
                 }
                 if result.startswith("NOTE_CREATED:"):
                     result = result.split(":", 2)[-1]
                 self.tool_ctx.created_note_id = None
                 self.tool_ctx.created_note_title = None
+                self.tool_ctx.created_notebook_id = None
+                state.terminal_tool_called = True  # note creation is always a terminal action
 
             if tc["name"] == "search_notebook_knowledge" and self.tool_ctx.collected_citations:
                 summary_lines = [
@@ -393,6 +397,7 @@ class AgentEngine:
         messages from previous turns are summarised.
         """
         from app.providers.llm import chat
+        from app.providers.llm import get_utility_model as _get_utility_model
 
         msgs = state.messages
         if len(msgs) <= 6:
@@ -438,8 +443,9 @@ class AgentEngine:
                         ),
                     }
                 ],
-                temperature=0,
-                max_tokens=300,
+                _get_utility_model(),
+                0,
+                300,
             )
         except Exception:
             logger.warning("Context compression failed, continuing without compression")

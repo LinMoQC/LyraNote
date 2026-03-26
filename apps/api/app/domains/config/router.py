@@ -25,6 +25,10 @@ EDITABLE_KEYS = {
     "openai_api_key",
     "openai_base_url",
     "llm_model",
+    # AI — Utility model (optional small/fast model for utility tasks)
+    "llm_utility_model",
+    "llm_utility_api_key",
+    "llm_utility_base_url",
     # AI — Embedding
     "embedding_model",
     "embedding_api_key",
@@ -61,6 +65,7 @@ EDITABLE_KEYS = {
 # Keys whose values should be masked when reading (shown as placeholder)
 _SENSITIVE_KEYS = {
     "openai_api_key",
+    "llm_utility_api_key",
     "embedding_api_key",
     "reranker_api_key",
     "storage_s3_access_key",
@@ -201,8 +206,9 @@ async def test_llm_connection(_current_user: CurrentUser, db: DbDep):
             call_kw: dict = dict(
                 model=model,
                 messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
+                max_tokens=100,
                 api_key=api_key,
+                drop_params=True,
             )
             if model.startswith("gemini/"):
                 call_kw["custom_llm_provider"] = "gemini"
@@ -216,7 +222,96 @@ async def test_llm_connection(_current_user: CurrentUser, db: DbDep):
             resp = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
+                max_tokens=100,
+            )
+            reply = (resp.choices[0].message.content or "").strip()
+        return success(TestLlmResult(ok=True, model=model, message=reply or "OK"))
+    except Exception as exc:
+        return success(TestLlmResult(ok=False, model=model, message=str(exc)[:200]))
+
+
+@router.post("/config/test-utility-llm", response_model=ApiResponse[TestLlmResult])
+async def test_utility_llm_connection(_current_user: CurrentUser, db: DbDep):
+    """Test the utility (small) model using its own config, falling back to main model config."""
+    result = await db.execute(select(AppConfig).where(AppConfig.key.in_({
+        "llm_provider", "openai_api_key", "openai_base_url",
+        "llm_utility_model", "llm_utility_api_key", "llm_utility_base_url",
+    })))
+    rows = {r.key: r.value for r in result.scalars().all()}
+
+    utility_model = rows.get("llm_utility_model") or app_settings.llm_utility_model
+    if not utility_model:
+        return success(TestLlmResult(ok=False, model="", message="未配置小模型"))
+
+    api_key = rows.get("llm_utility_api_key") or app_settings.llm_utility_api_key \
+              or rows.get("openai_api_key") or app_settings.openai_api_key
+    base_url = rows.get("llm_utility_base_url") or app_settings.llm_utility_base_url \
+               or rows.get("openai_base_url") or app_settings.openai_base_url or None
+    provider = rows.get("llm_provider") or app_settings.llm_provider or "openai"
+
+    if not api_key:
+        return success(TestLlmResult(ok=False, model=utility_model, message="未设置 API Key"))
+
+    try:
+        if provider == "litellm" or "/" in utility_model:
+            import litellm
+            call_kw: dict = dict(
+                model=utility_model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=100,
+                api_key=api_key,
+                drop_params=True,
+            )
+            if utility_model.startswith("gemini/"):
+                call_kw["custom_llm_provider"] = "gemini"
+            if base_url:
+                call_kw["api_base"] = base_url
+            resp = await litellm.acompletion(**call_kw)
+            reply = (resp.choices[0].message.content or "").strip()
+        else:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=15.0)
+            resp = await client.chat.completions.create(
+                model=utility_model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=100,
+            )
+            reply = (resp.choices[0].message.content or "").strip()
+        return success(TestLlmResult(ok=True, model=utility_model, message=reply or "OK"))
+    except Exception as exc:
+        return success(TestLlmResult(ok=False, model=utility_model, message=str(exc)[:200]))
+
+    provider = rows.get("llm_provider") or app_settings.llm_provider or "openai"
+    api_key = rows.get("openai_api_key") or app_settings.openai_api_key
+    base_url = rows.get("openai_base_url") or app_settings.openai_base_url or None
+    model = rows.get("llm_model") or app_settings.llm_model
+
+    if not api_key:
+        return success(TestLlmResult(ok=False, model=model, message="未设置 API Key"))
+
+    try:
+        if provider == "litellm":
+            import litellm
+            call_kw: dict = dict(
+                model=model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=100,
+                api_key=api_key,
+                drop_params=True,
+            )
+            if model.startswith("gemini/"):
+                call_kw["custom_llm_provider"] = "gemini"
+            if base_url:
+                call_kw["api_base"] = base_url
+            resp = await litellm.acompletion(**call_kw)
+            reply = (resp.choices[0].message.content or "").strip()
+        else:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=15.0)
+            resp = await client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=100,
             )
             reply = (resp.choices[0].message.content or "").strip()
         return success(TestLlmResult(ok=True, model=model, message=reply or "OK"))

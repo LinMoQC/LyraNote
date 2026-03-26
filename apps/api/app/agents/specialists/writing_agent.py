@@ -26,6 +26,7 @@ async def writing_agent_node(state: dict) -> dict:
     LangGraph 节点：执行结构化内容生成。
     """
     from app.agents.rag.retrieval import retrieve_chunks
+    from langchain_core.callbacks.manager import adispatch_custom_event
 
     query: str = state["query"]
     notebook_id: str = state["notebook_id"]
@@ -36,6 +37,12 @@ async def writing_agent_node(state: dict) -> dict:
     # 从 query 中推断写作格式
     writing_format = _detect_writing_format(query)
     format_hint = _WRITING_HINTS.get(writing_format, "")
+
+    await adispatch_custom_event("sse", {
+        "type": "tool_call",
+        "tool": "rag_search",
+        "input": {"query": query, "top_k": 15, "format": writing_format},
+    })
 
     # RAG 检索参考资料
     try:
@@ -50,6 +57,20 @@ async def writing_agent_node(state: dict) -> dict:
     except Exception:
         logger.warning("WritingAgent retrieval failed", exc_info=True)
         chunks = []
+
+    await adispatch_custom_event("sse", {
+        "type": "tool_result",
+        "content": (
+            f"检索到 {len(chunks)} 条相关片段，生成格式：{writing_format}"
+            + (
+                "\n" + "\n".join(
+                    f"· {c.get('source_title', '未知来源')}"
+                    for c in chunks[:5]
+                )
+                if chunks else ""
+            )
+        ),
+    })
 
     return {
         "specialist_result": {

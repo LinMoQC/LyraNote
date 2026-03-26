@@ -3,11 +3,13 @@
 import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { m } from "framer-motion";
+import { useTranslations } from "next-intl";
 
 import { getInsights } from "@/services/ai-service";
 import { useProactiveStore } from "@/store/use-proactive-store";
 
 export function FloatingOrb({ onClick }: { onClick: () => void }) {
+  const t = useTranslations("copilot");
   const storeUnread = useProactiveStore((s) => s.unreadCount);
   const { data: insightsData } = useQuery({
     queryKey: ["insights"],
@@ -20,7 +22,7 @@ export function FloatingOrb({ onClick }: { onClick: () => void }) {
     <m.button
       type="button"
       onClick={onClick}
-      title="打开 AI Copilot"
+      title={t("openCopilot")}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       exit={{ scale: 0, opacity: 0 }}

@@ -206,7 +206,7 @@ def format_graph_context(
 
     entity_map: dict[UUID, str] = {e.id: e.name for e in all_entities}
 
-    lines: list[str] = ["[知识图谱上下文]"]
+    lines: list[str] = ["=== 知识图谱结构信息（仅供参考，不作为引用来源）==="]
 
     for entity in all_entities:
         desc = f"— {entity.description}" if entity.description else ""

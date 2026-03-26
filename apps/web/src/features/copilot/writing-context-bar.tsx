@@ -2,6 +2,7 @@
 
 import { AnimatePresence, m } from "framer-motion";
 import { BookOpen, ChevronDown, ChevronUp, MessageCircle } from "lucide-react";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 import type { WritingContextChunk } from "@/store/use-proactive-store";
 
@@ -14,6 +15,7 @@ export function WritingContextBar({
   onAskAbout?: (excerpt: string) => void;
   onInsertCitation?: (text: string) => void;
 }) {
+  const t = useTranslations("copilot");
   const [collapsed, setCollapsed] = useState(true);
 
   if (chunks.length === 0) return null;
@@ -27,7 +29,7 @@ export function WritingContextBar({
       >
         <BookOpen size={12} className="flex-shrink-0 text-primary/60" />
         <span className="flex-1 text-[11px] font-medium text-muted-foreground/70">
-          相关资料 ({chunks.length})
+          {t("relevantSources", { count: chunks.length })}
         </span>
         {collapsed ? (
           <ChevronDown size={11} className="text-muted-foreground/40" />
@@ -64,7 +66,7 @@ export function WritingContextBar({
                         onClick={() => onInsertCitation(chunk.excerpt.slice(0, 200))}
                         className="text-[10px] text-primary/50 transition-colors hover:text-primary/80"
                       >
-                        插入引用
+                        {t("insertCitation")}
                       </button>
                     )}
                     {onAskAbout && (
@@ -74,7 +76,7 @@ export function WritingContextBar({
                         className="flex items-center gap-1 text-[10px] text-muted-foreground/50 transition-colors hover:text-foreground/70"
                       >
                         <MessageCircle size={9} />
-                        提问
+                        {t("askAbout")}
                       </button>
                     )}
                   </div>

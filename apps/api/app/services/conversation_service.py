@@ -91,8 +91,9 @@ class ConversationService:
         )
         return list(result.scalars().all())
 
-    async def create(self, notebook_id: UUID, title: str, source: str = "chat") -> Conversation:
-        await self._assert_notebook_owner(notebook_id)
+    async def create(self, notebook_id: UUID | None, title: str | None, source: str = "chat") -> Conversation:
+        if notebook_id is not None:
+            await self._assert_notebook_owner(notebook_id)
         conv = Conversation(
             notebook_id=notebook_id,
             user_id=self.user_id,
@@ -103,6 +104,19 @@ class ConversationService:
         await self.db.flush()
         await self.db.refresh(conv)
         return conv
+
+    async def list_global(self, *, offset: int = 0, limit: int = 50) -> list[Conversation]:
+        """List conversations not tied to any notebook (global chat page)."""
+        result = await self.db.execute(
+            select(Conversation)
+            .where(Conversation.user_id == self.user_id)
+            .where(Conversation.notebook_id.is_(None))
+            .where(Conversation.source == "chat")
+            .order_by(Conversation.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
 
     async def delete(self, conversation_id: UUID) -> None:
         conv = await self._get_owned(conversation_id)
@@ -208,7 +222,8 @@ class ConversationService:
         # 提前启动 detect_scene（LLM 调用），使其与后续 DB 操作并行
         detect_task = asyncio.create_task(detect_scene(content))
 
-        notebook_summary = await get_notebook_summary(conv.notebook_id, self.db)
+        # When notebook_id is None (global chat), skip notebook-scoped context
+        notebook_summary = await get_notebook_summary(conv.notebook_id, self.db) if conv.notebook_id else None
 
         # 此时 LLM 调用已在后台运行，大概率已完成
         scene = await detect_task
@@ -235,14 +250,14 @@ class ConversationService:
 
         async for event in run_agent(
             query=content,
-            notebook_id=str(conv.notebook_id),
+            notebook_id=str(conv.notebook_id) if conv.notebook_id else None,
             user_id=self.user_id,
             history=history,
             db=self.db,
             user_memories=user_memories,
             notebook_summary=notebook_summary,
             scene_instruction=scene_instruction,
-            global_search=global_search,
+            global_search=True if conv.notebook_id is None else global_search,
             tool_hint=tool_hint,
             attachment_ids=attachment_ids,
         ):
@@ -475,12 +490,11 @@ class ConversationService:
             raise NotFoundError("笔记本不存在")
 
     async def _get_owned(self, conversation_id: UUID) -> Conversation:
+        # Direct ownership check — avoids JOIN breaking when notebook_id IS NULL
         result = await self.db.execute(
-            select(Conversation)
-            .join(Notebook, Conversation.notebook_id == Notebook.id)
-            .where(
+            select(Conversation).where(
                 Conversation.id == conversation_id,
-                Notebook.user_id == self.user_id,
+                Conversation.user_id == self.user_id,
             )
         )
         conv = result.scalar_one_or_none()

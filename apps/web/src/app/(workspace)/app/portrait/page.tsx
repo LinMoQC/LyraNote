@@ -1,6 +1,10 @@
+import { getTranslations } from "next-intl/server";
 import { PortraitView } from "@/features/portrait/portrait-view";
 
-export const metadata = { title: "Lyra 对你的了解" };
+export async function generateMetadata() {
+  const t = await getTranslations("portrait");
+  return { title: t("pageTitle") };
+}
 
 export default function PortraitPage() {
   return <PortraitView />;

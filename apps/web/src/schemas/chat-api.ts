@@ -10,7 +10,7 @@ import { CHAT_ROLES } from "@/lib/constants";
 /** 对话记录 Schema */
 export const ConversationRecordSchema = z.object({
   id: z.string().uuid(),
-  notebook_id: z.string().uuid(),
+  notebook_id: z.string().uuid().nullable(),
   title: z.string().nullable(),
   created_at: z.string(),
 });

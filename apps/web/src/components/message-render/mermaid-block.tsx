@@ -8,6 +8,7 @@
 
 import { AnimatePresence, m } from "framer-motion";
 import { memo, useEffect, useId, useState } from "react";
+import { useTranslations } from "next-intl";
 
 const MERMAID_CDN = "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -38,6 +39,7 @@ function loadMermaid() {
 }
 
 function MermaidBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui");
   const uniqueId = useId().replace(/:/g, "_");
   const [error, setError] = useState<string | null>(null);
   const [svgHtml, setSvgHtml] = useState<string | null>(null);
@@ -69,7 +71,7 @@ function MermaidBlockInner({ code, isStreaming }: { code: string; isStreaming?: 
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
         </svg>
-        正在生成图表...
+        {t("mermaidStreaming")}
       </div>
     );
   }

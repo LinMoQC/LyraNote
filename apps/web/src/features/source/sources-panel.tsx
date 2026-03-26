@@ -146,7 +146,7 @@ export function SourcesPanel({
             addSuggestion({
               type: "source_indexed",
               sourceId: source.id,
-              sourceName: source.title || "未知资料",
+              sourceName: source.title || t("unknownSource"),
               summary: data.summary || undefined,
               questions: data.questions,
             });
@@ -166,30 +166,30 @@ export function SourcesPanel({
     <aside className="flex h-full w-[260px] flex-shrink-0 flex-col overflow-hidden border-r border-border/25 bg-card/20">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          来源 · {sources.length}
-          {isLoading && <Loader2 size={11} className="animate-spin opacity-50" />}
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-            onClick={() => setImportDialogOpen(true)}
-            title="添加来源"
-            type="button"
-          >
-            <Plus size={15} />
-          </button>
-          {onClose ? (
+          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t("sourcesHeader", { count: sources.length })}
+            {isLoading && <Loader2 size={11} className="animate-spin opacity-50" />}
+          </span>
+          <div className="flex items-center gap-1">
             <button
               className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-              onClick={onClose}
-              title="关闭面板"
+              onClick={() => setImportDialogOpen(true)}
+              title={t("addSourceTitle")}
               type="button"
             >
-              <X size={15} />
+              <Plus size={15} />
             </button>
-          ) : null}
-        </div>
+            {onClose ? (
+              <button
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                onClick={onClose}
+                title={t("closePanelTitle")}
+                type="button"
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+          </div>
       </div>
 
       {/* List */}
@@ -235,7 +235,7 @@ export function SourcesPanel({
               onClick={() => setImportDialogOpen(true)}
               type="button"
             >
-              添加第一个来源
+              {t("addFirstSource")}
             </button>
           </div>
         )}

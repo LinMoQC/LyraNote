@@ -166,7 +166,7 @@ class WebSearchSkill(SkillBase):
         # -------------------------------------------------------
         existing_result = await ctx.db.execute(
             select(Source.url).where(
-                Source.notebook_id == UUID(ctx.notebook_id),
+                Source.notebook_id == UUID(ctx.notebook_id) if ctx.notebook_id else False,
                 Source.url.isnot(None),
             )
         )
@@ -207,7 +207,7 @@ class WebSearchSkill(SkillBase):
                 f"{content[:1200]}"
             )
 
-            if url and url not in existing_urls:
+            if url and url not in existing_urls and ctx.notebook_id:
                 source = Source(
                     notebook_id=UUID(ctx.notebook_id),
                     title=title[:500],

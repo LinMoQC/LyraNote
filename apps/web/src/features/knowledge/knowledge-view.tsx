@@ -415,7 +415,7 @@ export function KnowledgeView() {
               onClick={() => refetch()}
               disabled={isRefetching}
               className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/40 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
-              title="刷新"
+              title={t("refresh")}
             >
               <RefreshCw size={14} className={cn(isRefetching && "animate-spin")} />
             </button>
@@ -500,7 +500,7 @@ export function KnowledgeView() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4"
+              className="grid grid-cols-4 gap-3 2xl:grid-cols-5 w-full"
             >
               {allSources.map((source, i) => (
                 <KnowledgeCard key={source.id} source={source} index={i} t={t} onClick={() => setActiveSource(source)} />
@@ -534,7 +534,7 @@ export function KnowledgeView() {
         {/* End of list */}
         {!hasNextPage && allSources.length > 0 && !isLoading && (
           <p className="py-6 text-center text-xs text-muted-foreground/40">
-            已加载全部 {total} 个来源
+            {t("loadedAll", { total })}
           </p>
         )}
       </div>

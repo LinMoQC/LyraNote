@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 
 import { cn } from "@/lib/utils";
 import type {
@@ -126,6 +127,8 @@ function MCPServerForm({
   onClose: () => void;
   submitLabel: string;
 }) {
+  const t = useTranslations("settings.mcp");
+  const tCommon = useTranslations("common");
   const [form, setForm] = useState<FormState>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -137,15 +140,15 @@ function MCPServerForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) {
-      setError("名称不能为空");
+      setError(t("nameRequired"));
       return;
     }
     if (form.transport === "stdio" && !form.command.trim()) {
-      setError("stdio 模式需要填写命令");
+      setError(t("commandRequired"));
       return;
     }
     if (form.transport !== "stdio" && !form.url.trim()) {
-      setError("HTTP / SSE 模式需要填写 URL");
+      setError(t("urlRequired"));
       return;
     }
     setSaving(true);
@@ -153,7 +156,7 @@ function MCPServerForm({
     try {
       await onSubmit(formToPayload(form));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "保存失败，请重试");
+      setError(err instanceof Error ? err.message : t("saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -170,7 +173,7 @@ function MCPServerForm({
       {/* Name & display name */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={labelCls}>名称 *</label>
+          <label className={labelCls}>{t("nameLabel")}</label>
           <input
             className={inputCls}
             placeholder="my-fs-server"
@@ -179,10 +182,10 @@ function MCPServerForm({
           />
         </div>
         <div>
-          <label className={labelCls}>显示名称</label>
+          <label className={labelCls}>{t("displayNameLabel")}</label>
           <input
             className={inputCls}
-            placeholder="文件系统"
+            placeholder={t("displayNamePlaceholder")}
             value={form.display_name}
             onChange={(e) => set("display_name", e.target.value)}
           />
@@ -191,32 +194,32 @@ function MCPServerForm({
 
       {/* Transport selector */}
       <div>
-        <label className={labelCls}>传输类型</label>
+        <label className={labelCls}>{t("transportLabel")}</label>
         <div className="flex gap-2">
-          {(["stdio", "http", "sse"] as const).map((t) => (
+          {(["stdio", "http", "sse"] as const).map((transport) => (
             <button
-              key={t}
+              key={transport}
               type="button"
-              onClick={() => set("transport", t)}
+              onClick={() => set("transport", transport)}
               className={cn(
                 "flex-1 rounded-xl border py-1.5 text-xs font-medium transition-colors",
-                form.transport === t
+                form.transport === transport
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border/50 bg-muted/30 text-muted-foreground hover:text-foreground"
               )}
             >
-              {t === "stdio" ? "stdio（本地进程）" : t === "http" ? "HTTP（推荐）" : "SSE（旧版）"}
+              {transport === "stdio" ? t("transportStdio") : transport === "http" ? t("transportHttp") : t("transportSse")}
             </button>
           ))}
         </div>
         {form.transport === "http" && (
           <p className="mt-1.5 text-[10px] text-muted-foreground">
-            适用于大多数现代远程 MCP 服务器（如 Excalidraw、Notion 等）
+            {t("httpHint")}
           </p>
         )}
         {form.transport === "sse" && (
           <p className="mt-1.5 text-[10px] text-muted-foreground">
-            适用于旧版 SSE 协议服务器，一般优先尝试 HTTP
+            {t("sseHint")}
           </p>
         )}
       </div>
@@ -225,7 +228,7 @@ function MCPServerForm({
       {form.transport === "stdio" ? (
         <>
           <div>
-            <label className={labelCls}>命令 *</label>
+            <label className={labelCls}>{t("commandLabel")}</label>
             <input
               className={inputCls}
               placeholder="npx"
@@ -234,7 +237,7 @@ function MCPServerForm({
             />
           </div>
           <div>
-            <label className={labelCls}>参数（每行一个）</label>
+            <label className={labelCls}>{t("argsLabel")}</label>
             <textarea
               className={textareaCls}
               rows={3}
@@ -244,7 +247,7 @@ function MCPServerForm({
             />
           </div>
           <div>
-            <label className={labelCls}>环境变量（JSON 对象，可选）</label>
+            <label className={labelCls}>{t("envVarsLabel")}</label>
             <textarea
               className={textareaCls}
               rows={2}
@@ -272,7 +275,7 @@ function MCPServerForm({
             />
           </div>
           <div>
-            <label className={labelCls}>请求头（JSON 对象，可选）</label>
+            <label className={labelCls}>{t("headersLabel")}</label>
             <textarea
               className={textareaCls}
               rows={2}
@@ -294,7 +297,7 @@ function MCPServerForm({
           onClick={onClose}
           className="rounded-xl border border-border/50 px-4 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
-          取消
+          {tCommon("cancel")}
         </button>
         <button
           type="submit"
@@ -318,6 +321,8 @@ function TestResultPanel({
   result: MCPTestResult;
   onClose: () => void;
 }) {
+  const t = useTranslations("settings.mcp");
+
   return (
     <div className="mt-3 rounded-xl border border-border/50 bg-muted/10 p-3">
       <div className="mb-2 flex items-center justify-between">
@@ -328,7 +333,7 @@ function TestResultPanel({
             <Unplug size={13} className="text-red-400" />
           )}
           <span className="text-xs font-medium">
-            {result.ok ? `连接成功，发现 ${result.tools.length} 个工具` : "连接失败"}
+            {result.ok ? t("testSuccess", { count: result.tools.length }) : t("testConnectionFailed")}
           </span>
         </div>
         <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground">
@@ -376,6 +381,7 @@ function ServerRow({
   onDelete: (id: string) => Promise<void>;
   onRefresh: (updated: MCPServer) => void;
 }) {
+  const t = useTranslations("settings.mcp");
   const [testResult, setTestResult] = useState<MCPTestResult | null>(null);
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -387,21 +393,20 @@ function ServerRow({
       const { testMCPServer, listMCPServers } = await import("@/services/mcp-service");
       const result = await testMCPServer(server.id);
       setTestResult(result);
-      // Refresh this server's data (discovered_tools was updated in DB on success)
       if (result.ok) {
         const updated = await listMCPServers();
         const fresh = updated.find((s) => s.id === server.id);
         if (fresh) onRefresh(fresh);
       }
     } catch {
-      setTestResult({ ok: false, tools: [], error: "请求失败" });
+      setTestResult({ ok: false, tools: [], error: t("requestFailed") });
     } finally {
       setTesting(false);
     }
   }
 
   async function handleDelete() {
-    if (!confirm(`确认删除 MCP 服务器「${server.displayName || server.name}」？`)) return;
+    if (!confirm(t("deleteConfirm", { name: server.displayName || server.name }))) return;
     setDeleting(true);
     try {
       await onDelete(server.id);
@@ -440,7 +445,7 @@ function ServerRow({
               {server.transport}
             </Badge>
             {!server.isEnabled && (
-              <Badge className="bg-muted text-muted-foreground">已禁用</Badge>
+              <Badge className="bg-muted text-muted-foreground">{t("disabled")}</Badge>
             )}
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -461,7 +466,7 @@ function ServerRow({
               ))}
               {server.discoveredTools.length > 5 && (
                 <span className="rounded-md bg-muted/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                  +{server.discoveredTools.length - 5} 个工具
+                  {t("toolCount", { count: server.discoveredTools.length - 5 })}
                 </span>
               )}
             </div>
@@ -477,7 +482,7 @@ function ServerRow({
             className="flex items-center gap-1 rounded-lg border border-border/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-50"
           >
             {testing ? <Loader2 size={11} className="animate-spin" /> : <Unplug size={11} />}
-            测试
+            {t("testBtn")}
           </button>
           <button
             type="button"
@@ -525,12 +530,13 @@ function ServerRow({
 
 // ── Main section ───────────────────────────────────────────────────────────────
 
-type Dialog = { mode: "create" } | { mode: "edit"; server: MCPServer };
+type DialogState = { mode: "create" } | { mode: "edit"; server: MCPServer };
 
 export function MCPSection() {
+  const t = useTranslations("settings.mcp");
   const [servers, setServers] = useState<MCPServer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [dialog, setDialog] = useState<DialogState | null>(null);
   const [expanded, setExpanded] = useState(true);
 
   useEffect(() => {
@@ -590,7 +596,7 @@ export function MCPSection() {
               <ChevronRight size={13} className="text-muted-foreground" />
             )}
             <span className="text-xs text-muted-foreground">
-              MCP 服务器（{servers.length}）
+              {t("serverCount", { count: servers.length })}
             </span>
           </button>
         </div>
@@ -600,12 +606,12 @@ export function MCPSection() {
           className="flex items-center gap-1 rounded-xl border border-border/50 px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
         >
           <Plus size={11} />
-          添加服务器
+          {t("addServer")}
         </button>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        配置外部 MCP 工具服务器，AI 助手将在对话时自动发现并调用其中的工具。
+        {t("description")}
       </p>
 
       {/* Server list */}
@@ -617,7 +623,7 @@ export function MCPSection() {
             </div>
           ) : servers.length === 0 ? (
             <p className="py-6 text-center text-xs text-muted-foreground">
-              暂无 MCP 服务器，点击「添加服务器」开始配置
+              {t("empty")}
             </p>
           ) : (
             <div className="space-y-2">
@@ -649,7 +655,7 @@ export function MCPSection() {
           >
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-sm font-semibold">
-                {dialog.mode === "create" ? "添加 MCP 服务器" : "编辑 MCP 服务器"}
+                {dialog.mode === "create" ? t("addTitle") : t("editTitle")}
               </h3>
               <button
                 type="button"
@@ -665,7 +671,7 @@ export function MCPSection() {
               }
               onSubmit={dialog.mode === "create" ? handleCreate : handleEdit}
               onClose={() => setDialog(null)}
-              submitLabel={dialog.mode === "create" ? "添加" : "保存"}
+              submitLabel={dialog.mode === "create" ? t("addSubmit") : t("editSubmit")}
             />
           </div>
         </div>

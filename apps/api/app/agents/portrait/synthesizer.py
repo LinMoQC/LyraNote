@@ -94,6 +94,7 @@ async def synthesize_portrait(
     """
     from app.models import AgentReflection, UserMemory, UserPortrait
     from app.providers.llm import chat
+    from app.providers.llm import get_utility_model
 
     # ── 1. 加载记忆碎片 ──────────────────────────────────────────────────────
     mem_rows = (
@@ -181,8 +182,9 @@ async def synthesize_portrait(
             delta_summary = (
                 await chat(
                     messages=[{"role": "user", "content": delta_prompt}],
+                    model=get_utility_model(),
                     temperature=0.3,
-                    max_tokens=80,
+                    max_tokens=500,
                 )
             ).strip()
         except Exception:

@@ -44,15 +44,6 @@ const TYPE_COLORS: Record<string, string> = {
   other: "#94a3b8",
 };
 
-const TYPE_LABELS: Record<string, string> = {
-  concept: "概念",
-  person: "人物",
-  technology: "技术",
-  event: "事件",
-  organization: "组织",
-  other: "其他",
-};
-
 interface ForceNode extends GraphNode {
   x?: number;
   y?: number;
@@ -80,6 +71,16 @@ interface KnowledgeGraphViewProps {
 
 export function KnowledgeGraphView({ toolbarContainer }: KnowledgeGraphViewProps) {
   const t = useTranslations("knowledge");
+  const tTypes = useTranslations("knowledge.entityTypes");
+
+  const TYPE_LABELS: Record<string, string> = {
+    concept:      tTypes("concept"),
+    person:       tTypes("person"),
+    technology:   tTypes("technology"),
+    event:        tTypes("event"),
+    organization: tTypes("organization"),
+    other:        tTypes("other"),
+  };
   const [graphData, setGraphData] = useState<KnowledgeGraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);

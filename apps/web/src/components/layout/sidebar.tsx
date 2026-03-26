@@ -21,7 +21,8 @@ import {
   LogOut,
   MessageSquare,
   PanelLeft,
-  Settings
+  Settings,
+  Sparkles
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Image from "next/image";
@@ -49,6 +50,7 @@ const navItemDefs = [
   { href: "/app/knowledge", labelKey: "knowledge" as const, icon: LibraryBig, exact: false },
   { href: "/app/chat", labelKey: "chat" as const, icon: MessageSquare, exact: false },
   { href: "/app/tasks", labelKey: "tasks" as const, icon: Clock, exact: false },
+  { href: "/app/portrait", labelKey: "portrait" as const, icon: Sparkles, exact: false },
 ];
 
 function Label({ collapsed, children, className }: { collapsed: boolean; children: React.ReactNode; className?: string }) {
@@ -330,7 +332,7 @@ export function Sidebar() {
                 className={cn("flex-shrink-0 transition-transform duration-150", !insightsOpen && "-rotate-90")}
               />
               <span className="flex items-center gap-1.5">
-                AI 洞察
+                {tNav("aiInsights")}
                 {unreadCount > 0 && (
                   <span className="rounded-full bg-primary/20 px-1.5 py-px text-[9px] font-bold leading-none text-primary">
                     {unreadCount}
@@ -345,7 +347,7 @@ export function Sidebar() {
                   onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); handleMarkAllRead(); } }}
                   className="ml-auto text-[10px] text-muted-foreground/30 hover:text-foreground/60"
                 >
-                  全部已读
+                  {tNav("markAllRead")}
                 </span>
               )}
             </button>
@@ -386,7 +388,7 @@ export function Sidebar() {
                             type="button"
                             onClick={() => handleMarkRead(insight.id)}
                             className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                            title="标记已读"
+                            title={tNav("markRead")}
                           >
                             <Eye size={10} className="text-muted-foreground/30 hover:text-foreground/60" />
                           </button>
@@ -472,7 +474,7 @@ export function Sidebar() {
                     role="menuitem"
                   >
                     <LogOut size={14} />
-                    退出登录
+                    {tNav("logout")}
                   </button>
                 </div>
               )}

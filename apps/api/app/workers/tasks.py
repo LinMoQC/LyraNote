@@ -42,6 +42,10 @@ celery_app.conf.update(
             # Every Monday at 03:00 UTC (86400*7 = 604800s)
             "schedule": 604800.0,
         },
+        "expire-stuck-sources": {
+            "task": "expire_stuck_sources",
+            "schedule": 600.0,  # every 10 minutes
+        },
     },
 )
 
@@ -120,21 +124,97 @@ def _run_async(coro):
         loop.close()
 
 
-@celery_app.task(name="ingest_source", bind=True, max_retries=3)
-def ingest_source(self, source_id: str, chunk_size: int = 512, chunk_overlap: int = 64):
+@celery_app.task(
+    name="ingest_source",
+    bind=True,
+    max_retries=3,
+    soft_time_limit=300,
+    time_limit=360,
+)
+def ingest_source(
+    self,
+    source_id: str,
+    chunk_size: int = 512,
+    chunk_overlap: int = 64,
+    splitter_type: str = "auto",
+    separators: list | None = None,
+    min_chunk_size: int = 50,
+):
     async def _run():
         from app.agents.rag.ingestion import ingest
 
         async with _task_db() as db:
             try:
-                await ingest(source_id, db, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+                await ingest(
+                    source_id,
+                    db,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    splitter_type=splitter_type,
+                    separators=separators,
+                    min_chunk_size=min_chunk_size,
+                )
                 await db.commit()
             except Exception as exc:
                 await db.rollback()
+                # On SoftTimeLimitExceeded, mark the source as failed immediately
+                # instead of retrying (retrying a timed-out task rarely helps)
+                try:
+                    from billiard.exceptions import SoftTimeLimitExceeded as _STLE
+                    if isinstance(exc, _STLE):
+                        from uuid import UUID
+                        from sqlalchemy import select
+                        from app.models import Source as SourceModel
+                        async with _task_db() as db2:
+                            res = await db2.execute(
+                                select(SourceModel).where(SourceModel.id == UUID(source_id))
+                            )
+                            src = res.scalar_one_or_none()
+                            if src:
+                                src.status = "failed"
+                                src.metadata_ = {**(src.metadata_ or {}), "error": "indexing_timeout"}
+                            await db2.commit()
+                        return
+                except Exception:
+                    pass
                 raise self.retry(exc=exc, countdown=30)
 
     _run_async(_run())
 
+
+@celery_app.task(name="expire_stuck_sources")
+def expire_stuck_sources():
+    """
+    Celery Beat task (every 10 min): find sources stuck in 'processing' or 'pending'
+    for more than 15 minutes and mark them as 'failed'.
+    """
+    async def _run():
+        import logging
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select
+        from app.models import Source as SourceModel
+
+        logger = logging.getLogger(__name__)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+        async with _task_db() as db:
+            result = await db.execute(
+                select(SourceModel).where(
+                    SourceModel.status.in_(["processing", "pending"]),
+                    SourceModel.updated_at < cutoff,
+                )
+            )
+            stuck = result.scalars().all()
+            if stuck:
+                for src in stuck:
+                    src.status = "failed"
+                    src.metadata_ = {**(src.metadata_ or {}), "error": "indexing_timeout"}
+                await db.commit()
+                logger.warning(
+                    "expire_stuck_sources: marked %d sources as failed (timeout)", len(stuck)
+                )
+
+    _run_async(_run())
 
 @celery_app.task(name="extract_knowledge_graph", bind=True, max_retries=2)
 def extract_knowledge_graph(self, source_id: str):
@@ -213,7 +293,8 @@ def generate_notebook_summary(self, notebook_id: str, content_text: str):
             return
 
         from app.providers.llm import get_client
-        client = get_client()
+        from app.providers.llm import get_utility_model, get_utility_client
+        client = get_utility_client()
         prompt = (
             "你是一位专业的笔记助手。请根据以下笔记内容，用中文生成：\n"
             "1. 一段 2-3 句话的简明摘要（summary_md）\n"
@@ -225,10 +306,10 @@ def generate_notebook_summary(self, notebook_id: str, content_text: str):
 
         try:
             resp = await client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=get_utility_model(),
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
-                max_tokens=300,
+                max_tokens=500,
                 response_format={"type": "json_object"},
             )
             raw = resp.choices[0].message.content or "{}"
@@ -364,7 +445,7 @@ def initialize_user_preferences(
                         model=settings.llm_model or "gpt-4o-mini",
                         messages=[{"role": "user", "content": prompt}],
                         temperature=0.7,
-                        max_tokens=600,
+                        max_tokens=4000,
                     )
                     content_md = resp.choices[0].message.content or ""
                 except Exception as llm_err:
@@ -730,7 +811,7 @@ def execute_scheduled_task(self, task_id: str):
                     model=settings.llm_model or "gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.5,
-                    max_tokens=2000,
+                    max_tokens=6000,
                 )
                 article_md = resp.choices[0].message.content or ""
 
