@@ -197,7 +197,7 @@ CLI 会自动：检测/启动数据库容器 → 创建 Python 虚拟环境 → 
 
 **3. 部署到生产服务器**
 
-使用 `docker-compose.prod.yml`，包含 Nginx、关闭 debug、不暴露数据库端口。
+使用 `docker-compose.prod.yml`：只起业务容器；**Web / API 映射到本机 `127.0.0.1:3000` 与 `127.0.0.1:8000`**，请用**宿主机 Nginx** 按 `nginx.system.example.conf` 对外提供 80/443。数据库等仍不对外暴露端口。
 
 ```bash
 ./lyra init     # 选择「生产服务器」模式，自动生成根目录 .env（含域名 + 随机密码）
@@ -206,9 +206,7 @@ CLI 会自动：检测/启动数据库容器 → 创建 Python 虚拟环境 → 
 
 > `init` 向导会自动生成随机 `JWT_SECRET`、`POSTGRES_PASSWORD` 和 `MINIO_ROOT_PASSWORD`，写入根目录 `.env`，供 `docker-compose.prod.yml` 读取。
 
-打开 `https://your-domain.com` 完成 Setup Wizard 即可。
-
-打开 `https://your-domain.com` 完成 Setup Wizard 即可。
+打开你的域名（配置好 HTTPS 后多为 `https://your-domain.com`）完成 Setup Wizard 即可。
 
 ---
 
@@ -223,7 +221,7 @@ CLI 会自动：检测/启动数据库容器 → 创建 Python 虚拟环境 → 
 docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
 ```
 
-确保服务器防火墙开放 `80` 端口（Nginx），建议配置 HTTPS。
+确保防火墙开放宿主机 Nginx 的 `80`/`443`；业务端口仅监听回环，勿对公网放行 3000/8000。
 
 **前端（Vercel）**
 
