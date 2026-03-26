@@ -70,6 +70,7 @@ api/data/memory/
 
 # daily rotating log files
 api/logs/
+apps/**/logs/
 
 # design docs (internal only)
 docs/
