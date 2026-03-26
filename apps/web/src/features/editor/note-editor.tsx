@@ -31,6 +31,10 @@ type NoteEditorProps = {
   onEditorReady?: (editor: Editor) => void;
   onAskAI?: (text: string, action: string) => void;
   onSaveStatusChange?: (status: SaveStatus) => void;
+  /** 顶栏 / 笔记选择器与编辑器标题同步 */
+  onActiveNoteTitleChange?: (title: string) => void;
+  /** 保存成功后由工作区失效笔记列表等 */
+  onNoteSaved?: () => void;
   refreshKey?: number;
   onToggleSources?: () => void;
   sourcesOpen?: boolean;
@@ -44,6 +48,8 @@ export function NoteEditor({
   onEditorReady,
   onAskAI,
   onSaveStatusChange,
+  onActiveNoteTitleChange,
+  onNoteSaved,
   refreshKey = 0,
   wideLayout = false,
 }: NoteEditorProps) {
@@ -53,6 +59,10 @@ export function NoteEditor({
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
   const onSaveStatusChangeRef = useRef(onSaveStatusChange);
   onSaveStatusChangeRef.current = onSaveStatusChange;
+  const onActiveNoteTitleChangeRef = useRef(onActiveNoteTitleChange);
+  onActiveNoteTitleChangeRef.current = onActiveNoteTitleChange;
+  const onNoteSavedRef = useRef(onNoteSaved);
+  onNoteSavedRef.current = onNoteSaved;
   const updateSaveStatus = useCallback((s: SaveStatus) => {
     setSaveStatus(s);
     onSaveStatusChangeRef.current?.(s);
@@ -92,12 +102,15 @@ export function NoteEditor({
         noteIdRef.current = null
         setTitle("")
         titleRef.current = ""
+        onActiveNoteTitleChangeRef.current?.("")
         editor.commands.setContent({ type: "doc", content: [{ type: "paragraph" }] }, true)
         return
       }
       noteIdRef.current = note.id
-      setTitle(note.title ?? "")
-      titleRef.current = note.title ?? ""
+      const nextTitle = note.title ?? ""
+      setTitle(nextTitle)
+      titleRef.current = nextTitle
+      onActiveNoteTitleChangeRef.current?.(nextTitle)
       if (note.contentJson) {
         editor.commands.setContent(note.contentJson, true)
       }
@@ -118,6 +131,7 @@ export function NoteEditor({
         contentJson: editor.getJSON() as Record<string, unknown>,
       })
       if (!noteIdRef.current) noteIdRef.current = saved.id
+      onNoteSavedRef.current?.()
       updateSaveStatus("saved")
       savedTimerRef.current = setTimeout(() => updateSaveStatus("idle"), 2000)
     } catch {
@@ -282,7 +296,9 @@ export function NoteEditor({
             value={title}
             placeholder={t("titlePlaceholder")}
             onChange={(e) => {
-              setTitle(e.target.value)
+              const v = e.target.value
+              setTitle(v)
+              onActiveNoteTitleChangeRef.current?.(v)
               triggerSave()
             }}
           />

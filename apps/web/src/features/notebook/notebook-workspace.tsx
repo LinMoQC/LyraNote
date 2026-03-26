@@ -162,6 +162,14 @@ export function NotebookWorkspace({
     }
   }, [notebookId, activeNoteId, queryClient]);
 
+  const handleEditorNoteTitleChange = useCallback((next: string) => {
+    setActiveNoteTitle(next.length ? next : null);
+  }, []);
+
+  const handleNoteSaved = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+  }, [notebookId, queryClient]);
+
   const handleEditorReady = useCallback((editor: Editor) => {
     editorRef.current = editor;
     setEditorInstance(editor);
@@ -302,6 +310,8 @@ export function NotebookWorkspace({
             onEditorReady={handleEditorReady}
             onAskAI={handleAskAI}
             onSaveStatusChange={setSaveStatus}
+            onActiveNoteTitleChange={handleEditorNoteTitleChange}
+            onNoteSaved={handleNoteSaved}
             refreshKey={noteRefreshKey}
             onToggleSources={() => setSourcesOpen((v) => !v)}
             sourcesOpen={sourcesOpen}

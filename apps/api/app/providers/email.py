@@ -38,10 +38,18 @@ async def send_email(
     port = int(config.get("smtp_port", 587))
     username = config.get("smtp_username", "")
     password = config.get("smtp_password", "")
-    from_addr = config.get("smtp_from", username)
+    # smtp_from 存成 "" 时 dict.get 不会回退到 username，会导致 From 为空，
+    # aiosmtplib 解析发件人时对空列表取 [0] 触发 IndexError
+    from_addr = (config.get("smtp_from") or username or "").strip()
 
     if not host or not username:
         logger.error("SMTP not configured: missing host or username")
+        return False
+
+    if not from_addr:
+        logger.error(
+            "SMTP not configured: empty smtp_from and username; set From address or SMTP user"
+        )
         return False
 
     msg = MIMEMultipart("alternative")
