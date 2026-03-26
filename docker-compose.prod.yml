@@ -132,8 +132,14 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      # 使用 127.0.0.1：Next 监听 0.0.0.0（IPv4）；localhost 在部分环境会优先走 ::1 导致探测失败
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1"]
+      # 用 node 探测：与运行时一致；避免部分镜像/环境无 wget 或 CMD-SHELL 无输出不便排错
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000/',(r)=>{r.resume();process.exit(r.statusCode>=200&&r.statusCode<500?0:1)}).on('error',()=>process.exit(1))",
+        ]
       interval: 10s
       timeout: 5s
       retries: 10
