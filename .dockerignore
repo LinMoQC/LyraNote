@@ -1,0 +1,8 @@
+# Context is repo root (see docker-compose / docker build -f apps/web/Dockerfile .).
+# Exclude host install trees so COPY apps/web does not overlay pnpm symlinks onto image node_modules.
+node_modules
+apps/*/node_modules
+packages/*/node_modules
+.git
+**/.next
+dist

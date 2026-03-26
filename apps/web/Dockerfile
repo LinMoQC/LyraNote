@@ -16,6 +16,9 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 # 只复制 web 包声明（减少依赖安装范围）
 COPY apps/web/package.json ./apps/web/
 
+# Hoisted node_modules so Next standalone output has real files (pnpm symlinks break in runner).
+RUN printf '%s\n' 'node-linker=hoisted' > .npmrc
+
 # 安装 web 依赖
 RUN pnpm install --frozen-lockfile --filter @lyranote/web...
 
@@ -24,6 +27,9 @@ RUN pnpm install --frozen-lockfile --filter @lyranote/web...
 # ========================
 FROM base AS builder
 WORKDIR /app
+
+# pnpm --filter 需要 workspace 清单
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
 # 拷贝依赖
 COPY --from=deps /app/node_modules ./node_modules
@@ -37,8 +43,8 @@ ARG NEXT_PUBLIC_API_BASE_URL=/api/v1
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 ENV NODE_ENV=production
 
-# 构建
-RUN cd apps/web && pnpm build
+# 构建（hoisted 依赖时 next 在 /app/node_modules/.bin，需在仓库根执行）
+RUN pnpm --filter @lyranote/web build
 
 # ========================
 # Runner（最小运行时）
@@ -59,5 +65,5 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 # 端口
 EXPOSE 3000
 
-# ✅ 正确入口（重点！！！）
-CMD ["node", "server.js"]
+# Monorepo standalone: server.js lives under apps/web（与 outputFileTracingRoot 一致）
+CMD ["node", "apps/web/server.js"]
