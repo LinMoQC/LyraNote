@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { getSuggestions } from "@/services/ai-service";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface Props {
   onSelect: (text: string) => void;
@@ -30,9 +31,9 @@ export function HomeSuggestions({ onSelect }: Props) {
       <div className="grid grid-cols-2 gap-2">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
-              <div
+              <Skeleton
                 key={i}
-                className="h-[52px] animate-pulse rounded-xl border border-border/30 bg-muted/30"
+                className="h-[52px] rounded-xl border border-border/30 bg-muted/30"
                 style={{ animationDelay: `${i * 80}ms` }}
               />
             ))

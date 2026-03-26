@@ -26,6 +26,7 @@ import { approveToolCall, getContextGreeting, getInsights, getRelatedKnowledge, 
 import { cn } from "@/lib/utils";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { CitationData, Message, MindMapData } from "@/types";
 
 export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
@@ -567,7 +568,7 @@ export function CopilotPanel({
               {greetingLoading ? (
                 <>
                   {[1, 2, 3].map((i) => (
-                    <div key={i} className="h-12 animate-pulse rounded-xl border border-border/30 bg-muted/20" />
+                    <Skeleton key={i} className="h-12 rounded-xl border border-border/30 bg-muted/20" />
                   ))}
                 </>
               ) : dynamicSuggestions && dynamicSuggestions.length > 0 ? (

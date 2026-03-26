@@ -3,6 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { m, type Variants } from "framer-motion";
 import { Clock, Loader2, Plus, Rss, X } from "lucide-react";
+
+import { Loader } from "@/components/ui/loader";
 import { useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 
@@ -125,12 +127,12 @@ export function TasksView() {
 
       {/* ── Task list ───────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={20} className="animate-spin text-muted-foreground/40" />
+        <div className="flex flex-1 items-center justify-center">
+          <Loader size="medium" />
         </div>
       ) : tasks.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border/40 bg-card/30 px-8 py-16 text-center">
-          <Clock size={32} className="mx-auto mb-4 text-muted-foreground/20" />
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <Clock size={32} className="mb-4 text-muted-foreground/20" />
           <p className="text-[14px] font-medium text-foreground/60">
             {t("empty")}
           </p>

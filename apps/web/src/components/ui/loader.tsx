@@ -8,7 +8,7 @@ function StarSvg({ id }: { id: string }) {
       xmlns="http://www.w3.org/2000/svg"
       xmlnsXlink="http://www.w3.org/1999/xlink"
       viewBox="0 0 100 100"
-      style={{ position: "absolute", width: "100px", height: "100px" }}
+      style={{ position: "absolute", width: "100%", height: "100%" }}
     >
       <defs>
         <filter id={`shine-${id}`}>
@@ -61,17 +61,30 @@ function StarSvg({ id }: { id: string }) {
   );
 }
 
-export function Loader({ color = "#5c3d99" }: { color?: string }) {
+const SIZE_MAP = {
+  small: 40,
+  medium: 60,
+  large: 100,
+};
+
+export function Loader({
+  color = "#5c3d99",
+  size = "large",
+}: {
+  color?: string;
+  size?: "small" | "medium" | "large";
+}) {
+  const px = SIZE_MAP[size];
   return (
     <>
       <style>{`
         .lyra-loader {
           --loader-color: ${color};
           --loader-shine: ${color}33;
-          width: 100px;
-          height: 100px;
+          width: ${px}px;
+          height: ${px}px;
           position: relative;
-          filter: drop-shadow(0 0 10px var(--loader-shine));
+          filter: drop-shadow(0 0 ${Math.round(px * 0.1)}px var(--loader-shine));
         }
         #lyra-star-one {
           animation: lyra-flowe-one 1s linear infinite;

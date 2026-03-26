@@ -105,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
 
       {/* 主内容区 — 凸起面板 */}
-      <div className="flex-1 overflow-y-auto md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border/10 md:bg-background md:shadow-xl">
+      <div className="flex-1 h-full overflow-y-auto md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border/10 md:bg-background md:shadow-xl">
         <WorkspaceErrorBoundary>{children}</WorkspaceErrorBoundary>
       </div>
 

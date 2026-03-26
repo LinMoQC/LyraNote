@@ -36,6 +36,7 @@ import {
 } from "@/services/conversation-service";
 import { getNotebooks } from "@/services/notebook-service";
 import {
+  clearAllConversationMessages,
   clearConversationMessages,
   loadActiveConversation,
   loadConversationMessages,
@@ -242,7 +243,17 @@ export function useChatPage() {
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       clearConversationMessages(id);
-      setConversationList((prev) => prev.filter((item) => item.id !== id));
+      setConversationList((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        if (next.length === 0) {
+          clearAllConversationMessages();
+          setActiveConvId(null);
+          setMessages([]);
+          saveActiveConversation(null);
+          try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
+        }
+        return next;
+      });
       if (activeConvId === id) {
         setActiveConvId(null);
         setMessages([]);

@@ -16,6 +16,7 @@ import dynamic from "next/dynamic";
 import { m, AnimatePresence } from "framer-motion";
 
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+import { Loader } from "@/components/ui/loader";
 
 import {
   getGlobalGraph,
@@ -303,7 +304,7 @@ export function KnowledgeGraphView({ toolbarContainer }: KnowledgeGraphViewProps
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-muted-foreground" />
+        <Loader size="medium" />
       </div>
     );
   }

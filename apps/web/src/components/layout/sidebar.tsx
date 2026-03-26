@@ -31,6 +31,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { INSIGHT_POLL_INTERVAL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -294,9 +295,9 @@ export function Sidebar() {
                 <div className="space-y-0.5">
                   {notebooksLoading
                     ? [68, 80, 55].map((w, i) => (
-                        <div
+                        <Skeleton
                           key={i}
-                          className="mx-1 my-0.5 animate-pulse rounded-md bg-foreground/[0.04]"
+                          className="mx-1 my-0.5 rounded-md bg-foreground/[0.04]"
                           style={{ height: 26, width: `${w}%`, animationDelay: `${i * 60}ms` }}
                         />
                       ))
@@ -481,9 +482,9 @@ export function Sidebar() {
             </>
           ) : (
             <div className="flex items-center gap-3 rounded-lg py-2 pl-3 pr-3">
-              <div className="h-[22px] w-[22px] flex-shrink-0 animate-pulse rounded-full bg-foreground/[0.06]" />
+              <Skeleton className="h-[22px] w-[22px] flex-shrink-0 rounded-full bg-foreground/[0.06]" />
               <Label collapsed={collapsed}>
-                <div className="h-3 w-20 animate-pulse rounded bg-foreground/[0.05]" />
+                <Skeleton className="h-3 w-20 rounded bg-foreground/[0.05]" />
               </Label>
             </div>
           )}
