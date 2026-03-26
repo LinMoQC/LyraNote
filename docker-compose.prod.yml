@@ -156,7 +156,8 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "80:80"
+      # 宿主机若已有 httpd/nginx 占用 80，可在仓库根 .env 设 NGINX_HTTP_PORT=8080 等
+      - "${NGINX_HTTP_PORT:-80}:80"
     volumes:
       - ./nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
