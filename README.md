@@ -197,7 +197,7 @@ Once running:
 
 **3. Deploy to production server**
 
-Use `docker-compose.prod.yml` which adds Nginx, disables debug, and omits exposed ports for the database/cache services.
+Use `docker-compose.prod.yml` for the app stack only. **Web and API are published on the host loopback** at `127.0.0.1:3000` and `127.0.0.1:8000` for **host Nginx** to reverse-proxy (see `nginx.system.example.conf`). Database/cache ports stay internal.
 
 ```bash
 ./lyra init     # select "production server" mode — generates root .env with domain + passwords
@@ -206,9 +206,7 @@ Use `docker-compose.prod.yml` which adds Nginx, disables debug, and omits expose
 
 > The `init` wizard automatically generates a random `JWT_SECRET`, `POSTGRES_PASSWORD`, and `MINIO_ROOT_PASSWORD`, and writes them into the root `.env` consumed by `docker-compose.prod.yml`.
 
-Then open `https://your-domain.com` and complete the Setup Wizard.
-
-Open `https://your-domain.com` and complete the Setup Wizard.
+Open your domain (typically `https://your-domain.com` once TLS is configured) and complete the Setup Wizard.
 
 ---
 
@@ -223,7 +221,7 @@ Deploy the backend via Docker Compose on your server, and the frontend separatel
 docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
 ```
 
-Open port `80` (Nginx) in your firewall. HTTPS via a reverse proxy is strongly recommended.
+Open host Nginx ports `80`/`443` in your firewall. Do not expose `3000`/`8000` publicly; they are loopback-only.
 
 **Frontend (Vercel)**
 
