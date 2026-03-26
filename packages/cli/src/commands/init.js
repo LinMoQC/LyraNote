@@ -98,6 +98,8 @@ GITHUB_CLIENT_SECRET=${answers.githubSecret}
 MEMORY_MODE=server
 DEBUG=false
 API_PREFIX=/api/v1
+# 浏览器内请求 API 的根路径（须与上方 API 公网地址一致；写进 Next 客户端包，改后需重新构建 web 镜像）
+NEXT_PUBLIC_API_BASE_URL=${appBaseUrl}/api/v1
 `;
 
   const envPath = path.join(ROOT_DIR, '.env');
