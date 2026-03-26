@@ -36,6 +36,9 @@ _MAX_RELATIONS = 30
 # Query terms shorter than this character count are skipped (stop words, etc.)
 _MIN_TERM_CHARS = 2
 
+# First line of formatted graph context (shared with tests).
+GRAPH_CONTEXT_BANNER = "=== 知识图谱结构信息（仅供参考，不作为引用来源）==="
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -192,7 +195,7 @@ def format_graph_context(
 
     Example output::
 
-        [知识图谱上下文]
+        === 知识图谱结构信息（仅供参考，不作为引用来源）===
         实体：深度学习（technology）— 通过多层神经网络学习特征表示的机器学习范式
         实体：神经网络（concept）— 由节点和权重组成的计算图
         关系：深度学习 --基于--> 神经网络（权重 0.9）
@@ -206,7 +209,7 @@ def format_graph_context(
 
     entity_map: dict[UUID, str] = {e.id: e.name for e in all_entities}
 
-    lines: list[str] = ["=== 知识图谱结构信息（仅供参考，不作为引用来源）==="]
+    lines: list[str] = [GRAPH_CONTEXT_BANNER]
 
     for entity in all_entities:
         desc = f"— {entity.description}" if entity.description else ""
