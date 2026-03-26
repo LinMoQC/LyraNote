@@ -8,10 +8,15 @@
 
 /**
  * 浏览器端 API 基础地址（NEXT_PUBLIC_*，构建时注入，面向用户浏览器）
- * Docker 部署时应设置为宿主机可访问的地址，如 http://localhost:8000/api/v1
+ * - 开发：默认 http://localhost:8000/api/v1（也可用 .env.local 覆盖）
+ * - 生产构建：若环境变量未设或为空字符串，默认 `/api/v1`（同域 + 反代 /api → 后端）
+ *   避免出现空 baseURL 时 axios 把 `/setup/status` 发到页面源站根路径导致 404。
  */
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1"
+export const API_BASE = (() => {
+  const raw = process.env.NEXT_PUBLIC_API_BASE_URL?.trim() ?? ""
+  if (raw !== "") return raw
+  return process.env.NODE_ENV === "production" ? "/api/v1" : "http://localhost:8000/api/v1"
+})()
 
 /**
  * 服务端 SSR 内部 API 地址（运行时读取，非 NEXT_PUBLIC_*）
