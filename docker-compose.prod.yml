@@ -128,9 +128,9 @@ services:
     image: ghcr.io/linmoqc/lyranote/web:main
     restart: unless-stopped
     environment:
-      # 仅同域反代时镜像内已是 /api/v1 即可。注意：NEXT_PUBLIC_* 在 next build 时写入产物；
-      # 若 API 独立域名，须用该 URL 重新构建 web 镜像（非仅改此处）。
-      NEXT_PUBLIC_API_BASE_URL: /api/v1
+      # 浏览器请求的 API 根：独立暴露 API 时在仓库根 .env 设 NEXT_PUBLIC_API_BASE_URL=https://你的API域名/api/v1
+      # （须与该值重新构建 web 镜像，预构建的 ghcr 镜像不会随此处改变客户端包）
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api/v1}
       INTERNAL_API_BASE_URL: http://api:8000/api/v1
       NODE_ENV: production
       # 覆盖 Docker 默认 HOSTNAME，使 Next 监听 0.0.0.0（含 127.0.0.1），与健康检查一致
