@@ -3,7 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { m, type Variants } from "framer-motion";
 import { Clock, Loader2, Plus, Rss, X } from "lucide-react";
+
+import { Loader } from "@/components/ui/loader";
 import { useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
@@ -12,20 +15,6 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { createTask, getTasks, type TaskCreateInput } from "@/services/task-service";
 import { TaskCard } from "./task-card";
-
-const SCHEDULE_OPTIONS = [
-  { value: "daily", label: "每天" },
-  { value: "every_3_days", label: "每 3 天" },
-  { value: "weekly", label: "每周一" },
-  { value: "biweekly", label: "每两周" },
-  { value: "monthly", label: "每月" },
-];
-
-const DELIVERY_OPTIONS = [
-  { value: "note", label: "写入笔记" },
-  { value: "email", label: "发送邮件" },
-  { value: "both", label: "笔记 + 邮件" },
-];
 
 const container: Variants = {
   hidden: {},
@@ -43,6 +32,7 @@ const item: Variants = {
 };
 
 export function TasksView() {
+  const t = useTranslations("tasks");
   const queryClient = useQueryClient();
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -64,6 +54,20 @@ export function TasksView() {
 
   const { success, error } = useToast();
 
+  const SCHEDULE_OPTIONS = [
+    { value: "daily",       label: t("scheduleDaily") },
+    { value: "every_3_days", label: t("scheduleEvery3Days") },
+    { value: "weekly",      label: t("scheduleWeekly") },
+    { value: "biweekly",    label: t("scheduleBiweekly") },
+    { value: "monthly",     label: t("scheduleMonthly") },
+  ];
+
+  const DELIVERY_OPTIONS = [
+    { value: "note",  label: t("deliveryNote") },
+    { value: "email", label: t("deliveryEmail") },
+    { value: "both",  label: t("deliveryBoth") },
+  ];
+
   const createMutation = useMutation({
     mutationFn: (input: TaskCreateInput) => createTask(input),
     onSuccess: () => {
@@ -72,9 +76,9 @@ export function TasksView() {
       setForm({ name: "", topic: "", schedule: "daily", delivery: "note", email: "", feedUrls: [] });
       setFeedInput("");
       setFeedEditing(false);
-      success("定时任务创建成功");
+      success(t("createSuccess"));
     },
-    onError: () => error("创建任务失败，请重试"),
+    onError: () => error(t("createFailed")),
   });
 
   function addFeedUrl() {
@@ -110,30 +114,30 @@ export function TasksView() {
     <div className="flex h-full flex-col gap-6 p-8 dark:border border-border/40">
       {/* ── Toolbar ─────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">定时任务</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
           className="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
         >
           <Plus size={15} />
-          新建任务
+          {t("newTask")}
         </button>
       </div>
 
       {/* ── Task list ───────────────────────────────────────────── */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={20} className="animate-spin text-muted-foreground/40" />
+        <div className="flex flex-1 items-center justify-center">
+          <Loader size="medium" />
         </div>
       ) : tasks.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border/40 bg-card/30 px-8 py-16 text-center">
-          <Clock size={32} className="mx-auto mb-4 text-muted-foreground/20" />
+        <div className="flex flex-1 flex-col items-center justify-center text-center">
+          <Clock size={32} className="mb-4 text-muted-foreground/20" />
           <p className="text-[14px] font-medium text-foreground/60">
-            暂无定时任务
+            {t("empty")}
           </p>
           <p className="mt-1.5 text-[12px] text-muted-foreground/50">
-            点击右上角「新建任务」或在聊天中告诉 AI 来创建
+            {t("emptyDesc")}
           </p>
         </div>
       ) : (
@@ -153,7 +157,7 @@ export function TasksView() {
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
                 <Plus size={18} className="text-primary" />
               </div>
-              <span className="text-[13px] text-muted-foreground/60">新建任务</span>
+              <span className="text-[13px] text-muted-foreground/60">{t("newTask")}</span>
             </button>
           </m.div>
 
@@ -168,16 +172,16 @@ export function TasksView() {
       {/* ── Create dialog ───────────────────────────────────────── */}
       <Dialog
         open={createOpen}
-        title="新建定时任务"
-        description="创建一个 AI 自动执行的周期性内容任务"
+        title={t("createTitle")}
+        description={t("createDesc")}
         onClose={() => setCreateOpen(false)}
       >
         <div className="space-y-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">任务名称</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("nameLabel")}</label>
             <Input
               autoFocus
-              placeholder="例：AI 前沿日报"
+              placeholder={t("namePlaceholder")}
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
@@ -185,9 +189,9 @@ export function TasksView() {
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">关注主题</label>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("topicLabel")}</label>
             <Input
-              placeholder="例：大语言模型最新进展、RAG 技术"
+              placeholder={t("topicPlaceholder")}
               value={form.topic}
               onChange={(e) => setForm((f) => ({ ...f, topic: e.target.value }))}
             />
@@ -197,7 +201,7 @@ export function TasksView() {
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
               <span className="inline-flex items-center gap-1">
                 <Rss size={12} />
-                订阅源（可选）
+                {t("feedLabel")}
               </span>
             </label>
             <div
@@ -211,7 +215,7 @@ export function TasksView() {
                   className="flex h-10 w-full items-center justify-center gap-1.5 rounded-lg text-[12px] text-muted-foreground/40 transition-colors hover:bg-muted/30 hover:text-muted-foreground/60"
                 >
                   <Plus size={14} />
-                  添加 RSS / Atom 订阅源
+                  {t("addFeed")}
                 </button>
               ) : (
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -235,7 +239,7 @@ export function TasksView() {
                     <input
                       ref={feedInputRef}
                       className="min-w-[140px] flex-1 rounded-lg border border-primary/30 bg-background/80 px-2 py-1 text-[12px] text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
-                      placeholder="粘贴订阅链接，回车确认"
+                      placeholder={t("feedPlaceholder")}
                       value={feedInput}
                       onChange={(e) => setFeedInput(e.target.value)}
                       onKeyDown={(e) => {
@@ -260,7 +264,7 @@ export function TasksView() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">执行频率</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("scheduleLabel")}</label>
               <div className="flex flex-wrap gap-1.5">
                 {SCHEDULE_OPTIONS.map((opt) => (
                   <button
@@ -281,7 +285,7 @@ export function TasksView() {
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">交付方式</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("deliveryLabel")}</label>
               <div className="flex flex-wrap gap-1.5">
                 {DELIVERY_OPTIONS.map((opt) => (
                   <button
@@ -304,7 +308,7 @@ export function TasksView() {
 
           {form.delivery !== "note" && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">邮箱地址</label>
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("emailLabel")}</label>
               <Input
                 type="email"
                 placeholder="your@email.com"
@@ -320,13 +324,13 @@ export function TasksView() {
               disabled={createMutation.isPending}
               onClick={() => { setCreateOpen(false); setForm({ name: "", topic: "", schedule: "daily", delivery: "note", email: "", feedUrls: [] }); setFeedInput(""); setFeedEditing(false); }}
             >
-              取消
+              {t("cancel")}
             </Button>
             <Button
               disabled={!form.name.trim() || !form.topic.trim() || createMutation.isPending}
               onClick={handleCreate}
             >
-              {createMutation.isPending ? "创建中..." : "创建任务"}
+              {createMutation.isPending ? t("creating") : t("create")}
             </Button>
           </div>
         </div>

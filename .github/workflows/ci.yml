@@ -35,6 +35,9 @@ jobs:
       - name: ESLint
         run: pnpm exec next lint
 
+      - name: Frontend tests
+        run: pnpm test
+
   # ── API tests ───────────────────────────────────────────────────────────────
   api-tests:
     name: API — Tests
@@ -78,14 +81,17 @@ jobs:
           cache-dependency-path: apps/api/requirements*.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: pip install -r requirements.txt -r requirements-dev.txt ruff
+
+      - name: Ruff lint
+        run: ruff check . --select E9,F63,F7
 
       - name: Run migrations
         env:
           DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@localhost:5432/lyranote_test
         run: alembic upgrade head
 
-      - name: Run tests
+      - name: Unit & integration tests
         env:
           DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@localhost:5432/lyranote_test
           REDIS_URL: redis://localhost:6379/0
@@ -93,4 +99,14 @@ jobs:
           STORAGE_BACKEND: local
           STORAGE_LOCAL_PATH: /tmp/lyranote-test-storage
           OPENAI_API_KEY: sk-test
-        run: pytest tests/ -v --tb=short
+        run: pytest tests/ -v --tb=short --ignore=tests/e2e
+
+      - name: E2E API tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@localhost:5432/lyranote_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-secret-key
+          STORAGE_BACKEND: local
+          STORAGE_LOCAL_PATH: /tmp/lyranote-test-storage
+          OPENAI_API_KEY: sk-test
+        run: pytest tests/e2e -v --tb=short

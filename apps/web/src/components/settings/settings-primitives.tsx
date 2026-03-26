@@ -28,6 +28,7 @@ export function CustomSelect({
   className?: string;
 }) {
   const tc = useTranslations("common");
+  const tModel = useTranslations("settings.modelSelect");
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -129,7 +130,7 @@ export function CustomSelect({
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索模型..."
+                  placeholder={tModel("searchPlaceholder")}
                   className="w-full bg-transparent px-1 text-xs text-foreground outline-none placeholder:text-muted-foreground/50"
                 />
               </div>
@@ -148,7 +149,7 @@ export function CustomSelect({
                   ))
                 : filtered.map(renderOption)}
               {filtered.length === 0 && (
-                <div className="px-3 py-2 text-xs text-muted-foreground">无匹配模型</div>
+                <div className="px-3 py-2 text-xs text-muted-foreground">{tModel("noMatch")}</div>
               )}
             </div>
           </m.div>
@@ -231,6 +232,8 @@ export function ModelSelectWithCustom({
   options: SelectOption[];
   onChange: (v: string) => void;
 }) {
+  const tModel = useTranslations("settings.modelSelect");
+  const tc = useTranslations("common");
   const isKnown = (v: string) => !!options.find((o) => o.value === v);
   const [mode, setMode] = useState<"select" | "custom">(
     !isKnown(value) && !!value ? "custom" : "select",
@@ -273,7 +276,7 @@ export function ModelSelectWithCustom({
     ...options,
     // Include current custom value so CustomSelect can display it after confirming
     ...(!isKnown(value) && value ? [{ value, label: value }] : []),
-    { value: CUSTOM_MODEL_SENTINEL, label: "自定义模型…" },
+    { value: CUSTOM_MODEL_SENTINEL, label: tModel("customModel") },
   ];
 
   if (mode === "custom") {
@@ -288,7 +291,7 @@ export function ModelSelectWithCustom({
             if (e.key === "Enter") { commitCustom(); setMode("select"); }
             if (e.key === "Escape") cancelCustom();
           }}
-          placeholder="输入模型名称，如 qwen-max"
+          placeholder={tModel("customPlaceholder")}
           className="flex h-8 min-w-[180px] rounded-xl border border-primary/50 bg-card px-3 text-sm text-foreground outline-none ring-1 ring-primary/20 placeholder:text-muted-foreground/40"
         />
         <button
@@ -296,14 +299,14 @@ export function ModelSelectWithCustom({
           onClick={() => { commitCustom(); setMode("select"); }}
           className="flex-shrink-0 rounded-lg border border-primary/60 bg-primary/10 px-2.5 py-1 text-xs text-primary transition-colors hover:bg-primary/20"
         >
-          确认
+          {tModel("confirm")}
         </button>
         <button
           type="button"
           onClick={cancelCustom}
           className="flex-shrink-0 rounded-lg border border-border/60 px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
         >
-          取消
+          {tc("cancel")}
         </button>
       </div>
     );

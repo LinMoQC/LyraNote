@@ -10,6 +10,7 @@ import { Sparkles } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { BotAvatar } from "@/components/ui/bot-avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { SUGGESTED_PROMPTS } from "./chat-types";
 
 interface ChatEmptyStateProps {
@@ -61,9 +62,9 @@ export function ChatEmptyState({ suggestionsLoading, dynamicSuggestions, onSend 
       >
         {suggestionsLoading
           ? Array.from({ length: 4 }).map((_, i) => (
-              <div
+              <Skeleton
                 key={i}
-                className="h-[52px] animate-pulse rounded-xl border border-border/30 bg-muted/30"
+                className="h-[52px] rounded-xl border border-border/30 bg-muted/30"
                 style={{ animationDelay: `${i * 80}ms` }}
               />
             ))

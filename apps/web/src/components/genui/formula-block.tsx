@@ -1,10 +1,13 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { memo, useEffect, useRef } from "react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
 
 function FormulaBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -23,7 +26,7 @@ function FormulaBlockInner({ code, isStreaming }: { code: string; isStreaming?: 
   if (isStreaming) {
     return (
       <div className="my-3 flex h-16 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在渲染公式...
+        {t("formulaStreaming")}
       </div>
     )
   }

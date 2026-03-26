@@ -11,7 +11,7 @@ class ConversationCreate(BaseModel):
 
 class ConversationOut(BaseModel):
     id: UUID
-    notebook_id: UUID
+    notebook_id: UUID | None
     title: str | None
     created_at: datetime
 

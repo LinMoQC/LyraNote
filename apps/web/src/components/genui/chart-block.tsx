@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { memo } from "react"
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -19,10 +21,11 @@ interface RawChartData {
 }
 
 function ChartBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   if (isStreaming) {
     return (
       <div className="my-3 flex h-48 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成图表...
+        {t("chartStreaming")}
       </div>
     )
   }

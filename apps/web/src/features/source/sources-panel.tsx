@@ -13,6 +13,7 @@ import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
 import type { Source } from "@/types";
 import { useTranslations } from "next-intl";
+import { Loader } from "@/components/ui/loader";
 
 const sourceIconMap = {
   audio: FileAudio,
@@ -146,7 +147,7 @@ export function SourcesPanel({
             addSuggestion({
               type: "source_indexed",
               sourceId: source.id,
-              sourceName: source.title || "未知资料",
+              sourceName: source.title || t("unknownSource"),
               summary: data.summary || undefined,
               questions: data.questions,
             });
@@ -166,78 +167,85 @@ export function SourcesPanel({
     <aside className="flex h-full w-[260px] flex-shrink-0 flex-col overflow-hidden border-r border-border/25 bg-card/20">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
-        <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          来源 · {sources.length}
-          {isLoading && <Loader2 size={11} className="animate-spin opacity-50" />}
-        </span>
-        <div className="flex items-center gap-1">
-          <button
-            className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-            onClick={() => setImportDialogOpen(true)}
-            title="添加来源"
-            type="button"
-          >
-            <Plus size={15} />
-          </button>
-          {onClose ? (
+          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {t("sourcesHeader", { count: sources.length })}
+          </span>
+          <div className="flex items-center gap-1">
             <button
               className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-              onClick={onClose}
-              title="关闭面板"
+              onClick={() => setImportDialogOpen(true)}
+              title={t("addSourceTitle")}
               type="button"
             >
-              <X size={15} />
+              <Plus size={15} />
             </button>
-          ) : null}
-        </div>
+            {onClose ? (
+              <button
+                className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+                onClick={onClose}
+                title={t("closePanelTitle")}
+                type="button"
+              >
+                <X size={15} />
+              </button>
+            ) : null}
+          </div>
       </div>
 
       {/* List */}
       <div className="flex-1 overflow-y-auto px-2 py-2">
-        {processing.length > 0 && (
-          <div className="mb-3">
-            <p className="mb-1 px-2 text-[10px] font-medium tracking-wider text-blue-400/60">
-              {t("importing")}
-            </p>
-            {processing.map((source) => (
-              <SourceItem key={source.id} source={source} />
-            ))}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader size="medium" />
           </div>
-        )}
+        ) : (
+          <>
+            {processing.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1 px-2 text-[10px] font-medium tracking-wider text-blue-400/60">
+                  {t("importing")}
+                </p>
+                {processing.map((source) => (
+                  <SourceItem key={source.id} source={source} />
+                ))}
+              </div>
+            )}
 
-        {failed.length > 0 && (
-          <div className="mb-3">
-            <p className="mb-1 px-2 text-[10px] font-medium tracking-wider text-red-400/60">
-              {t("importFailed")}
-            </p>
-            {failed.map((source) => (
-              <SourceItem key={source.id} source={source} />
-            ))}
-          </div>
-        )}
+            {failed.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1 px-2 text-[10px] font-medium tracking-wider text-red-400/60">
+                  {t("importFailed")}
+                </p>
+                {failed.map((source) => (
+                  <SourceItem key={source.id} source={source} />
+                ))}
+              </div>
+            )}
 
-        {indexed.length > 0 && (
-          <div>
-            <p className="mb-1 px-2 text-[10px] font-medium tracking-wider text-muted-foreground/60">
-              {t("ready")}
-            </p>
-            {indexed.map((source) => (
-              <SourceItem key={source.id} source={source} />
-            ))}
-          </div>
-        )}
+            {indexed.length > 0 && (
+              <div>
+                <p className="mb-1 px-2 text-[10px] font-medium tracking-wider text-muted-foreground/60">
+                  {t("ready")}
+                </p>
+                {indexed.map((source) => (
+                  <SourceItem key={source.id} source={source} />
+                ))}
+              </div>
+            )}
 
-        {sources.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-sm text-muted-foreground">{t("noSources")}</p>
-            <button
-              className="mt-2 text-xs text-primary hover:underline"
-              onClick={() => setImportDialogOpen(true)}
-              type="button"
-            >
-              添加第一个来源
-            </button>
-          </div>
+            {sources.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <p className="text-sm text-muted-foreground">{t("noSources")}</p>
+                <button
+                  className="mt-2 text-xs text-primary hover:underline"
+                  onClick={() => setImportDialogOpen(true)}
+                  type="button"
+                >
+                  {t("addFirstSource")}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

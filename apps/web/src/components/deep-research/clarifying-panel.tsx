@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { m, AnimatePresence } from "framer-motion"
 import { ChevronRight, Loader2 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import type { ClarifyQuestion } from "./dr-types"
 
@@ -16,6 +17,7 @@ interface ClarifyingPanelProps {
 }
 
 export function ClarifyingPanel({ questions, onSubmit, onSkip, isLoading }: ClarifyingPanelProps) {
+  const t = useTranslations("deepResearch")
   const [currentIdx, setCurrentIdx] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [direction, setDirection] = useState<1 | -1>(1)
@@ -58,7 +60,7 @@ export function ClarifyingPanel({ questions, onSubmit, onSkip, isLoading }: Clar
           {/* Header row */}
           <div className="mb-3 flex items-center justify-between">
             <span className="text-[10px] font-medium tracking-widest text-amber-500/60 uppercase">
-              深度研究偏好
+              {t("clarifyPreference")}
             </span>
             <div className="flex items-center gap-2">
               {currentIdx > 0 && (
@@ -67,7 +69,7 @@ export function ClarifyingPanel({ questions, onSubmit, onSkip, isLoading }: Clar
                   onClick={goBack}
                   className="text-[10px] text-muted-foreground/40 transition-colors hover:text-muted-foreground/70"
                 >
-                  ← 上一题
+                  {t("prevQuestion")}
                 </button>
               )}
               <span className="text-[10px] tabular-nums text-muted-foreground/35">
@@ -151,7 +153,7 @@ export function ClarifyingPanel({ questions, onSubmit, onSkip, isLoading }: Clar
               disabled={isLoading}
               className="text-xs text-muted-foreground/35 transition-colors hover:text-muted-foreground/60"
             >
-              跳过，直接开始
+              {t("skipStart")}
             </button>
 
             <AnimatePresence>
@@ -170,7 +172,7 @@ export function ClarifyingPanel({ questions, onSubmit, onSkip, isLoading }: Clar
                     <Loader2 size={12} className="animate-spin" />
                   ) : (
                     <>
-                      开始深度研究
+                      {t("startResearch")}
                       <ChevronRight size={11} />
                     </>
                   )}
@@ -189,6 +191,7 @@ interface ClarifyingLoadingProps {
 }
 
 export function ClarifyingLoading({ className }: ClarifyingLoadingProps) {
+  const t = useTranslations("deepResearch")
   return (
     <m.div
       initial={{ opacity: 0 }}
@@ -200,7 +203,7 @@ export function ClarifyingLoading({ className }: ClarifyingLoadingProps) {
       <div className="mx-auto max-w-2xl">
         <div className="flex items-center gap-2 rounded-xl border border-amber-500/15 bg-amber-500/[0.03] px-4 py-3">
           <Loader2 size={13} className="animate-spin text-amber-500/60" />
-          <span className="text-xs text-amber-500/60">正在生成研究偏好问卷…</span>
+          <span className="text-xs text-amber-500/60">{t("generatingQuestions")}</span>
         </div>
       </div>
     </m.div>

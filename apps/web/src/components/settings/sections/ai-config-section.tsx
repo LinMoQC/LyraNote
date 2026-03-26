@@ -15,7 +15,7 @@ import {
   RERANKER_MODELS,
 } from "@/lib/constants";
 import { cn } from "@/lib/utils";
-import { testEmbeddingConnection, testLlmConnection, testRerankerConnection } from "@/services/config-service";
+import { testEmbeddingConnection, testLlmConnection, testRerankerConnection, testUtilityLlmConnection } from "@/services/config-service";
 import { useConfigForm } from "../hooks/use-config-form";
 import { FieldInput, FieldModelRow, FieldSelectRow, SaveButton } from "../settings-primitives";
 
@@ -43,6 +43,7 @@ function SectionTestButton({
   testing: boolean
   result: TestResult | null
 }) {
+  const t = useTranslations("settings");
   return (
     <div className="flex items-center gap-3 pt-1">
       <button
@@ -52,7 +53,7 @@ function SectionTestButton({
         className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:border-border/80 hover:text-foreground disabled:opacity-50"
       >
         {testing ? <Loader2 size={12} className="animate-spin" /> : null}
-        测试连通
+        {t("testConnection")}
       </button>
       {result && (
         <span className={cn(
@@ -78,6 +79,8 @@ export function AIConfigSection() {
   const [embResult, setEmbResult] = useState<TestResult | null>(null);
   const [rerankerTesting, setRerankerTesting] = useState(false);
   const [rerankerResult, setRerankerResult] = useState<TestResult | null>(null);
+  const [utilityTesting, setUtilityTesting] = useState(false);
+  const [utilityResult, setUtilityResult] = useState<TestResult | null>(null);
 
   async function handleSave() {
     await save({
@@ -85,6 +88,9 @@ export function AIConfigSection() {
       openai_api_key: form.openai_api_key,
       openai_base_url: form.openai_base_url,
       llm_model: form.llm_model,
+      llm_utility_model: form.llm_utility_model,
+      llm_utility_api_key: form.llm_utility_api_key,
+      llm_utility_base_url: form.llm_utility_base_url,
       embedding_api_key: form.embedding_api_key,
       embedding_base_url: form.embedding_base_url,
       embedding_model: form.embedding_model,
@@ -150,6 +156,48 @@ export function AIConfigSection() {
             } finally { setLlmTesting(false); }
           }}
         />
+      </div>
+
+      {/* ── 小模型 (辅助任务) ──────────────────────────────── */}
+      <div className="pt-4">
+        <SectionHeader title={t("ai.sectionUtility")} note={t("ai.utilityNote")} />
+        <div className="space-y-4 rounded-xl border border-border/40 bg-muted/20 p-4">
+          <FieldModelRow
+            label={t("ai.utilityModel")}
+            description={t("ai.utilityModelDesc")}
+            value={form.llm_utility_model ?? ""}
+            options={LLM_MODELS}
+            onChange={(v) => set("llm_utility_model", v)}
+          />
+          <FieldInput
+            label={t("ai.utilityApiKeyLabel")}
+            description={t("ai.utilityApiKeyDesc")}
+            type="password"
+            value={form.llm_utility_api_key === "••••••••" ? "" : (form.llm_utility_api_key ?? "")}
+            onChange={(v) => set("llm_utility_api_key", v)}
+            placeholder={form.llm_utility_api_key === "••••••••" ? tc("alreadySetHint") : t("ai.utilityApiKeyPlaceholder")}
+          />
+          <FieldInput
+            label={t("ai.utilityBaseUrlLabel")}
+            description={t("ai.utilityBaseUrlDesc")}
+            value={form.llm_utility_base_url ?? ""}
+            onChange={(v) => set("llm_utility_base_url", v)}
+            placeholder={t("ai.utilityBaseUrlPlaceholder")}
+          />
+          <SectionTestButton
+            testing={utilityTesting}
+            result={utilityResult}
+            onTest={async () => {
+              setUtilityTesting(true); setUtilityResult(null);
+              try {
+                const r = await testUtilityLlmConnection();
+                setUtilityResult({ ok: r.ok, message: r.ok ? `${r.model} ✓` : r.message });
+              } catch {
+                setUtilityResult({ ok: false, message: t("ai.testFailed") });
+              } finally { setUtilityTesting(false); }
+            }}
+          />
+        </div>
       </div>
 
       {/* ── 向量化模型 ─────────────────────────────────────── */}

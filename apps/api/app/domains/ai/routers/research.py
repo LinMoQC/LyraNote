@@ -47,26 +47,28 @@ async def create_deep_research(
 ):
     """Create a background deep-research task. Returns immediately."""
     task_id = _uuid.uuid4()
-    if not body.notebook_id:
-        raise HTTPException(400, "notebook_id is required")
-    try:
-        nb_id = _uuid.UUID(body.notebook_id)
-    except ValueError:
-        raise HTTPException(400, "Invalid notebook_id")
 
-    nb_result = await db.execute(
-        select(Notebook).where(
-            Notebook.id == nb_id,
-            Notebook.user_id == current_user.id,
+    notebook_id_uuid: _uuid.UUID | None = None
+    if body.notebook_id:
+        try:
+            nb_id = _uuid.UUID(body.notebook_id)
+        except ValueError:
+            raise HTTPException(400, "Invalid notebook_id")
+
+        nb_result = await db.execute(
+            select(Notebook).where(
+                Notebook.id == nb_id,
+                Notebook.user_id == current_user.id,
+            )
         )
-    )
-    notebook = nb_result.scalar_one_or_none()
-    if notebook is None:
-        raise HTTPException(404, "Notebook not found")
+        notebook = nb_result.scalar_one_or_none()
+        if notebook is None:
+            raise HTTPException(404, "Notebook not found")
+        notebook_id_uuid = notebook.id
 
     # Create conversation + user message immediately so the sidebar shows it
     conv = Conversation(
-        notebook_id=notebook.id,
+        notebook_id=notebook_id_uuid,
         user_id=current_user.id,
         title=body.query[:60],
     )
@@ -104,7 +106,7 @@ async def create_deep_research(
         run_research_task(
             task_id=str(task_id),
             query=body.query,
-            notebook_id=str(notebook.id),
+            notebook_id=str(notebook_id_uuid) if notebook_id_uuid else None,
             conversation_id=str(conv.id),
             user_id=str(current_user.id),
             mode=body.mode,

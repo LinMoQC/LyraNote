@@ -49,7 +49,7 @@ function extractChinese(line: string, lineNo: number): Omit<Hit, "file" | "line"
 
   // Skip pure imports, type-only lines
   if (/^import\s/.test(trimmed)) return results;
-  if (/^\/\//.test(trimmed)) return results; // single-line comment (not hardcode)
+  if (/^\/\//.test(trimmed)) return results; // single-line comment
   if (/^\*/.test(trimmed)) return results;   // block comment continuation
 
   // 1) JSX text: content between > and < that contains Chinese
@@ -62,22 +62,32 @@ function extractChinese(line: string, lineNo: number): Omit<Hit, "file" | "line"
     }
   }
 
-  // 2) String literals (single/double quoted) containing Chinese
-  const strLitRe = /(?<!=\s*)["']([^"']*[\u4e00-\u9fff][^"']*)["']/g;
+  // 2) ALL quoted strings containing Chinese (single / double quoted)
+  //    Previous version used a negative lookbehind that incorrectly skipped
+  //    variable assignments (const x = "中文") and JSX attribute values.
+  //    Now we capture everything and classify by context.
+  const strLitRe = /["']([^"'\n]*[\u4e00-\u9fff][^"'\n]*)["']/g;
   while ((m = strLitRe.exec(line)) !== null) {
     const text = m[1].trim();
     if (!text) continue;
-    // Skip if it's part of a className or import
-    const before = line.slice(0, m.index);
-    if (/className=/.test(before) && m.index - before.lastIndexOf("className=") < 20) continue;
 
-    // Determine if it's a JSX attribute value
-    const isAttr = /=\s*$/.test(before);
-    results.push({
-      extracted: text,
-      col: m.index,
-      category: isAttr ? "attribute" : "string-literal",
-    });
+    const before = line.slice(0, m.index);
+
+    // Skip className values (Tailwind utilities that happen to contain CJK — rare but possible)
+    if (/className\s*=\s*["'][^"']*$/.test(before)) continue;
+    // Skip key-prop strings like key="zh-name"
+    if (/\bkey\s*=\s*$/.test(before.trimEnd())) continue;
+    // Skip console.log / console.error / console.warn (dev-only noise)
+    if (/console\.(log|warn|error|info|debug)\s*\(/.test(before)) continue;
+
+    // Determine category
+    let category: Hit["category"] = "string-literal";
+    if (/[=(,]\s*$/.test(before.trimEnd()) && /[a-zA-Z]+=\s*$/.test(before.trimEnd())) {
+      // Looks like a JSX attribute value: foo="中文"
+      category = "attribute";
+    }
+
+    results.push({ extracted: text, col: m.index, category });
   }
 
   // 3) Template literals containing Chinese

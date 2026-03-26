@@ -25,15 +25,16 @@ import { EVIDENCE_STRENGTH_CONFIG, type DrProgress } from "./dr-types";
 // ── Evidence badge helpers ─────────────────────────────────────────────────────
 
 function EvidenceBadge({ grade }: { grade: "强" | "中" | "弱" }) {
+  const t = useTranslations("deepResearch");
   const configs = {
-    强: { cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", label: "强" },
-    中: { cls: "bg-amber-500/15 text-amber-400 border-amber-500/25", label: "中" },
-    弱: { cls: "bg-red-500/15 text-red-400 border-red-500/25", label: "弱" },
+    强: { cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25", labelKey: "evGradeStrong" as const },
+    中: { cls: "bg-amber-500/15 text-amber-400 border-amber-500/25", labelKey: "evGradeMedium" as const },
+    弱: { cls: "bg-red-500/15 text-red-400 border-red-500/25", labelKey: "evGradeWeak" as const },
   } as const;
   const cfg = configs[grade];
   return (
     <span className={cn("mx-1 inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium", cfg.cls)}>
-      证据：{cfg.label}
+      {t("evBadgePrefix")}{t(cfg.labelKey)}
     </span>
   );
 }

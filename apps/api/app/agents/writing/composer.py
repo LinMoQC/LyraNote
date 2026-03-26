@@ -99,6 +99,7 @@ async def build_system_prompt(
     scene_instruction: str | None = None,
     db: "AsyncSession | None" = None,  # kept for API compatibility, not used for memory
     tool_schemas: list[dict] | None = None,
+    user_portrait: dict | None = None,  # Lyra 用户画像（由 orchestrator 预加载）
 ) -> str:
     """Compose a personalised system prompt from base + L4 scene + L2/L3 memory + notebook context.
 
@@ -228,6 +229,33 @@ async def build_system_prompt(
             parts.append(f"\n## 近期对话摘要\n{diary_notes}")
     except Exception:
         pass
+
+    # 3b. User portrait — inject when portrait is passed directly (multi-agent path)
+    # The orchestrator pre-loads the portrait and injects it via the `portrait` kwarg.
+    # This block handles the direct kwarg injection path.
+    if user_portrait:
+        try:
+            identity = user_portrait.get("identity_summary", "")
+            trajectory = user_portrait.get("research_trajectory", {})
+            current_focus = trajectory.get("current_focus", "")
+            expertise = user_portrait.get("identity", {}).get("expertise_level", "")
+            answer_fmt = user_portrait.get("interaction_style", {}).get("answer_format", "")
+            lyra_notes = user_portrait.get("lyra_service_notes", "")
+            portrait_lines = []
+            if identity:
+                portrait_lines.append(identity)
+            if current_focus:
+                portrait_lines.append(f"当前研究重心：{current_focus}")
+            if expertise:
+                portrait_lines.append(f"知识水平：{expertise}")
+            if answer_fmt:
+                portrait_lines.append(f"偏好回答格式：{answer_fmt}")
+            if lyra_notes:
+                portrait_lines.append(f"Lyra 注意：{lyra_notes}")
+            if portrait_lines:
+                parts.append("\n## Lyra 对你的长期认知（用户画像）\n" + "\n".join(portrait_lines))
+        except Exception:
+            pass
 
     occupation = getattr(settings, "user_occupation", "") or ""
     preferences = getattr(settings, "user_preferences", "") or ""

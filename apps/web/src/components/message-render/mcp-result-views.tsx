@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import type { MCPResultData } from "@/types";
 
 /** Renders an MCP tool result HTML page inside a sandboxed iframe via a blob URL. */
@@ -42,6 +43,7 @@ export function MCPHTMLView({ data }: { data: MCPResultData }) {
 
 /** Generic fallback card for MCP tool results without a specific renderer. */
 export function MCPResultCard({ data }: { data: MCPResultData }) {
+  const t = useTranslations("genui");
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -52,10 +54,10 @@ export function MCPResultCard({ data }: { data: MCPResultData }) {
         className="flex w-full items-center gap-2 border-b border-border/40 bg-muted/30 px-3 py-2 text-left"
       >
         <span className="text-sm font-medium text-foreground/80">
-          🔌 {data.tool} 返回结果
+          🔌 {t("mcpResultLabel", { tool: data.tool })}
         </span>
         <span className="ml-auto text-xs text-muted-foreground">
-          {expanded ? "收起" : "展开"}
+          {expanded ? t("mcpCollapse") : t("mcpExpand")}
         </span>
       </button>
       {expanded && (

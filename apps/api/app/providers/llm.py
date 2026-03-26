@@ -30,6 +30,7 @@ class _LiteLLMCompletions:
             model=model,
             messages=messages,
             api_key=self._api_key,
+            drop_params=True,  # silently drop unsupported params (e.g. temperature on O-series)
             **kw,
         )
         # Same fix: force Google AI Studio for gemini/ models, not Vertex AI
@@ -89,12 +90,51 @@ def get_model() -> str:
     return settings.llm_model
 
 
+def get_utility_model() -> str:
+    """Return the model name to use for utility tasks.
+
+    Returns the configured ``llm_utility_model`` when set, otherwise falls back
+    to the main ``llm_model``.  No auto-inference — explicit config only.
+    """
+    from app.config import settings
+    return settings.llm_utility_model or settings.llm_model
+
+
+def get_utility_client() -> AsyncOpenAI | LiteLLMClientWrapper:
+    """Return a client configured for utility tasks.
+
+    When ``llm_utility_model`` is not set the main client is returned unchanged.
+    When it is set, a new client is built using ``llm_utility_api_key`` (falling
+    back to ``openai_api_key``) and ``llm_utility_base_url`` (falling back to
+    ``openai_base_url``).  A LiteLLM wrapper is used when the utility model name
+    contains a provider prefix (e.g. ``gemini/gemini-2.0-flash``).
+    """
+    from app.config import settings
+    if not settings.llm_utility_model:
+        return get_client()
+    api_key = settings.llm_utility_api_key or settings.openai_api_key
+    base_url = settings.llm_utility_base_url or settings.openai_base_url or None
+    if settings.llm_provider == "litellm" or "/" in settings.llm_utility_model:
+        return LiteLLMClientWrapper(api_key=api_key, base_url=base_url)
+    return AsyncOpenAI(api_key=api_key, base_url=base_url or None)
+
+
 async def chat(
     messages: list[dict],
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int | None = None,
 ) -> str:
+    from app.config import settings
+    # When the caller explicitly passes the configured utility model, route through
+    # the utility client so the correct API key and base_url are used.
+    if model and settings.llm_utility_model and model == settings.llm_utility_model:
+        client = get_utility_client()
+        kw: dict[str, Any] = {"temperature": temperature}
+        if max_tokens is not None:
+            kw["max_tokens"] = max_tokens
+        resp = await client.chat.completions.create(model=model, messages=messages, **kw)
+        return resp.choices[0].message.content or ""
     return await get_provider().chat(messages, model, temperature, max_tokens)
 
 

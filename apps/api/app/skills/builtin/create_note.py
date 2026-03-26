@@ -29,62 +29,48 @@ class CreateNoteSkill(SkillBase):
                 "properties": {
                     "title": {"type": "string", "description": "笔记标题"},
                     "content": {"type": "string", "description": "笔记正文，Markdown 格式"},
+                    "notebook_title": {
+                        "type": "string",
+                        "description": "新笔记本名称（仅在全局对话中未绑定笔记本时需要提供）",
+                    },
                 },
                 "required": ["title", "content"],
             },
         }
 
     async def execute(self, args: dict, ctx) -> str:
-        from sqlalchemy import select
-        from app.models import Note
+        from app.models import Note, Notebook
 
         title = args.get("title", "AI 草稿")
         content = args.get("content", "")
+        notebook_title = args.get("notebook_title") or title
         new_nodes = _markdown_to_tiptap(content)["content"]
 
         notebook_id = ctx.notebook_id if hasattr(ctx, 'notebook_id') and ctx.notebook_id else None
-        if not notebook_id:
-            return "ERROR: 无法确定目标笔记本，请先打开或选择一个笔记本。"
 
         from uuid import UUID
-        notebook_id_uuid = UUID(str(notebook_id))
-
-        # Try to append to the existing note in this notebook
-        result = await ctx.db.execute(
-            select(Note)
-            .where(Note.notebook_id == notebook_id_uuid, Note.user_id == ctx.user_id)
-            .order_by(Note.updated_at.desc())
-            .limit(1)
-        )
-        existing = result.scalar_one_or_none()
-
-        if existing and existing.content_json:
-            existing_content = list(existing.content_json.get("content", []))
-            separator = [
-                {"type": "horizontalRule"},
-                {
-                    "type": "heading",
-                    "attrs": {"level": 2},
-                    "content": [{"type": "text", "text": title}],
-                },
-            ]
-            existing.content_json = {
-                "type": "doc",
-                "content": existing_content + separator + new_nodes,
-            }
-            existing.content_text = (existing.content_text or "") + "\n\n" + content
-            await ctx.db.flush()
-            note = existing
-        else:
-            note = Note(
-                notebook_id=notebook_id_uuid,
+        if not notebook_id:
+            # Global chat: create a new notebook to hold this note
+            new_notebook = Notebook(
                 user_id=ctx.user_id,
-                title=title,
-                content_json={"type": "doc", "content": new_nodes},
-                content_text=content,
+                title=notebook_title,
             )
-            ctx.db.add(note)
+            ctx.db.add(new_notebook)
             await ctx.db.flush()
+            notebook_id_uuid = new_notebook.id
+            ctx.created_notebook_id = str(new_notebook.id)
+        else:
+            notebook_id_uuid = UUID(str(notebook_id))
+
+        note = Note(
+            notebook_id=notebook_id_uuid,
+            user_id=ctx.user_id,
+            title=title,
+            content_json={"type": "doc", "content": new_nodes},
+            content_text=content,
+        )
+        ctx.db.add(note)
+        await ctx.db.flush()
 
         ctx.created_note_id = str(note.id)
         ctx.created_note_title = title

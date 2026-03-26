@@ -8,6 +8,7 @@
 
 import { Check, ShieldAlert, X } from "lucide-react"
 import { useState } from "react"
+import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 
 interface ToolCallInfo {
@@ -27,6 +28,7 @@ function parseMcpName(name: string): { server: string; method: string } | null {
 }
 
 export function ApprovalCard({ toolCalls, onDecision }: ApprovalCardProps) {
+  const t = useTranslations("genui")
   const [status, setStatus] = useState<"pending" | "loading" | "approved" | "rejected">("pending")
 
   const handle = async (approved: boolean) => {
@@ -46,7 +48,7 @@ export function ApprovalCard({ toolCalls, onDecision }: ApprovalCardProps) {
       <div className="flex items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border/40">
         <ShieldAlert size={12} className="flex-shrink-0 text-amber-400/80" />
         <span className="text-[11px] font-medium text-foreground/70">
-          AI 请求调用 MCP 工具
+          {t("approvalHeader")}
         </span>
       </div>
 
@@ -91,7 +93,7 @@ export function ApprovalCard({ toolCalls, onDecision }: ApprovalCardProps) {
               className="flex items-center gap-1 rounded-lg bg-emerald-500/15 px-3 py-1.5 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/25"
             >
               <Check size={10} strokeWidth={2.5} />
-              允许
+              {t("allow")}
             </button>
             <button
               type="button"
@@ -99,21 +101,21 @@ export function ApprovalCard({ toolCalls, onDecision }: ApprovalCardProps) {
               className="flex items-center gap-1 rounded-lg bg-muted/60 px-3 py-1.5 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground/70"
             >
               <X size={10} strokeWidth={2.5} />
-              拒绝
+              {t("deny")}
             </button>
           </>
         )}
         {status === "loading" && (
-          <span className="text-[11px] text-muted-foreground/40">处理中…</span>
+          <span className="text-[11px] text-muted-foreground/40">{t("processingAction")}</span>
         )}
         {status === "approved" && (
           <span className={cn("flex items-center gap-1 text-[11px] text-emerald-400/80")}>
-            <Check size={10} />已允许
+            <Check size={10} />{t("allowed")}
           </span>
         )}
         {status === "rejected" && (
           <span className={cn("flex items-center gap-1 text-[11px] text-muted-foreground/50")}>
-            <X size={10} />已拒绝
+            <X size={10} />{t("denied")}
           </span>
         )}
       </div>

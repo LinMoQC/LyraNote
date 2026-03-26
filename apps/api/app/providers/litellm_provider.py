@@ -51,6 +51,7 @@ class LiteLLMProvider(BaseLLMProvider):
             model=actual_model,
             temperature=temperature,
             api_key=self._api_key,
+            drop_params=True,  # silently drop unsupported params (e.g. temperature on O-series)
         )
         # Force Google AI Studio REST API for gemini/ models.
         # Without this, LiteLLM detects google-cloud-aiplatform and falls through
@@ -103,11 +104,42 @@ class LiteLLMProvider(BaseLLMProvider):
         temperature: float = 0.7,
     ) -> dict:
         kwargs = self._call_kwargs(model, temperature, None)
-        tool_list = [{"type": "function", "function": t} for t in tools]
+        # Normalize tools to OpenAI v2 wrapped format:
+        #   {"type": "function", "function": {"name": ..., ...}}
+        # Two input shapes are accepted:
+        #   (a) Already-wrapped: {"type": "function", "function": {...}}  — e.g. _ROUTE_TOOLS
+        #   (b) Flat:            {"name": ..., "description": ..., ...}   — e.g. skill schemas
+        # Tools missing a 'name' are dropped to prevent LiteLLM's Gemini adapter
+        # from raising KeyError: 'name' (ChatCompletionToolParamFunctionChunk is total=False).
+        tool_list: list[dict] = []
+        for t in tools:
+            if "function" in t:
+                # Already wrapped — validate inner name
+                if t["function"].get("name"):
+                    tool_list.append(t)
+                else:
+                    logger.warning("Dropped already-wrapped tool with missing inner 'name': %s", t)
+            elif t.get("name"):
+                # Flat format — wrap it
+                tool_list.append({"type": "function", "function": t})
+            else:
+                logger.warning("Dropped tool with missing 'name': %s", t)
         if tool_list:
             kwargs["tools"] = tool_list
             kwargs["tool_choice"] = "auto"
-        response = await litellm.acompletion(messages=messages, **kwargs)
+        try:
+            response = await litellm.acompletion(messages=messages, **kwargs)
+        except (KeyError, TypeError) as exc:
+            # Gemini tool-format conversion can raise KeyError / TypeError for
+            # malformed schemas that slip past the guard above.  Fall back to a
+            # plain completion so the user still gets an answer.
+            logger.warning(
+                "Tool-call LLM request failed (%s: %s); retrying without tools",
+                type(exc).__name__, exc,
+            )
+            kwargs.pop("tools", None)
+            kwargs.pop("tool_choice", None)
+            response = await litellm.acompletion(messages=messages, **kwargs)
         choice = response.choices[0]
 
         if choice.finish_reason == "tool_calls" and choice.message.tool_calls:

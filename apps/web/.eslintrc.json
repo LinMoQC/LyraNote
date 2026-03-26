@@ -7,6 +7,66 @@
     ],
     "@typescript-eslint/no-explicit-any": "warn",
     "react-hooks/exhaustive-deps": "warn",
-    "no-console": ["warn", { "allow": ["warn", "error"] }]
-  }
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["openai", "@anthropic-ai/*", "litellm"],
+            "message": "禁止在前端导入 AI SDK。AI 调用只在后端 providers/ 层进行。"
+          }
+        ],
+        "paths": [
+          {
+            "name": "axios",
+            "message": "禁止直接导入 axios。请使用 @/lib/http-client 导出的 http。"
+          }
+        ]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/lib/http-client.ts",
+        "src/lib/request-error.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["openai", "@anthropic-ai/*", "litellm"],
+                "message": "禁止在前端导入 AI SDK。AI 调用只在后端 providers/ 层进行。"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/features/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["openai", "@anthropic-ai/*", "litellm"],
+                "message": "禁止在前端导入 AI SDK。"
+              }
+            ],
+            "paths": [
+              {
+                "name": "axios",
+                "message": "禁止在 features/ 或 components/ 中直接导入 axios。请调用 src/services/ 层的函数。"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

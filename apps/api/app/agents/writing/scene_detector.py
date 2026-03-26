@@ -67,6 +67,7 @@ async def detect_scene(query: str) -> str:
     Falls back to 'research' on any error.
     """
     from app.providers.llm import chat
+    from app.providers.llm import get_utility_model
 
     try:
         result = await chat(
@@ -80,8 +81,9 @@ async def detect_scene(query: str) -> str:
                     "content": SCENE_DETECTION_PROMPT.format(query=query[:300]),
                 },
             ],
-            temperature=0.0,
-            max_tokens=10,
+            get_utility_model(),
+            0.0,
+            500,  # o-series reasoning models need headroom for thinking tokens
         )
         scene = result.strip().lower().split()[0] if result.strip() else "research"
         return scene if scene in VALID_SCENES else "research"

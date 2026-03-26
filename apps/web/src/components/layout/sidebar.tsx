@@ -21,7 +21,8 @@ import {
   LogOut,
   MessageSquare,
   PanelLeft,
-  Settings
+  Settings,
+  Sparkles
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import Image from "next/image";
@@ -30,6 +31,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { INSIGHT_POLL_INTERVAL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -49,6 +51,7 @@ const navItemDefs = [
   { href: "/app/knowledge", labelKey: "knowledge" as const, icon: LibraryBig, exact: false },
   { href: "/app/chat", labelKey: "chat" as const, icon: MessageSquare, exact: false },
   { href: "/app/tasks", labelKey: "tasks" as const, icon: Clock, exact: false },
+  { href: "/app/portrait", labelKey: "portrait" as const, icon: Sparkles, exact: false },
 ];
 
 function Label({ collapsed, children, className }: { collapsed: boolean; children: React.ReactNode; className?: string }) {
@@ -292,9 +295,9 @@ export function Sidebar() {
                 <div className="space-y-0.5">
                   {notebooksLoading
                     ? [68, 80, 55].map((w, i) => (
-                        <div
+                        <Skeleton
                           key={i}
-                          className="mx-1 my-0.5 animate-pulse rounded-md bg-foreground/[0.04]"
+                          className="mx-1 my-0.5 rounded-md bg-foreground/[0.04]"
                           style={{ height: 26, width: `${w}%`, animationDelay: `${i * 60}ms` }}
                         />
                       ))
@@ -330,7 +333,7 @@ export function Sidebar() {
                 className={cn("flex-shrink-0 transition-transform duration-150", !insightsOpen && "-rotate-90")}
               />
               <span className="flex items-center gap-1.5">
-                AI 洞察
+                {tNav("aiInsights")}
                 {unreadCount > 0 && (
                   <span className="rounded-full bg-primary/20 px-1.5 py-px text-[9px] font-bold leading-none text-primary">
                     {unreadCount}
@@ -345,7 +348,7 @@ export function Sidebar() {
                   onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); handleMarkAllRead(); } }}
                   className="ml-auto text-[10px] text-muted-foreground/30 hover:text-foreground/60"
                 >
-                  全部已读
+                  {tNav("markAllRead")}
                 </span>
               )}
             </button>
@@ -386,7 +389,7 @@ export function Sidebar() {
                             type="button"
                             onClick={() => handleMarkRead(insight.id)}
                             className="flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-                            title="标记已读"
+                            title={tNav("markRead")}
                           >
                             <Eye size={10} className="text-muted-foreground/30 hover:text-foreground/60" />
                           </button>
@@ -472,16 +475,16 @@ export function Sidebar() {
                     role="menuitem"
                   >
                     <LogOut size={14} />
-                    退出登录
+                    {tNav("logout")}
                   </button>
                 </div>
               )}
             </>
           ) : (
             <div className="flex items-center gap-3 rounded-lg py-2 pl-3 pr-3">
-              <div className="h-[22px] w-[22px] flex-shrink-0 animate-pulse rounded-full bg-foreground/[0.06]" />
+              <Skeleton className="h-[22px] w-[22px] flex-shrink-0 rounded-full bg-foreground/[0.06]" />
               <Label collapsed={collapsed}>
-                <div className="h-3 w-20 animate-pulse rounded bg-foreground/[0.05]" />
+                <Skeleton className="h-3 w-20 rounded bg-foreground/[0.05]" />
               </Label>
             </div>
           )}

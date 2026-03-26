@@ -68,6 +68,7 @@ export type Source = {
   type: SourceType;
   summary: string;
   status: SourceStatus;
+  metadata?: Record<string, unknown>;
 };
 
 /** AI 回复中的引用数据 */

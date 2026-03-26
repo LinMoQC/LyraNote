@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    # Small/fast model for utility tasks (JSON generation, classification, summarisation).
+    # When empty, falls back to the main model's full config (model + api key + base url).
+    llm_utility_model: str = ""
+    llm_utility_api_key: str = ""
+    llm_utility_base_url: str = ""
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
     # Embedding-specific overrides (falls back to openai_api_key / openai_base_url when empty)
@@ -110,8 +115,12 @@ class Settings(BaseSettings):
         return f"{base}{prefix.rstrip('/')}"
 
     # App
-    debug: bool = True
+    debug: bool = False
     cors_origins: str = "http://localhost:3000"
+
+    # Database connection pool (ignored for SQLite)
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
 
     @property
     def cors_origins_list(self) -> list[str]:

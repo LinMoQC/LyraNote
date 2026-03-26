@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 @dataclass
 class ToolContext:
-    notebook_id: str
+    notebook_id: str | None  # None when called from notebook-free global chat
     user_id: UUID
     db: AsyncSession
     collected_citations: list[dict] = field(default_factory=list)
@@ -31,8 +31,9 @@ class ToolContext:
     history: list[dict] = field(default_factory=list)  # Recent chat turns for coreference resolution
     mind_map_data: dict | None = None  # Set by generate_mind_map skill
     diagram_data: dict | None = None   # Set by generate_diagram skill
-    created_note_id: str | None = None       # Set by create_note_draft skill
-    created_note_title: str | None = None    # Set by create_note_draft skill
+    created_note_id: str | None = None        # Set by create_note_draft skill
+    created_note_title: str | None = None     # Set by create_note_draft skill
+    created_notebook_id: str | None = None    # Set by create_note_draft when it creates a new notebook
     ui_elements: list[dict] = field(default_factory=list)  # Flushed to SSE after each tool_result
     # MCPSkill instances keyed by their namespaced function name, populated by react_agent
     mcp_skill_map: dict = field(default_factory=dict)

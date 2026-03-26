@@ -111,7 +111,7 @@ export async function startLocal() {
       name: 'worker',
       label: 'Worker',
       command: celery,
-      args: ['-A', 'app.workers.tasks.celery_app', 'worker', '--loglevel=info', '--concurrency=2'],
+      args: ['-A', 'app.workers.tasks.celery_app', 'worker', '--loglevel=info', '--concurrency=2', '-n', 'worker@%h'],
       cwd: API_DIR,
     },
     {

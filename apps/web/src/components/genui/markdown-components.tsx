@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useCallback } from "react"
 import type React from "react"
+import { useTranslations } from "next-intl"
 import type { CitationData } from "@/types"
 import { processChildren } from "@/features/chat/chat-helpers"
 import { MermaidBlock } from "@/components/message-render/mermaid-block"
@@ -84,9 +85,10 @@ function ArtifactCard({
   content: string
   onArtifact?: (p: ArtifactPayload) => void
 }) {
+  const t = useTranslations("genui")
   const open = useCallback(() => {
-    onArtifact?.({ type: "html", content, title: "交互预览" })
-  }, [onArtifact, content])
+    onArtifact?.({ type: "html", content, title: t("artifactTitle") })
+  }, [onArtifact, content, t])
 
   useEffect(() => { open() }, [open])
 
@@ -103,8 +105,8 @@ function ArtifactCard({
         </svg>
       </div>
       <div className="min-w-0 flex-1">
-        <div className="text-xs font-medium text-indigo-300">交互预览</div>
-        <div className="mt-0.5 text-[10px] text-indigo-300/50">点击打开侧边面板查看</div>
+        <div className="text-xs font-medium text-indigo-300">{t("artifactTitle")}</div>
+        <div className="mt-0.5 text-[10px] text-indigo-300/50">{t("artifactHint")}</div>
       </div>
       <svg className="h-4 w-4 flex-shrink-0 text-indigo-400/40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 18l6-6-6-6" />

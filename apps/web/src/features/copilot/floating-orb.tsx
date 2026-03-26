@@ -1,13 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import { useQuery } from "@tanstack/react-query";
 import { m } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { useTranslations } from "next-intl";
 
 import { getInsights } from "@/services/ai-service";
 import { useProactiveStore } from "@/store/use-proactive-store";
 
 export function FloatingOrb({ onClick }: { onClick: () => void }) {
+  const t = useTranslations("copilot");
   const storeUnread = useProactiveStore((s) => s.unreadCount);
   const { data: insightsData } = useQuery({
     queryKey: ["insights"],
@@ -20,7 +22,7 @@ export function FloatingOrb({ onClick }: { onClick: () => void }) {
     <m.button
       type="button"
       onClick={onClick}
-      title="打开 AI Copilot"
+      title={t("openCopilot")}
       initial={{ scale: 0, opacity: 0 }}
       animate={{ scale: 1, opacity: 1 }}
       exit={{ scale: 0, opacity: 0 }}
@@ -32,13 +34,12 @@ export function FloatingOrb({ onClick }: { onClick: () => void }) {
         background: "radial-gradient(circle at 35% 35%, #a78bfa, #6366f1 55%, #3b82f6)",
       }}
     >
-      {/* inner glow */}
-      <div className="absolute inset-0 rounded-full bg-accent" />
+      <div className="absolute inset-0 z-10 overflow-hidden rounded-full">
+        <Image src="/bot_avatar.png" alt="AI" fill className="object-cover" />
+      </div>
 
       {/* subtle highlight */}
-      <div className="absolute left-2.5 top-2 h-3 w-3 rounded-full bg-white/30 blur-[3px]" />
-
-      <Sparkles className="relative z-10 text-white drop-shadow" size={18} />
+      <div className="absolute left-2.5 top-2 z-20 h-3 w-3 rounded-full bg-white/20 blur-[3px]" />
 
       {/* unread badge */}
       {unreadCount > 0 && (

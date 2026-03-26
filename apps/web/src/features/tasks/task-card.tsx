@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { m } from "framer-motion";
+import { useTranslations } from "next-intl";
 
 import { Dialog } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
@@ -25,76 +26,79 @@ import {
 } from "@/services/task-service";
 import { TaskHistoryDialog } from "./task-history-dialog";
 
-const DELIVERY_LABELS: Record<string, string> = {
-  email: "邮件",
-  note: "笔记",
-  both: "邮件 + 笔记",
-};
-
 const DELIVERY_ICONS: Record<string, typeof Mail> = {
   email: Mail,
   note: NotepadText,
   both: Mail,
 };
 
-function formatCron(cron: string): string {
-  const map: Record<string, string> = {
-    "0 8 * * *": "每天 08:00",
-    "0 9 * * 1": "每周一 09:00",
-    "0 9 1,15 * *": "每月 1/15 号 09:00",
-    "0 9 1 * *": "每月 1 号 09:00",
-    "0 8 */3 * *": "每 3 天 08:00",
-  };
-  return map[cron] || cron;
-}
-
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = date.getTime() - now.getTime();
-  const absDiffMs = Math.abs(diffMs);
-  const minutes = Math.floor(absDiffMs / 60000);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  if (diffMs > 0) {
-    if (minutes < 60) return `${minutes} 分钟后`;
-    if (hours < 24) return `${hours} 小时后`;
-    return `${days} 天后`;
-  }
-  if (minutes < 60) return `${minutes} 分钟前`;
-  if (hours < 24) return `${hours} 小时前`;
-  return `${days} 天前`;
-}
+const CRON_KEYS: Record<string, string> = {
+  "0 8 * * *":    "cronDaily",
+  "0 9 * * 1":    "cronWeekly",
+  "0 9 1,15 * *": "cronBimonthly",
+  "0 9 1 * *":    "cronMonthly",
+  "0 8 */3 * *":  "cronEvery3Days",
+};
 
 export function TaskCard({ task }: { task: ScheduledTask }) {
+  const t = useTranslations("tasks");
   const queryClient = useQueryClient();
   const [showHistory, setShowHistory] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const { success, error } = useToast();
 
+  function formatCron(cron: string): string {
+    const key = CRON_KEYS[cron];
+    return key ? t(key) : cron;
+  }
+
+  function formatRelativeTime(dateStr: string): string {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = date.getTime() - now.getTime();
+    const absDiffMs = Math.abs(diffMs);
+    const minutes = Math.floor(absDiffMs / 60000);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (diffMs > 0) {
+      if (minutes < 60) return t("minutesLater", { minutes });
+      if (hours < 24) return t("hoursLater", { hours });
+      return t("daysLater", { days });
+    }
+    if (minutes < 60) return t("minutesAgo", { minutes });
+    if (hours < 24) return t("hoursAgo", { hours });
+    return t("daysAgo", { days });
+  }
+
+  const DELIVERY_LABELS: Record<string, string> = {
+    email: t("deliveryLabelEmail"),
+    note:  t("deliveryLabelNote"),
+    both:  t("deliveryLabelBoth"),
+  };
+
   const toggleMutation = useMutation({
     mutationFn: () => updateTask(task.id, { enabled: !task.enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      success(task.enabled ? "任务已暂停" : "任务已启用");
+      success(task.enabled ? t("paused") : t("enabled"));
     },
-    onError: () => error("操作失败，请重试"),
+    onError: () => error(t("toggleFailed")),
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteTask(task.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
-      success("任务已删除");
+      success(t("deleted"));
     },
-    onError: () => error("删除失败，请重试"),
+    onError: () => error(t("deleteFailed")),
   });
 
   const runMutation = useMutation({
     mutationFn: () => runTaskManually(task.id),
-    onSuccess: () => success("任务已加入执行队列"),
-    onError: () => error("执行失败，请稍后重试"),
+    onSuccess: () => success(t("queued")),
+    onError: () => error(t("runFailed")),
   });
 
   const deliveryMethod = task.delivery_config?.method as string;
@@ -145,13 +149,13 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
           <span className="inline-flex items-center gap-1 rounded-md bg-muted/30 px-2 py-0.5 text-[12px] text-muted-foreground/70">
             <DeliveryIcon size={11} className="shrink-0" />
             {deliveryMethod === "email" && task.delivery_config?.email
-              ? `邮件 (${task.delivery_config.email})`
-              : DELIVERY_LABELS[deliveryMethod] || "笔记"}
+              ? t("emailDelivery", { email: task.delivery_config.email as string })
+              : DELIVERY_LABELS[deliveryMethod] || t("deliveryLabelNote")}
           </span>
           {feedUrls.length > 0 && (
             <span className="inline-flex items-center gap-1 rounded-md bg-orange-500/10 px-2 py-0.5 text-[12px] text-orange-400">
               <Rss size={11} className="shrink-0" />
-              {feedUrls.length} 个订阅源
+              {t("feedCount", { count: feedUrls.length })}
             </span>
           )}
         </div>
@@ -162,7 +166,7 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
             <div className="flex items-start gap-2 text-muted-foreground/60">
               <CheckCircle2 size={12} className="mt-[3px] shrink-0 text-green-400/70" />
               <span>
-                上次：{formatRelativeTime(task.last_run_at)}
+                {t("lastRun", { time: formatRelativeTime(task.last_run_at) })}
                 {task.last_result && (
                   <span className="ml-1 text-muted-foreground/40">
                     · {task.last_result}
@@ -174,16 +178,16 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
           {task.last_error && (
             <div className="flex items-start gap-2 text-red-400/70">
               <Clock size={12} className="mt-[3px] shrink-0" />
-              <span className="line-clamp-1">错误：{task.last_error}</span>
+              <span className="line-clamp-1">{t("errorPrefix", { error: task.last_error })}</span>
             </div>
           )}
           <div className="flex items-start gap-2 text-muted-foreground/50">
             <Clock size={12} className="mt-[3px] shrink-0" />
             <span>
-              下次：{formatRelativeTime(task.next_run_at)}
+              {t("nextRun", { time: formatRelativeTime(task.next_run_at) })}
               {task.run_count > 0 && (
                 <span className="ml-1 text-muted-foreground/40">
-                  · 已执行 {task.run_count} 次
+                  · {t("runCount", { count: task.run_count })}
                 </span>
               )}
             </span>
@@ -199,7 +203,7 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
             className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
           >
             <Play size={11} />
-            立即执行
+            {t("runNow")}
           </button>
           <button
             type="button"
@@ -207,7 +211,7 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
             className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] text-muted-foreground/60 transition-colors hover:bg-muted/40 hover:text-foreground/80"
           >
             <History size={11} />
-            执行历史
+            {t("history")}
           </button>
           <div className="flex-1" />
           <button
@@ -230,8 +234,8 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
 
       <Dialog
         open={showDelete}
-        title="删除定时任务"
-        description={`确定要删除「${task.name}」吗？此操作无法撤销。`}
+        title={t("deleteTitle")}
+        description={t("deleteConfirm", { name: task.name })}
         onClose={() => setShowDelete(false)}
         className="max-w-sm"
       >
@@ -241,7 +245,7 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
             onClick={() => setShowDelete(false)}
             className="rounded-xl px-4 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent"
           >
-            取消
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -252,7 +256,7 @@ export function TaskCard({ task }: { task: ScheduledTask }) {
             disabled={deleteMutation.isPending}
             className="rounded-xl bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-50"
           >
-            删除
+            {t("delete")}
           </button>
         </div>
       </Dialog>

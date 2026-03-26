@@ -16,6 +16,7 @@ import dynamic from "next/dynamic";
 import { m, AnimatePresence } from "framer-motion";
 
 import { Select, SelectContent, SelectItem } from "@/components/ui/select";
+import { Loader } from "@/components/ui/loader";
 
 import {
   getGlobalGraph,
@@ -42,15 +43,6 @@ const TYPE_COLORS: Record<string, string> = {
   event: "#fbbf24",
   organization: "#f87171",
   other: "#94a3b8",
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  concept: "概念",
-  person: "人物",
-  technology: "技术",
-  event: "事件",
-  organization: "组织",
-  other: "其他",
 };
 
 interface ForceNode extends GraphNode {
@@ -80,6 +72,16 @@ interface KnowledgeGraphViewProps {
 
 export function KnowledgeGraphView({ toolbarContainer }: KnowledgeGraphViewProps) {
   const t = useTranslations("knowledge");
+  const tTypes = useTranslations("knowledge.entityTypes");
+
+  const TYPE_LABELS: Record<string, string> = {
+    concept:      tTypes("concept"),
+    person:       tTypes("person"),
+    technology:   tTypes("technology"),
+    event:        tTypes("event"),
+    organization: tTypes("organization"),
+    other:        tTypes("other"),
+  };
   const [graphData, setGraphData] = useState<KnowledgeGraphData | null>(null);
   const [loading, setLoading] = useState(true);
   const [rebuilding, setRebuilding] = useState(false);
@@ -302,7 +304,7 @@ export function KnowledgeGraphView({ toolbarContainer }: KnowledgeGraphViewProps
   if (loading) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <Loader2 size={24} className="animate-spin text-muted-foreground" />
+        <Loader size="medium" />
       </div>
     );
   }

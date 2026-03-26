@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents.instructions import (
+from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
@@ -18,7 +18,7 @@ from app.agents.instructions import (
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
 )
-from app.agents.state import AgentState
+from app.agents.core.state import AgentState
 
 
 # ── AgentState ────────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ class TestAgentStateEstimateTokens:
 
     def test_threshold_detection(self):
         """Can detect when over a threshold like CONTEXT_TOKEN_THRESHOLD=8000."""
-        from app.agents.brain import CONTEXT_TOKEN_THRESHOLD
+        from app.agents.core.brain import CONTEXT_TOKEN_THRESHOLD
         # Need 8000 * 3 = 24000 chars to exceed threshold
         large_msg = {"role": "user", "content": "x" * (CONTEXT_TOKEN_THRESHOLD * 3 + 3)}
         state = AgentState(messages=[large_msg])

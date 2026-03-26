@@ -38,6 +38,8 @@ function NotebookMenu({
   onDelete: () => void;
   onTogglePublish: () => void;
 }) {
+  const t = useTranslations("notebook");
+  const tc = useTranslations("common");
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -74,7 +76,7 @@ function NotebookMenu({
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); onRename(); }}
           >
             <Pencil size={13} className="opacity-60" />
-            重命名
+            {t("rename")}
           </button>
           <button
             type="button"
@@ -84,12 +86,12 @@ function NotebookMenu({
             {isPublic ? (
               <>
                 <GlobeLock size={13} className="opacity-60" />
-                取消公开
+                {t("unpublish")}
               </>
             ) : (
               <>
                 <Globe size={13} className="opacity-60" />
-                公开发布
+                {t("publish")}
               </>
             )}
           </button>
@@ -100,7 +102,7 @@ function NotebookMenu({
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false); onDelete(); }}
           >
             <Trash2 size={13} className="opacity-70" />
-            删除
+            {tc("delete")}
           </button>
         </div>
       )}
@@ -125,6 +127,7 @@ function EditNotebookDialog({
   const [name, setName] = useState(notebook.title);
   const [iconId, setIconId] = useState(() => notebook.coverEmoji || pickDefaultIcon(notebook.id));
   const [loading, setLoading] = useState(false);
+  const t = useTranslations("notebook");
   const tc = useTranslations("common");
 
   useEffect(() => {
@@ -150,7 +153,7 @@ function EditNotebookDialog({
   }
 
   return (
-    <Dialog open={open} title="编辑笔记本" onClose={onClose} className="max-w-md">
+    <Dialog open={open} title={t("editTitle")} onClose={onClose} className="max-w-md">
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-muted/60">
@@ -158,7 +161,7 @@ function EditNotebookDialog({
           </div>
           <Input
             autoFocus
-            placeholder="笔记本名称"
+            placeholder={t("editNamePlaceholder")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") void handleSave(); }}
@@ -169,7 +172,7 @@ function EditNotebookDialog({
 
         <div>
           <p className="mb-2 text-[11px] font-medium text-muted-foreground/50 uppercase tracking-widest">
-            图标
+            {t("iconLabel")}
           </p>
           <div className="grid grid-cols-7 gap-1">
             {NOTEBOOK_ICONS.map((item) => {
@@ -217,6 +220,7 @@ function DeleteNotebookDialog({
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const t = useTranslations("notebook");
   const tc = useTranslations("common");
 
   async function handleDelete() {
@@ -232,12 +236,10 @@ function DeleteNotebookDialog({
   }
 
   return (
-    <Dialog open={open} title="删除笔记本" onClose={onClose} className="max-w-sm">
+    <Dialog open={open} title={t("deleteTitle")} onClose={onClose} className="max-w-sm">
       <div className="rounded-xl border border-red-500/15 bg-red-500/8 px-4 py-3">
         <p className="text-sm leading-relaxed text-foreground/80">
-          确定要删除笔记本{" "}
-          <span className="font-semibold text-foreground">「{notebook.title}」</span>{" "}
-          吗？删除后所有内容将无法恢复。
+          {t("deleteConfirm", { name: notebook.title })}
         </p>
       </div>
       <div className="flex justify-end gap-2 pt-1">
@@ -292,7 +294,7 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
             {notebook.isPublic && (
               <div className="ml-auto flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
                 <Globe size={9} />
-                公开
+                {t("publishedBadge")}
               </div>
             )}
           </div>

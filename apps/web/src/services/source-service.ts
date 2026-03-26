@@ -155,18 +155,34 @@ export async function getChunks(sourceId: string): Promise<Chunk[]> {
 }
 
 /** 分块粒度策略 */
-export type ChunkStrategy = "coarse" | "standard" | "fine"
+export type ChunkStrategy = "coarse" | "standard" | "fine" | "custom"
+
+/** 切割器类型 */
+export type SplitterType = "auto" | "semantic" | "recursive"
+
+export interface RechunkOptions {
+  strategy?: ChunkStrategy
+  chunk_size?: number
+  chunk_overlap?: number
+  splitter_type?: SplitterType
+  separators?: string[]
+  min_chunk_size?: number
+}
 
 /**
  * 对知识来源重新分块
  * @param sourceId - 来源 ID
- * @param strategy - 分块策略（粗/标准/细）
+ * @param options - 分块选项
  */
 export async function rechunkSource(
   sourceId: string,
-  strategy: ChunkStrategy,
+  strategyOrOptions: ChunkStrategy | RechunkOptions,
 ): Promise<void> {
-  await http.post(SOURCES.rechunk(sourceId), { strategy })
+  const body: RechunkOptions =
+    typeof strategyOrOptions === "string"
+      ? { strategy: strategyOrOptions }
+      : strategyOrOptions
+  await http.post(SOURCES.rechunk(sourceId), body)
 }
 
 /**

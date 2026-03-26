@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
+import { useRouter } from "next/navigation";
 
 import { sendMessageStream, type AttachmentMeta } from "@/services/ai-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
@@ -13,7 +14,6 @@ import type { LocalMessage, MessageAttachment } from "@/features/chat/chat-types
 import type { DrProgress } from "@/components/deep-research/deep-research-progress";
 
 interface UseChatStreamOpts {
-  globalNotebookId: string | undefined;
   activeConvId: string | null;
   input: string;
   streaming: boolean;
@@ -29,7 +29,6 @@ interface UseChatStreamOpts {
 }
 
 export function useChatStream({
-  globalNotebookId,
   activeConvId,
   input,
   streaming,
@@ -45,6 +44,7 @@ export function useChatStream({
 }: UseChatStreamOpts) {
   const queryClient = useQueryClient();
   const t = useTranslations("chat");
+  const router = useRouter();
   const {
     agentSteps,
     pendingApproval,
@@ -137,7 +137,7 @@ export function useChatStream({
 
   const handleSend = useCallback(async (overrideText?: string, skipUserBubble?: boolean) => {
     const text = (overrideText ?? input).trim();
-    if (!text || streaming || !globalNotebookId) return;
+    if (!text || streaming) return;
 
     if (isDeepResearch) {
       await handleDeepResearch(text);
@@ -193,11 +193,11 @@ export function useChatStream({
             );
             streamLifecycle.finalize();
             setStreaming(false);
-            queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+            queryClient.invalidateQueries({ queryKey: ["conversations"] });
           });
         },
         undefined,
-        globalNotebookId,
+        undefined,  // notebookId — global chat is notebook-free
         (event) => {
           if (event.type === "done" && event.message_id) {
             const curId = assistantIdRef.current;
@@ -230,7 +230,14 @@ export function useChatStream({
           if (event.type === "note_created") {
             queryClient.invalidateQueries({ queryKey: ["note"] });
             queryClient.invalidateQueries({ queryKey: ["notes"] });
-            notifySuccess(t("noteCreated", { title: event.note_title ?? t("aiDraft") }));
+            queryClient.invalidateQueries({ queryKey: ["notebooks"] });
+            const noteTitle = event.note_title ?? t("aiDraft");
+            notifySuccess(t("noteCreated", { title: noteTitle }));
+            // In global chat context, the agent creates a new notebook — navigate there
+            if (event.notebook_id) {
+              const notebookId = event.notebook_id as string;
+              setTimeout(() => router.push(`/app/notebooks/${notebookId}`), 1500);
+            }
             return;
           }
           if (event.type === "ui_element" && event.element_type) {
@@ -313,7 +320,7 @@ export function useChatStream({
     } finally {
       streamAbortRef.current = null;
     }
-  }, [input, streaming, globalNotebookId, activeConvId, queryClient, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain, buildSavedSteps, handleAgentEvent, resetAgentState]);
+  }, [input, streaming, activeConvId, queryClient, router, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain, buildSavedSteps, handleAgentEvent, resetAgentState]);
 
   const handleRegenerate = useCallback(async (messages: LocalMessage[]) => {
     if (streaming) return;
@@ -331,7 +338,16 @@ export function useChatStream({
     stopTokenDrain();
     streamLifecycle.finish();
     setStreaming(false);
-  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain]);
+    // If the assistant placeholder never received any tokens, remove it
+    // so a spinning-but-empty avatar is not left on screen.
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role === "assistant" && last.content === "") {
+        return prev.slice(0, -1);
+      }
+      return prev;
+    });
+  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain, setMessages]);
 
   return {
     agentSteps,

@@ -9,6 +9,7 @@
 import { useRef, useState } from "react"
 import { DrawIoEmbed } from "react-drawio"
 import type { DrawIoEmbedRef } from "react-drawio"
+import { useTranslations } from "next-intl"
 import type { DiagramData } from "@/types"
 
 interface DiagramViewProps {
@@ -16,6 +17,7 @@ interface DiagramViewProps {
 }
 
 export function DiagramView({ data }: DiagramViewProps) {
+  const t = useTranslations("genui")
   const [isLoaded, setIsLoaded] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const drawioRef = useRef<DrawIoEmbedRef>(null)
@@ -27,7 +29,7 @@ export function DiagramView({ data }: DiagramViewProps) {
       {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/40 bg-muted/30">
         <span className="text-sm font-medium text-foreground/80 truncate">
-          📐 {data.title || "架构图"}
+          📐 {data.title || t("diagramTitle")}
         </span>
         <button
           type="button"
@@ -35,7 +37,7 @@ export function DiagramView({ data }: DiagramViewProps) {
           className="flex-shrink-0 rounded-md px-2.5 py-1 text-xs font-medium transition-colors
             bg-primary/10 text-primary hover:bg-primary/20"
         >
-          {isEditing ? "完成编辑" : "✏️ 编辑"}
+          {isEditing ? t("diagramEditDone") : t("diagramEdit")}
         </button>
       </div>
 
@@ -43,7 +45,7 @@ export function DiagramView({ data }: DiagramViewProps) {
       <div className="relative" style={{ height: isEditing ? 680 : 560 }}>
         {!isLoaded && (
           <div className="absolute inset-0 flex items-center justify-center bg-muted/20 z-10">
-            <span className="text-sm text-muted-foreground animate-pulse">加载图表中…</span>
+            <span className="text-sm text-muted-foreground animate-pulse">{t("diagramLoading")}</span>
           </div>
         )}
         <DrawIoEmbed

@@ -185,7 +185,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                           className="tabular-nums"
                           title={`TTFT ${msg.speed.ttft_ms}ms · ${msg.speed.tps} tok/s · ${msg.speed.tokens} tokens`}
                         >
-                          用时 {label}
+                          {t("timeCost", { label })}
                         </span>
                       );
                     })()}

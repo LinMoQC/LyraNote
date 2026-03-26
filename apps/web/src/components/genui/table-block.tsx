@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { memo, useMemo, useState } from "react"
 import { ArrowUpDown } from "lucide-react"
 import { safeParseJSON } from "./utils"
@@ -26,13 +28,14 @@ function normalizeRows(columns: string[], rawRows: unknown[]): (string | number)
 }
 
 function TableBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   const [sortCol, setSortCol] = useState<number | null>(null)
   const [sortAsc, setSortAsc] = useState(true)
 
   if (isStreaming) {
     return (
       <div className="my-3 flex h-32 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成表格...
+        {t("tableStreaming")}
       </div>
     )
   }

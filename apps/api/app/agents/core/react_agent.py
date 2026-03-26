@@ -1,7 +1,12 @@
 """
 ReAct Agent: multi-step reasoning + tool calling loop.
 
-This module is now a thin adapter over the Brain/Engine architecture.
+This module now supports two execution modes:
+  1. Multi-Agent (default): Lyra Orchestrator → Specialists → Synthesis
+     Uses LangGraph StateGraph with conditional routing.
+  2. Single-Agent (fallback): Original Brain/Engine ReAct loop (5 steps max).
+     Activated when the multi-agent graph is unavailable or attachment_ids are set.
+
 The public API (``run_agent``) is preserved for backward compatibility.
 
 Emits SSE-compatible dicts:
@@ -43,7 +48,7 @@ TOOL_HINT_PROMPTS: dict[str, str] = {
 
 async def run_agent(
     query: str,
-    notebook_id: str,
+    notebook_id: str | None,
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,
@@ -56,8 +61,152 @@ async def run_agent(
 ) -> AsyncGenerator[dict, None]:
     """
     Main entry point. Yields SSE event dicts until done.
-    Delegates to AgentBrain (decision) + AgentEngine (execution).
+
+    Routing logic:
+      - With attachments → always use single-agent (image/file context needed)
+      - With tool_hint → always use single-agent (explicit tool override)
+      - Visualization requests (mind map / diagram / etc.) → single-agent (needs ReAct tool loop)
+      - Deep research queries → try multi-agent graph (research specialist), fall back to single-agent
+      - Everything else → single-agent (default, handles RAG/web/chat/writing via ReAct tools)
     """
+    # Single-agent is the default. Multi-agent is only used for deep research.
+    use_single = bool(attachment_ids) or bool(tool_hint)
+
+    # Visualization / tool-heavy queries need the ReAct loop to actually execute tools.
+    # Multi-agent synthesis_node is text-only and cannot call skills like generate_mind_map.
+    if not use_single:
+        _VIZ_KEYWORDS = (
+            "思维导图", "mindmap", "mind map",
+            "流程图", "diagram", "知识图谱", "关系图",
+        )
+        q_lower = query.lower()
+        if any(kw in q_lower for kw in _VIZ_KEYWORDS):
+            use_single = True
+            logger.info("Visualization request detected, routing to single-agent: %s", query[:60])
+
+    # Deep research: the only case where multi-agent graph is beneficial
+    if not use_single and _is_deep_research(query):
+        try:
+            from app.agents.graph.multi_agent_graph import MULTI_AGENT_GRAPH
+            if MULTI_AGENT_GRAPH is not None:
+                async for event in _run_agent_multi(
+                    query=query,
+                    notebook_id=notebook_id,
+                    user_id=user_id,
+                    history=history,
+                    db=db,
+                    user_memories=user_memories,
+                    notebook_summary=notebook_summary,
+                    scene_instruction=scene_instruction,
+                    global_search=global_search,
+                ):
+                    yield event
+                return
+        except Exception:
+            logger.warning("Multi-agent graph failed for deep research, falling back to single-agent", exc_info=True)
+
+    async for event in _run_agent_single(
+        query=query,
+        notebook_id=notebook_id,
+        user_id=user_id,
+        history=history,
+        db=db,
+        user_memories=user_memories,
+        notebook_summary=notebook_summary,
+        scene_instruction=scene_instruction,
+        global_search=global_search,
+        tool_hint=tool_hint,
+        attachment_ids=attachment_ids,
+    ):
+        yield event
+
+
+def _is_deep_research(query: str) -> bool:
+    """Detect whether a query warrants the multi-agent deep research path.
+
+    Uses keyword matching as a fast, zero-latency heuristic.
+    The multi-agent orchestrator will further refine the routing.
+    """
+    _RESEARCH_KEYWORDS = (
+        "深度研究", "深度分析", "综合分析", "系统性分析", "全面分析",
+        "对比分析", "跨文档", "综述", "研究报告", "系统梳理", "全面梳理",
+        "deep research", "comprehensive analysis", "in-depth analysis",
+        "compare and contrast", "systematic review",
+    )
+    q = query.lower()
+    return any(kw in q for kw in _RESEARCH_KEYWORDS)
+
+
+# ---------------------------------------------------------------------------
+# Multi-Agent implementation (LangGraph)
+# ---------------------------------------------------------------------------
+
+async def _run_agent_multi(
+    query: str,
+    notebook_id: str | None,
+    user_id: UUID,
+    history: list[dict],
+    db: AsyncSession,
+    user_memories: list[dict] | None = None,
+    notebook_summary: dict | None = None,
+    scene_instruction: str | None = None,
+    global_search: bool = False,
+) -> AsyncGenerator[dict, None]:
+    """Run the LangGraph multi-agent graph and stream SSE events."""
+    from app.agents.graph.multi_agent_graph import MULTI_AGENT_GRAPH
+    from app.agents.portrait.loader import load_latest_portrait
+    from app.agents.graph.orchestrator import MultiAgentState
+
+    # Pre-load user portrait to inject into orchestrator context
+    user_portrait: dict | None = None
+    try:
+        user_portrait = await load_latest_portrait(db, user_id)
+    except Exception:
+        pass
+
+    initial_state: MultiAgentState = {
+        "query": query,
+        "messages": history,
+        "user_memories": user_memories,
+        "user_portrait": user_portrait,
+        "notebook_summary": notebook_summary,
+        "scene_instruction": scene_instruction,
+        "notebook_id": notebook_id,
+        "user_id": str(user_id),
+        "db": db,
+        "global_search": global_search,
+        "tool_hint": None,
+        "route": "",
+        "specialist_result": None,
+    }
+
+    config = {"configurable": {"thread_id": str(user_id)}}
+
+    async for event in MULTI_AGENT_GRAPH.astream_events(
+        initial_state, version="v2", config=config
+    ):
+        if event["event"] == "on_custom_event" and event["name"] == "sse":
+            yield event["data"]
+
+
+# ---------------------------------------------------------------------------
+# Single-Agent implementation (original Brain/Engine ReAct loop)
+# ---------------------------------------------------------------------------
+
+async def _run_agent_single(
+    query: str,
+    notebook_id: str | None,
+    user_id: UUID,
+    history: list[dict],
+    db: AsyncSession,
+    user_memories: list[dict] | None = None,
+    notebook_summary: dict | None = None,
+    scene_instruction: str | None = None,
+    global_search: bool = False,
+    tool_hint: str | None = None,
+    attachment_ids: list[str] | None = None,
+) -> AsyncGenerator[dict, None]:
+    """Original Brain/Engine ReAct loop (preserved as fallback)."""
     from app.skills.registry import skill_registry
 
     # ── Load active skills ────────────────────────────────────────────────
@@ -82,13 +231,11 @@ async def run_agent(
             {s.get_schema()["name"]: s.meta.thought_label for s in mcp_skills}
         )
 
-    # ── Build system prompt ───────────────────────────────────────────────
-    # Build a lookup dict for MCP skills so execute_tool can dispatch them.
     mcp_skill_map = {s.meta.name: s for s in mcp_skills}
 
     tool_ctx = ToolContext(
         notebook_id=notebook_id, user_id=user_id, db=db, global_search=global_search,
-        history=list(history[-6:]),  # last 3 turns for coreference resolution
+        history=list(history[-6:]),
         mcp_skill_map=mcp_skill_map,
     )
     system_prompt = await build_system_prompt(
@@ -98,10 +245,8 @@ async def run_agent(
     if tool_hint and tool_hint in TOOL_HINT_PROMPTS:
         system_prompt += f"\n\n## 当前工具指令\n{TOOL_HINT_PROMPTS[tool_hint]}"
 
-    # ── Load attachments ──────────────────────────────────────────────────
     att = await _load_attachment_context(attachment_ids, user_id)
 
-    # ── Seed message list ─────────────────────────────────────────────────
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     messages.extend(history[-10:])
 
@@ -120,7 +265,6 @@ async def run_agent(
     else:
         messages.append({"role": "user", "content": query})
 
-    # ── Create Brain + Engine + State, then run ───────────────────────────
     state = AgentState(
         messages=messages,
         phase="init",
@@ -138,9 +282,6 @@ async def run_agent(
 
     async for event in engine.run(state):
         yield event
-
-
-# ── Attachment loading (unchanged) ────────────────────────────────────────
 
 
 class _AttachmentContent:

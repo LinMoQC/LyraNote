@@ -30,12 +30,13 @@ import { getConfig } from "@/services/config-service";
 import { getConversationFeedback, submitMessageFeedback, type FeedbackRating } from "@/services/feedback-service";
 import {
   deleteConversation,
-  getConversations,
+  getGlobalConversations,
   getMessages,
   type ConversationRecord,
 } from "@/services/conversation-service";
-import { getGlobalNotebook, getNotebooks } from "@/services/notebook-service";
+import { getNotebooks } from "@/services/notebook-service";
 import {
+  clearAllConversationMessages,
   clearConversationMessages,
   loadActiveConversation,
   loadConversationMessages,
@@ -159,22 +160,19 @@ export function useChatPage() {
     icon: tool.icon,
   }));
 
-  const { data: globalNotebook } = useQuery({
-    queryKey: ["global-notebook"],
-    queryFn: getGlobalNotebook,
-  });
-  const globalNotebookId = globalNotebook?.id;
-
   const { data: dynamicSuggestions, isLoading: suggestionsLoading } = useQuery({
     queryKey: ["chat-suggestions"],
-    queryFn: getSuggestions,
-    staleTime: 1000 * 60 * 30,
-    retry: false,
+    queryFn: async () => {
+      const result = await getSuggestions();
+      return result;
+    },
+    staleTime: 1000 * 60 * 30,  // 30 min — matches backend cache TTL
+    retry: 2,
+    retryDelay: 2000,
   });
 
   // ── Deep Research hook ───────────────────────────────────────────────────
   const dr = useDeepResearch({
-    globalNotebookId,
     activeConvId,
     drMode,
     streaming,
@@ -188,7 +186,6 @@ export function useChatPage() {
 
   // ── Chat Stream hook ─────────────────────────────────────────────────────
   const chat = useChatStream({
-    globalNotebookId,
     activeConvId,
     input,
     streaming,
@@ -205,23 +202,21 @@ export function useChatPage() {
 
   // ── Conversation list ────────────────────────────────────────────────────
   const { data: conversations } = useQuery({
-    queryKey: ["conversations", globalNotebookId, conversationOffset],
-    queryFn: () => getConversations(globalNotebookId!, {
+    queryKey: ["conversations", conversationOffset],
+    queryFn: () => getGlobalConversations({
       offset: conversationOffset,
       limit: CONVERSATIONS_PAGE_SIZE,
     }),
-    enabled: !!globalNotebookId,
   });
 
   useEffect(() => {
-    if (!globalNotebookId) return;
     setConversationOffset(0);
     setConversationList([]);
     setHasMoreConversations(true);
-  }, [globalNotebookId]);
+  }, []);
 
   useEffect(() => {
-    if (!globalNotebookId || !conversations) return;
+    if (!conversations) return;
     if (conversationOffset === 0) {
       setConversationList((prev) => (sameConversationIds(prev, conversations) ? prev : conversations));
     } else {
@@ -235,7 +230,7 @@ export function useChatPage() {
       });
     }
     setHasMoreConversations(conversations.length >= CONVERSATIONS_PAGE_SIZE);
-  }, [conversations, conversationOffset, globalNotebookId]);
+  }, [conversations, conversationOffset]);
 
   const loadMoreConversations = useCallback(() => {
     if (!hasMoreConversations) return;
@@ -246,9 +241,19 @@ export function useChatPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => deleteConversation(id),
     onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["conversations", globalNotebookId] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
       clearConversationMessages(id);
-      setConversationList((prev) => prev.filter((item) => item.id !== id));
+      setConversationList((prev) => {
+        const next = prev.filter((item) => item.id !== id);
+        if (next.length === 0) {
+          clearAllConversationMessages();
+          setActiveConvId(null);
+          setMessages([]);
+          saveActiveConversation(null);
+          try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
+        }
+        return next;
+      });
       if (activeConvId === id) {
         setActiveConvId(null);
         setMessages([]);
@@ -357,8 +362,18 @@ export function useChatPage() {
       const saved = localStorage.getItem(DR_MESSAGES_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as Array<LocalMessage & { timestamp: string }>;
-        if (parsed.length > 0)
-          setMessages(parsed.map((m) => ({ ...m, timestamp: new Date(m.timestamp) })));
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+          localStorage.removeItem(DR_MESSAGES_KEY);
+          return;
+        }
+        // Only restore deep-research drafts; avoid reviving normal chat bubbles
+        // when conversation list has been cleared.
+        const hasDeepResearchPayload = parsed.some((m) => Boolean(m.deepResearch));
+        if (!hasDeepResearchPayload) {
+          localStorage.removeItem(DR_MESSAGES_KEY);
+          return;
+        }
+        setMessages(parsed.map((m) => ({ ...m, timestamp: new Date(m.timestamp) })));
       }
     } catch { /* ignore */ }
   }, []);
@@ -366,12 +381,20 @@ export function useChatPage() {
   useEffect(() => {
     if (activeConvId) return;
     if (dr.drPersistedRef.current) return;
-    if (messages.length === 0) return;
+    if (messages.length === 0) {
+      try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
+      return;
+    }
+    const hasDeepResearchMessages = messages.some((m) => Boolean(m.deepResearch));
+    if (!isDeepResearch && !hasDeepResearchMessages && !dr.clarifyingState && !dr.isFetchingClarifications) {
+      try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
+      return;
+    }
     try {
       localStorage.setItem(DR_MESSAGES_KEY, JSON.stringify(messages));
     } catch { /* ignore quota */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, activeConvId]);
+  }, [messages, activeConvId, isDeepResearch, dr.clarifyingState, dr.isFetchingClarifications]);
 
   useEffect(() => {
     if (!activeConvId || isDeepResearch) return;
@@ -404,12 +427,12 @@ export function useChatPage() {
   }, []);
 
   useEffect(() => {
-    if (!globalNotebookId || activeConvId) return;
+    if (activeConvId) return;
     const targetId = restoredActiveConvId.current;
     if (!targetId) return;
     restoredActiveConvId.current = null;
     handleSelectConv({ id: targetId } as ConversationRecord);
-  }, [activeConvId, globalNotebookId, handleSelectConv]);
+  }, [activeConvId, handleSelectConv]);
 
   // ── Auto-scroll ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -527,7 +550,7 @@ export function useChatPage() {
 
   useEffect(() => {
     const payload = pendingChatPayload.current;
-    if (!payload?.q || autoTriggered.current || !globalNotebookId) return;
+    if (!payload?.q || autoTriggered.current) return;
     autoTriggered.current = true;
     pendingChatPayload.current = null;
 
@@ -588,14 +611,14 @@ export function useChatPage() {
       drMode: resolvedDrMode,
     };
   }, [
-    globalNotebookId, chat, dr, streamLifecycle,
+    chat, dr, streamLifecycle,
     setInput, setActiveConvId, setMessages, setHasMoreMessages, setMessageOffset,
     setIsDeepResearch, setDrMode, setThinkingEnabled, setSelectedToolId,
   ]);
 
   useEffect(() => {
     const pending = pendingAutoSendRef.current;
-    if (!pending || !globalNotebookId) return;
+    if (!pending) return;
     if (pending.deepResearch !== isDeepResearch) return;
     if (pending.deepResearch && pending.drMode !== drMode) return;
     pendingAutoSendRef.current = null;
@@ -604,7 +627,7 @@ export function useChatPage() {
     } else {
       chat.handleSend(pending.query);
     }
-  }, [dr, chat, globalNotebookId, isDeepResearch, drMode]);
+  }, [dr, chat, isDeepResearch, drMode]);
 
   return {
     // User
@@ -628,7 +651,6 @@ export function useChatPage() {
     hasMoreMessages,
     hasMoreConversations,
     // Queries / data
-    globalNotebookId,
     toolItems,
     notebooks,
     dynamicSuggestions,

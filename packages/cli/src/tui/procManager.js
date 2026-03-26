@@ -9,12 +9,14 @@ import { stripVTControlCharacters } from 'util';
  */
 export function startServices(services) {
   const procs = [];
+  const supportsProcessGroups = process.platform !== 'win32';
 
   for (const svc of services) {
     const proc = spawn(svc.command, svc.args ?? [], {
       cwd: svc.cwd,
       env: { ...process.env },
       stdio: ['ignore', 'pipe', 'pipe'],
+      detached: supportsProcessGroups,
     });
 
     procs.push(proc);
@@ -44,7 +46,24 @@ export function startServices(services) {
   return {
     kill() {
       procs.forEach((p) => {
-        try { p.kill('SIGTERM'); } catch { /* ignore */ }
+        try {
+          if (supportsProcessGroups && p.pid) {
+            process.kill(-p.pid, 'SIGTERM');
+          } else {
+            p.kill('SIGTERM');
+          }
+        } catch { /* ignore */ }
+
+        setTimeout(() => {
+          try {
+            if (p.exitCode !== null || p.signalCode !== null || p.killed) return;
+            if (supportsProcessGroups && p.pid) {
+              process.kill(-p.pid, 'SIGKILL');
+            } else {
+              p.kill('SIGKILL');
+            }
+          } catch { /* ignore */ }
+        }, 1500);
       });
     },
   };

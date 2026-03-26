@@ -1,5 +1,7 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+
 import { memo } from "react"
 import { safeParseJSON } from "./utils"
 
@@ -64,10 +66,11 @@ function SingleCard({ card }: { card: CardData }) {
 }
 
 function CardBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
+  const t = useTranslations("genui")
   if (isStreaming) {
     return (
       <div className="my-3 flex h-24 items-center justify-center rounded-xl border border-border/30 bg-muted/20 text-xs text-muted-foreground/60">
-        正在生成卡片...
+        {t("cardStreaming")}
       </div>
     )
   }

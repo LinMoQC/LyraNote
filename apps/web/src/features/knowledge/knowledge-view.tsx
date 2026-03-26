@@ -26,7 +26,6 @@ import { ImportSourceDialog } from "@/features/source/import-source-dialog";
 import { SourceDetailDrawer } from "@/features/source/source-detail-drawer";
 import { KnowledgeGraphView } from "@/features/knowledge/knowledge-graph-view";
 import { getSourcesPage, type SourcePage } from "@/services/source-service";
-
 import { REFETCH_INTERVAL_PROCESSING } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { Source } from "@/types";
@@ -415,7 +414,7 @@ export function KnowledgeView() {
               onClick={() => refetch()}
               disabled={isRefetching}
               className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/40 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
-              title="刷新"
+              title={t("refresh")}
             >
               <RefreshCw size={14} className={cn(isRefetching && "animate-spin")} />
             </button>
@@ -470,9 +469,46 @@ export function KnowledgeView() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-24"
+              className={viewMode === "grid"
+                ? "grid grid-cols-4 gap-3 2xl:grid-cols-5 w-full"
+                : "flex flex-col gap-2"}
             >
-              <Loader2 size={24} className="animate-spin text-muted-foreground/40" />
+              {Array.from({ length: viewMode === "grid" ? 8 : 6 }).map((_, i) => (
+                viewMode === "grid" ? (
+                  <div
+                    key={i}
+                    className="flex flex-col gap-3 rounded-xl border border-border/40 bg-card p-4 animate-pulse"
+                    style={{ animationDelay: `${i * 40}ms` }}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="h-9 w-9 rounded-lg bg-muted/50" />
+                      <div className="h-5 w-16 rounded-full bg-muted/40" />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="h-3.5 w-4/5 rounded bg-muted/50" />
+                      <div className="h-3 w-full rounded bg-muted/40" />
+                      <div className="h-3 w-3/5 rounded bg-muted/40" />
+                    </div>
+                    <div className="mt-auto flex items-center gap-1.5">
+                      <div className="h-3 w-3 rounded bg-muted/30" />
+                      <div className="h-3 w-20 rounded bg-muted/30" />
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    key={i}
+                    className="flex items-center gap-4 rounded-xl border border-border/40 bg-card px-4 py-3 animate-pulse"
+                    style={{ animationDelay: `${i * 40}ms` }}
+                  >
+                    <div className="h-8 w-8 flex-shrink-0 rounded-lg bg-muted/50" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3.5 w-2/5 rounded bg-muted/50" />
+                      <div className="h-3 w-3/5 rounded bg-muted/40" />
+                    </div>
+                    <div className="hidden h-5 w-16 rounded-full bg-muted/40 sm:block" />
+                  </div>
+                )
+              ))}
             </m.div>
           ) : allSources.length === 0 ? (
             <m.div
@@ -500,7 +536,7 @@ export function KnowledgeView() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4"
+              className="grid grid-cols-4 gap-3 2xl:grid-cols-5 w-full"
             >
               {allSources.map((source, i) => (
                 <KnowledgeCard key={source.id} source={source} index={i} t={t} onClick={() => setActiveSource(source)} />
@@ -525,7 +561,7 @@ export function KnowledgeView() {
         <div ref={sentinelRef} className="h-px" />
 
         {/* Loading more indicator */}
-        {isFetchingNextPage && (
+        {!isLoading && isFetchingNextPage && (
           <div className="flex items-center justify-center py-6">
             <Loader2 size={18} className="animate-spin text-muted-foreground/40" />
           </div>
@@ -534,7 +570,7 @@ export function KnowledgeView() {
         {/* End of list */}
         {!hasNextPage && allSources.length > 0 && !isLoading && (
           <p className="py-6 text-center text-xs text-muted-foreground/40">
-            已加载全部 {total} 个来源
+            {t("loadedAll", { total })}
           </p>
         )}
       </div>

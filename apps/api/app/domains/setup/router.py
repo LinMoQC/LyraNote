@@ -5,8 +5,12 @@ All routes here are PUBLIC (no auth required).
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Response, status
 from sqlalchemy import select
+
+logger = logging.getLogger(__name__)
 
 from app.dependencies import DbDep
 from app.domains.setup.schemas import (
@@ -35,6 +39,10 @@ RUNTIME_CONFIG_KEYS = [
     "openai_api_key",
     "openai_base_url",
     "llm_model",
+    # Utility model (optional small/fast model for utility tasks)
+    "llm_utility_model",
+    "llm_utility_api_key",
+    "llm_utility_base_url",
     "embedding_model",
     "embedding_api_key",
     "embedding_base_url",
@@ -44,7 +52,7 @@ RUNTIME_CONFIG_KEYS = [
     "tavily_api_key",
     "perplexity_api_key",
     "storage_backend",
-    "storage_region",
+    "storage_s3_region",
     "storage_s3_endpoint_url",
     "storage_s3_bucket",
     "storage_s3_access_key",
@@ -85,8 +93,8 @@ async def load_settings_from_db(db) -> None:
         if row.value:
             try:
                 setattr(settings, row.key, row.value)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Config key %r from DB could not be applied: %s", row.key, e)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -201,8 +209,9 @@ async def setup_test_llm(body: SetupTestLlmRequest):
             call_kw: dict = dict(
                 model=body.model,
                 messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
+                max_tokens=100,
                 api_key=body.api_key,
+                drop_params=True,
             )
             if body.model.startswith("gemini/"):
                 call_kw["custom_llm_provider"] = "gemini"
@@ -220,7 +229,7 @@ async def setup_test_llm(body: SetupTestLlmRequest):
             resp = await client.chat.completions.create(
                 model=body.model,
                 messages=[{"role": "user", "content": "Hi"}],
-                max_tokens=5,
+                max_tokens=100,
             )
             reply = (resp.choices[0].message.content or "").strip()
         return success(SetupTestLlmResponse(ok=True, message=reply or "OK"))

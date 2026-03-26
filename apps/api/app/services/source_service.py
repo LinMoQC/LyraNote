@@ -261,6 +261,9 @@ class SourceService:
         strategy: str = "standard",
         chunk_size: int | None = None,
         chunk_overlap: int | None = None,
+        splitter_type: str = "auto",
+        separators: list[str] | None = None,
+        min_chunk_size: int = 50,
     ) -> tuple[int, int]:
         from app.domains.source.schemas import STRATEGY_PARAMS
 
@@ -278,7 +281,13 @@ class SourceService:
         from app.workers.tasks import ingest_source
         ingest_source.apply_async(
             args=[str(source.id)],
-            kwargs={"chunk_size": size, "chunk_overlap": overlap},
+            kwargs={
+                "chunk_size": size,
+                "chunk_overlap": overlap,
+                "splitter_type": splitter_type,
+                "separators": separators,
+                "min_chunk_size": min_chunk_size,
+            },
         )
         return size, overlap
 

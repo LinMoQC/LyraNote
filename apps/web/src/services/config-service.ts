@@ -13,6 +13,10 @@ export interface AppConfigMap {
   openai_api_key: string
   openai_base_url: string
   llm_model: string
+  // AI — Utility model (optional small/fast model for utility tasks)
+  llm_utility_model: string
+  llm_utility_api_key: string
+  llm_utility_base_url: string
   // AI — Embedding
   embedding_model: string
   embedding_api_key: string
@@ -76,6 +80,10 @@ export interface TestLlmResult {
  */
 export async function testLlmConnection(): Promise<TestLlmResult> {
   return http.post<TestLlmResult>(CONFIG.TEST_LLM)
+}
+
+export async function testUtilityLlmConnection(): Promise<TestLlmResult> {
+  return http.post<TestLlmResult>(CONFIG.TEST_UTILITY_LLM)
 }
 
 /** Embedding 连接测试结果 */

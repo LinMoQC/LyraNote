@@ -38,10 +38,10 @@ if "app.models" not in sys.modules:
     sys.modules["app.models"] = _models_mod
 
 # Force retrieval module reload with stubs
-if "app.agents.retrieval" in sys.modules:
-    del sys.modules["app.agents.retrieval"]
+if "app.agents.rag.retrieval" in sys.modules:
+    del sys.modules["app.agents.rag.retrieval"]
 
-from app.agents.retrieval import _rewrite_query  # noqa: E402
+from app.agents.rag.retrieval import _rewrite_query  # noqa: E402
 
 
 # ── _rewrite_query ─────────────────────────────────────────────────────────────

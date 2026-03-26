@@ -193,7 +193,7 @@ export default function PublicNotebookPage() {
             <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-card">
               <FileText size={28} className="text-muted-foreground/40" />
             </div>
-            <h2 className="text-lg font-semibold text-foreground/80">笔记本不存在或未公开</h2>
+            <h2 className="text-lg font-semibold text-foreground/80">{t("notFoundTitle")}</h2>
             <Link
               href="/"
               className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:opacity-80"
@@ -287,7 +287,7 @@ export default function PublicNotebookPage() {
                             <h2 className="text-xl font-bold text-foreground">{note.title}</h2>
                             <p className="mt-1 text-xs text-muted-foreground/50">
                               {formatDate(note.updatedAt)}
-                              {note.wordCount > 0 && ` · ${note.wordCount} 字`}
+                              {note.wordCount > 0 && t("wordCountSuffix", { count: note.wordCount })}
                             </p>
                           </div>
                         )}
@@ -299,7 +299,7 @@ export default function PublicNotebookPage() {
                               {note.contentText}
                             </p>
                           ) : (
-                            <p className="text-sm italic text-muted-foreground/40">空笔记</p>
+                            <p className="text-sm italic text-muted-foreground/40">{t("emptyNote")}</p>
                           )}
                         </div>
                       </m.div>
@@ -307,7 +307,7 @@ export default function PublicNotebookPage() {
                   </div>
                 ) : (
                   <m.div variants={fadeUp} className="py-16 text-center text-sm text-muted-foreground/50">
-                    此笔记本暂无笔记内容
+                    {t("emptyNotebook")}
                   </m.div>
                 )}
               </div>

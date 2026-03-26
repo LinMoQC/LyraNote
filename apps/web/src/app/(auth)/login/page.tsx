@@ -90,11 +90,11 @@ export default function SignInPage() {
               {/* Username */}
               <div className="space-y-1.5">
                 <Label htmlFor="username" className="text-xs font-medium text-muted-foreground">
-                  用户名
+                  {t("username")}
                 </Label>
                 <Input
                   id="username"
-                  placeholder="输入用户名"
+                  placeholder={t("usernamePlaceholder")}
                   autoComplete="username"
                   autoFocus
                   className={cn(
@@ -111,13 +111,13 @@ export default function SignInPage() {
               {/* Password */}
               <div className="space-y-1.5">
                 <Label htmlFor="password" className="text-xs font-medium text-muted-foreground">
-                  密码
+                  {t("password")}
                 </Label>
                 <div className="relative">
                   <Input
                     id="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="输入密码"
+                    placeholder={t("passwordPlaceholder")}
                     autoComplete="current-password"
                     className={cn(
                       "h-10 rounded-xl pr-10",
@@ -169,7 +169,7 @@ export default function SignInPage() {
                 ) : (
                   <>
                     <LogIn size={15} />
-                    登录
+                    {t("loginBtn")}
                   </>
                 )}
               </button>
@@ -185,12 +185,12 @@ export default function SignInPage() {
             {/* OAuth buttons */}
             <div className="mt-3 flex flex-col gap-2.5">
               <OAuthButton
-                label="使用 Google 账号登录"
+                label={t("loginWithGoogle")}
                 href={http.url(AUTH.oauthLogin("google"))}
                 icon={<Image src="/icons/google.svg" alt="" width={16} height={16} aria-hidden />}
               />
               <OAuthButton
-                label="使用 GitHub 账号登录"
+                label={t("loginWithGitHub")}
                 href={http.url(AUTH.oauthLogin("github"))}
                 icon={<Image src="/icons/github.svg" alt="" width={16} height={16} className="dark:invert" aria-hidden />}
               />
@@ -203,7 +203,7 @@ export default function SignInPage() {
 
         {/* Footer */}
         <p className="mt-5 text-center text-[11px] text-muted-foreground/40">
-          私有化部署 · 数据由你掌控
+          {t("selfHosted")}
         </p>
       </m.div>
     </div>

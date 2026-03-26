@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.agents.rag.graph_retrieval import (
+    GRAPH_CONTEXT_BANNER,
     _tokenize_query,
     expand_entity_neighborhood,
     format_graph_context,
@@ -214,7 +215,7 @@ class TestFormatGraphContext:
     def test_only_entities_no_relations(self):
         e = _make_entity("深度学习", "technology", "机器学习范式")
         result = format_graph_context([e], [], [])
-        assert "[知识图谱上下文]" in result
+        assert GRAPH_CONTEXT_BANNER in result
         assert "深度学习" in result
         assert "technology" in result
         assert "机器学习范式" in result
@@ -287,7 +288,7 @@ class TestGraphAugmentedContext:
         db.execute = AsyncMock(side_effect=[result_seed, result_rel, result_nb])
 
         result = await graph_augmented_context("深度学习算法", None, db)
-        assert "[知识图谱上下文]" in result
+        assert GRAPH_CONTEXT_BANNER in result
         assert "深度学习" in result
 
     @pytest.mark.asyncio

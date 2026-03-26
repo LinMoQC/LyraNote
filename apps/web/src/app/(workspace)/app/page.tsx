@@ -1,27 +1,18 @@
-import { Plus } from "lucide-react";
 import { getTranslations } from "next-intl/server";
-import Link from "next/link";
 
-import { HomeQA } from "@/components/home/home-qa";
-import { NotebookList } from "@/components/home/notebook-list";
-import { getNotebooks } from "@/services/notebook-service";
+import { HomeContent } from "@/components/home/home-content";
 
 export default async function AppHomePage() {
-  const [notebooks, t] = await Promise.all([
-    getNotebooks(),
-    getTranslations("home")
-  ]);
+  const t = await getTranslations("home");
 
   const hour = new Date().getHours();
   const greetingKey =
     hour < 12 ? "greeting_morning" : hour < 18 ? "greeting_afternoon" : "greeting_evening";
 
-  const displayName: string | null = null; // resolved client-side via useAuth()
-
   return (
     <div className="flex min-h-full flex-col items-center justify-center px-4 md:px-8 dark:border border-border/40">
 
-      {/* 桌面端居中内容区 */}
+      {/* Desktop layout */}
       <div className="hidden w-full max-w-2xl space-y-8 md:block">
 
         {/* Greeting */}
@@ -39,42 +30,18 @@ export default async function AppHomePage() {
                 </linearGradient>
               </defs>
             </svg>
-            {displayName ? `${displayName}，` : ""}{t(greetingKey)}
+            {t(greetingKey)}
           </p>
           <h1 className="text-4xl font-bold tracking-tight text-foreground">
             {t("tagline")}
           </h1>
         </div>
 
-        <HomeQA />
-
-        <div>
-          <div className="mb-1 flex items-center justify-between px-1">
-            <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground/40">
-              {t("recentNotebooks")}
-            </p>
-            <div className="flex items-center gap-3">
-              <Link
-                className="flex items-center gap-1 text-xs text-muted-foreground/50 transition-colors hover:text-foreground"
-                href="/app/notebooks"
-              >
-                <Plus size={11} />
-                {t("newNotebook")}
-              </Link>
-              <Link
-                className="text-xs text-muted-foreground/50 transition-colors hover:text-foreground"
-                href="/app/notebooks"
-              >
-                {t("viewAll")}
-              </Link>
-            </div>
-          </div>
-          <NotebookList notebooks={notebooks} />
-        </div>
+        <HomeContent />
 
       </div>
 
-      {/* 移动端内容区：垂直居中，底部留出输入框空间 */}
+      {/* Mobile layout */}
       <div className="flex w-full flex-1 flex-col items-center justify-center space-y-6 pb-[88px] pt-8 text-center md:hidden">
         <div className="space-y-2">
           <p className="flex items-start justify-start gap-1.5 text-base text-muted-foreground/70">
@@ -90,7 +57,7 @@ export default async function AppHomePage() {
                 </linearGradient>
               </defs>
             </svg>
-            {displayName ? `${displayName}，` : ""}{t(greetingKey)}
+            {t(greetingKey)}
           </p>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">
             {t("tagline")}
@@ -98,9 +65,9 @@ export default async function AppHomePage() {
         </div>
       </div>
 
-      {/* 移动端底部固定输入框 */}
+      {/* Mobile fixed bottom input */}
       <div className="fixed bottom-0 left-0 right-0 z-30 border-t border-border/40 bg-background px-4 py-3 md:hidden">
-        <HomeQA />
+        <HomeContent />
       </div>
 
     </div>

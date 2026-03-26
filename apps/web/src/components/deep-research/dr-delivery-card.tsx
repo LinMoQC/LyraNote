@@ -101,7 +101,7 @@ export function DeliveryCard({
                 ? "bg-emerald-500/20 text-emerald-400"
                 : "text-muted-foreground/40 hover:bg-muted/40 hover:text-muted-foreground/70",
             )}
-            title="有帮助"
+            title={t("helpful")}
           >
             <ThumbsUp size={11} />
           </button>
@@ -115,7 +115,7 @@ export function DeliveryCard({
                 ? "bg-red-500/20 text-red-400"
                 : "text-muted-foreground/40 hover:bg-muted/40 hover:text-muted-foreground/70",
             )}
-            title="不太准确"
+            title={t("notAccurate")}
           >
             <ThumbsDown size={11} />
           </button>

@@ -230,7 +230,7 @@ export default function SetupPage() {
   async function handleTestLlm() {
     const apiKey = aiForm.getValues("openai_api_key")
     if (!apiKey) {
-      setTestResult({ ok: false, message: "请先填写 API Key" })
+      setTestResult({ ok: false, message: t("fillApiKeyFirst") })
       return
     }
     setIsTesting(true)
@@ -244,7 +244,7 @@ export default function SetupPage() {
       })
       setTestResult(result)
     } catch {
-      setTestResult({ ok: false, message: "请求失败，请检查网络" })
+      setTestResult({ ok: false, message: t("requestFailed") })
     } finally {
       setIsTesting(false)
     }
@@ -253,7 +253,7 @@ export default function SetupPage() {
   async function handleTestEmbedding() {
     const apiKey = aiForm.getValues("embedding_api_key") || aiForm.getValues("openai_api_key")
     if (!apiKey) {
-      setEmbTestResult({ ok: false, message: "请先填写 API Key" })
+      setEmbTestResult({ ok: false, message: t("fillApiKeyFirst") })
       return
     }
     setEmbTesting(true)
@@ -264,9 +264,9 @@ export default function SetupPage() {
         base_url: aiForm.getValues("embedding_base_url") || aiForm.getValues("openai_base_url") || undefined,
         model: aiForm.getValues("embedding_model") || undefined,
       })
-      setEmbTestResult({ ok: result.ok, message: result.ok ? `维度 ${result.dimensions} ✓` : result.message })
+      setEmbTestResult({ ok: result.ok, message: result.ok ? t("embDimensions", { dimensions: result.dimensions }) : result.message })
     } catch {
-      setEmbTestResult({ ok: false, message: "请求失败，请检查网络" })
+      setEmbTestResult({ ok: false, message: t("requestFailed") })
     } finally {
       setEmbTesting(false)
     }
@@ -275,7 +275,7 @@ export default function SetupPage() {
   async function handleTestReranker() {
     const apiKey = aiForm.getValues("reranker_api_key") || aiForm.getValues("openai_api_key")
     if (!apiKey) {
-      setRerankerTestResult({ ok: false, message: "请先填写 API Key" })
+      setRerankerTestResult({ ok: false, message: t("fillApiKeyFirst") })
       return
     }
     setRerankerTesting(true)
@@ -288,7 +288,7 @@ export default function SetupPage() {
       })
       setRerankerTestResult(result)
     } catch {
-      setRerankerTestResult({ ok: false, message: "请求失败，请检查网络" })
+      setRerankerTestResult({ ok: false, message: t("requestFailed") })
     } finally {
       setRerankerTesting(false)
     }
@@ -422,24 +422,24 @@ export default function SetupPage() {
                   <p className="mt-0.5 text-xs text-muted-foreground">{t("createAdminDesc")}</p>
                 </div>
                 <form onSubmit={accountForm.handleSubmit(handleAccountNext)} className="space-y-4 p-6">
-                  <Field label="用户名" error={accountForm.formState.errors.username?.message}>
+                  <Field label={t("username")} error={accountForm.formState.errors.username?.message}>
                     <Input autoComplete="username" {...accountForm.register("username")} />
                   </Field>
 
-                  <Field label="密码" error={accountForm.formState.errors.password?.message}>
+                  <Field label={t("password")} error={accountForm.formState.errors.password?.message}>
                     <Input type="password" autoComplete="new-password" {...accountForm.register("password")} />
                   </Field>
 
-                  <Field label="确认密码" error={accountForm.formState.errors.confirmPassword?.message}>
+                  <Field label={t("confirmPassword")} error={accountForm.formState.errors.confirmPassword?.message}>
                     <Input type="password" autoComplete="new-password" {...accountForm.register("confirmPassword")} />
                   </Field>
 
-                  <Field label="邮箱（可选）" error={accountForm.formState.errors.email?.message} hint="用于账号恢复和通知">
+                  <Field label={t("emailOptional")} error={accountForm.formState.errors.email?.message} hint={t("emailHint")}>
                     <Input type="email" placeholder="you@example.com" autoComplete="email" {...accountForm.register("email")} />
                   </Field>
 
                   <Field
-                    label="头像链接（可选）"
+                    label={t("avatarUrlOptional")}
                     error={accountForm.formState.errors.avatar_url?.message}
                   >
                     <div className="flex items-center gap-2">
@@ -492,8 +492,8 @@ export default function SetupPage() {
                 </div>
                 <form onSubmit={aiForm.handleSubmit(handleAINext)} className="space-y-4 p-6">
                   {/* ── 主模型 ── */}
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">主模型</p>
-                  <Field label="LLM 提供商" hint="OpenAI 兼容接口选 OpenAI；Gemini 等原生模型选 LiteLLM">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{t("mainModel")}</p>
+                  <Field label={t("llmProvider")} hint={t("llmProviderHint")}>
                     <Select defaultValue="openai" onValueChange={(v) => aiForm.setValue("llm_provider", v as AIValues["llm_provider"])}>
                       <SelectContent>
                         <SelectItem value="openai">OpenAI / Compatible</SelectItem>
@@ -502,25 +502,25 @@ export default function SetupPage() {
                       </SelectContent>
                     </Select>
                   </Field>
-                  <Field label="LLM API Key" hint="用于 LLM / Embedding / Reranker，各模块可单独覆盖" error={aiForm.formState.errors.openai_api_key?.message}>
+                  <Field label="LLM API Key" hint={t("llmApiKeyHint")} error={aiForm.formState.errors.openai_api_key?.message}>
                     <Input placeholder="sk-..." autoComplete="off" {...aiForm.register("openai_api_key")} />
                   </Field>
 
                   <Field
-                    label="LLM Base URL（可选）"
-                    hint="官方接口无需修改；国内代理填入完整 URL"
+                    label={t("llmBaseUrl")}
+                    hint={t("llmBaseUrlHint")}
                     error={aiForm.formState.errors.openai_base_url?.message}
                   >
                     <Input placeholder={DEFAULT_BASE_URL} {...aiForm.register("openai_base_url")} />
                   </Field>
 
                   <div className="grid grid-cols-2 gap-3">
-                    <Field label="对话模型" error={aiForm.formState.errors.llm_model?.message}>
+                    <Field label={t("chatModel")} error={aiForm.formState.errors.llm_model?.message}>
                       {llmCustomMode ? (
                         <div className="flex items-center gap-1.5">
                           <Input
                             autoFocus
-                            placeholder="输入模型名称，如 qwen-max"
+                            placeholder={t("customModelPlaceholder")}
                             {...aiForm.register("llm_model")}
                           />
                           <button
@@ -528,7 +528,7 @@ export default function SetupPage() {
                             onClick={() => { setLlmCustomMode(false); aiForm.setValue("llm_model", DEFAULT_LLM_MODEL); }}
                             className="flex-shrink-0 rounded-lg border border-border/60 px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
                           >
-                            取消
+                            {tc("cancel")}
                           </button>
                         </div>
                       ) : (
@@ -550,14 +550,14 @@ export default function SetupPage() {
                               </SelectItem>
                             ))}
                             <SelectItem value="__custom__">
-                              <span className="text-muted-foreground">自定义模型…</span>
+                              <span className="text-muted-foreground">{t("customModel")}</span>
                             </SelectItem>
                           </SelectContent>
                         </Select>
                       )}
                     </Field>
 
-                    <Field label="Embedding 模型" error={aiForm.formState.errors.embedding_model?.message}>
+                    <Field label={t("embeddingModel")} error={aiForm.formState.errors.embedding_model?.message}>
                       <Select defaultValue={DEFAULT_EMBEDDING_MODEL} onValueChange={(v) => aiForm.setValue("embedding_model", v)}>
                         <SelectContent>
                           {EMBEDDING_MODELS.map((m) => (
@@ -575,16 +575,16 @@ export default function SetupPage() {
                     className="flex items-center gap-1.5 text-xs text-muted-foreground/60 hover:text-foreground transition-colors"
                   >
                     <ChevronRight size={12} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
-                    高级配置（Embedding / Reranker 独立密钥，可选）
+                    {t("advancedConfig")}
                   </button>
 
                   {showAdvanced && (
                     <div className="space-y-4 rounded-xl border border-border/40 bg-muted/20 p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">向量化模型 · 留空继承主模型配置</p>
-                      <Field label="Embedding API Key（可选）">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{t("embSectionTitle")}</p>
+                      <Field label={t("embApiKeyOptional")}>
                         <Input placeholder="sk-..." autoComplete="off" {...aiForm.register("embedding_api_key")} />
                       </Field>
-                      <Field label="Embedding Base URL（可选）">
+                      <Field label={t("embBaseUrlOptional")}>
                         <Input placeholder={DEFAULT_BASE_URL} {...aiForm.register("embedding_base_url")} />
                       </Field>
                       <div className="flex items-center gap-3 border-t border-border/30 pt-3">
@@ -595,7 +595,7 @@ export default function SetupPage() {
                           className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
                         >
                           {embTesting ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                          测试 Embedding
+                          {t("testEmbedding")}
                         </button>
                         {embTestResult && (
                           <span className={embTestResult.ok ? "text-xs text-emerald-400" : "text-xs text-red-400"}>
@@ -604,14 +604,14 @@ export default function SetupPage() {
                         )}
                       </div>
 
-                      <p className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">重排序模型 · 留空继承主模型配置</p>
-                      <Field label="Reranker API Key（可选）" hint="推荐 SiliconFlow 免费配额">
+                      <p className="pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/60">{t("rerankerSectionTitle")}</p>
+                      <Field label={t("rerankerApiKeyOptional")} hint={t("siliconflowHint")}>
                         <Input placeholder="sk-..." autoComplete="off" {...aiForm.register("reranker_api_key")} />
                       </Field>
-                      <Field label="Reranker Base URL（可选）">
+                      <Field label={t("rerankerBaseUrlOptional")}>
                         <Input placeholder={DEFAULT_RERANKER_BASE_URL} {...aiForm.register("reranker_base_url")} />
                       </Field>
-                      <Field label="Reranker 模型">
+                      <Field label={t("rerankerModel")}>
                         <Select defaultValue={DEFAULT_RERANKER_MODEL} onValueChange={(v) => aiForm.setValue("reranker_model", v)}>
                           <SelectContent>
                             {RERANKER_MODELS.map((m) => (
@@ -628,7 +628,7 @@ export default function SetupPage() {
                           className="flex h-7 items-center gap-1.5 rounded-lg border border-border px-3 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
                         >
                           {rerankerTesting ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
-                          测试 Reranker
+                          {t("testReranker")}
                         </button>
                         {rerankerTestResult && (
                           <span className={rerankerTestResult.ok ? "text-xs text-emerald-400" : "text-xs text-red-400"}>
@@ -639,7 +639,7 @@ export default function SetupPage() {
                     </div>
                   )}
 
-                  <Field label="Tavily API Key（可选）" hint="用于联网搜索，不填则禁用搜索工具">
+                  <Field label={t("tavilyApiKeyOptional")} hint={t("tavilyHint")}>
                     <Input placeholder="tvly-..." autoComplete="off" {...aiForm.register("tavily_api_key")} />
                   </Field>
 
@@ -651,8 +651,8 @@ export default function SetupPage() {
                     className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground disabled:opacity-50"
                   >
                     {isTesting
-                      ? <><Loader2 size={14} className="animate-spin" /> 测试中…</>
-                      : <><Zap size={14} /> 测试 LLM 连接</>
+                      ? <><Loader2 size={14} className="animate-spin" /> {t("testing")}</>
+                      : <><Zap size={14} /> {t("testLlm")}</>
                     }
                   </button>
                   {testResult && (
@@ -660,7 +660,7 @@ export default function SetupPage() {
                       "rounded-lg px-3 py-2 text-xs",
                       testResult.ok ? "bg-emerald-500/10 text-emerald-400" : "bg-destructive/10 text-destructive",
                     ].join(" ")}>
-                      {testResult.ok ? "连接成功" : testResult.message}
+                      {testResult.ok ? t("connectionOk") : testResult.message}
                     </div>
                   )}
 
@@ -755,7 +755,7 @@ export default function SetupPage() {
                         {/* Region — AWS S3 & Tencent COS */}
                         {(storageBackend === "s3" || storageBackend === "cos") && (
                           <Field
-                            label="地域 Region"
+                            label={t("region")}
                             hint={storageBackend === "s3" ? "e.g. us-east-1 / ap-northeast-1" : "e.g. ap-guangzhou / ap-shanghai"}
                             error={storageForm.formState.errors.storage_region?.message}
                           >
@@ -834,17 +834,17 @@ export default function SetupPage() {
                 </div>
                 <form onSubmit={personalityForm.handleSubmit(handlePersonalitySubmit)} className="space-y-4 p-6">
 
-                  <Field label="AI 助手名称" error={personalityForm.formState.errors.ai_name?.message} hint="这是你的 AI 助手的称呼">
+                  <Field label={t("aiName")} error={personalityForm.formState.errors.ai_name?.message} hint={t("aiNameHint")}>
                     <Input placeholder="Lyra" {...personalityForm.register("ai_name")} />
                   </Field>
 
-                  <Field label="您的职业（可选）" hint="帮助 AI 理解你的专业背景">
-                    <Input placeholder="e.g. 研究员、工程师、学生、产品经理" {...personalityForm.register("user_occupation")} />
+                  <Field label={t("occupation")} hint={t("occupationHint")}>
+                    <Input placeholder={t("occupationPlaceholder")} {...personalityForm.register("user_occupation")} />
                   </Field>
 
-                  <Field label="兴趣与偏好（可选）" hint="AI 会在回答中优先考虑这些领域">
+                  <Field label={t("preferences")} hint={t("preferencesHint")}>
                     <textarea
-                      placeholder="e.g. 机器学习、产品设计、投资研究、前端开发…"
+                      placeholder={t("preferencesPlaceholder")}
                       rows={2}
                       className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/30"
                       {...personalityForm.register("user_preferences")}

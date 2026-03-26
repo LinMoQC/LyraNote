@@ -60,3 +60,16 @@ export function clearConversationMessages(conversationId: string) {
     // ignore
   }
 }
+
+export function clearAllConversationMessages() {
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(CHAT_CACHE_PREFIX)) keys.push(key);
+    }
+    keys.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // ignore
+  }
+}

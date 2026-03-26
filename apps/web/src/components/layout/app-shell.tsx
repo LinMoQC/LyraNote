@@ -10,6 +10,7 @@ import { Suspense, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import Image from "next/image";
+import { useTranslations } from "next-intl";
 import { SettingsModal } from "@/components/settings/settings-modal";
 import { useUiStore } from "@/store/use-ui-store";
 import { Sidebar } from "@/components/layout/sidebar";
@@ -44,6 +45,7 @@ function OAuthRedirectHandler() {
  * 移动端顶部导航栏（仅在 < md 时显示）
  */
 function MobileTopBar() {
+  const t = useTranslations("nav");
   const setSidebarMobileOpen = useUiStore((s) => s.setSidebarMobileOpen);
   const sidebarMobileOpen = useUiStore((s) => s.sidebarMobileOpen);
   const mobileHeaderRight = useUiStore((s) => s.mobileHeaderRight);
@@ -55,7 +57,7 @@ function MobileTopBar() {
           type="button"
           onClick={() => setSidebarMobileOpen(!sidebarMobileOpen)}
           className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
-          aria-label="打开菜单"
+          aria-label={t("openMenu")}
         >
           {sidebarMobileOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
@@ -103,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Sidebar />
 
       {/* 主内容区 — 凸起面板 */}
-      <div className="flex-1 overflow-y-auto md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border/10 md:bg-background md:shadow-xl">
+      <div className="flex-1 h-full overflow-y-auto md:my-2 md:mr-2 md:rounded-2xl md:border md:border-border/10 md:bg-background md:shadow-xl">
         <WorkspaceErrorBoundary>{children}</WorkspaceErrorBoundary>
       </div>
 

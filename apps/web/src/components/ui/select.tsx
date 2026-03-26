@@ -3,6 +3,7 @@
 import { cn } from "@/lib/utils"
 import { AnimatePresence, m } from "framer-motion"
 import { Check, ChevronDown } from "lucide-react"
+import { useTranslations } from "next-intl"
 import * as React from "react"
 import { useEffect, useRef, useState } from "react"
 
@@ -44,8 +45,10 @@ export function Select({
   children,
   className,
   triggerClassName,
-  placeholder = "请选择…",
+  placeholder,
 }: SelectProps) {
+  const tc = useTranslations("common");
+  const resolvedPlaceholder = placeholder ?? tc("selectPlaceholder");
   const [open, setOpen] = useState(false)
   const [internalValue, setInternalValue] = useState(defaultValue ?? "")
   const containerRef = useRef<HTMLDivElement>(null)
@@ -101,7 +104,7 @@ export function Select({
           triggerClassName,
         )}
       >
-        <span className="truncate">{selectedLabel ?? placeholder}</span>
+        <span className="truncate">{selectedLabel ?? resolvedPlaceholder}</span>
         <m.span
           animate={{ rotate: open ? 180 : 0 }}
           transition={{ duration: 0.18 }}

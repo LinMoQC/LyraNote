@@ -9,6 +9,7 @@ celery[redis]>=5.4
 redis>=5.2
 openai>=1.58
 litellm[google]>=1.0
+json-repair>=0.30
 pypdf>=5.1
 httpx>=0.28
 beautifulsoup4>=4.13

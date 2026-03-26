@@ -105,7 +105,7 @@ export function HomeQA() {
         onNotebookSelect={setSelectedNotebook}
         notebookLabel={th("notebook")}
         notebookEmptyLabel={tn("empty")}
-        clearNotebookLabel="清除笔记本限制"
+        clearNotebookLabel={th("clearNotebook")}
       />
     </>
   );

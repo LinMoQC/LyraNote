@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, CheckCircle2, Clock, Loader2, X } from "lucide-react";
 import { AnimatePresence, m } from "framer-motion";
+import { useTranslations } from "next-intl";
 import { getTaskRuns, type TaskRun } from "@/services/task-service";
 
 function formatDuration(ms: number | null) {
@@ -12,6 +13,7 @@ function formatDuration(ms: number | null) {
 }
 
 function RunItem({ run }: { run: TaskRun }) {
+  const t = useTranslations("tasks");
   const isSuccess = run.status === "success";
   const isFailed = run.status === "failed";
 
@@ -30,7 +32,7 @@ function RunItem({ run }: { run: TaskRun }) {
         </span>
         {run.sources_count > 0 && (
           <span className="text-[11px] text-muted-foreground/50">
-            {run.sources_count} 来源
+            {t("sourcesCount", { count: run.sources_count })}
           </span>
         )}
       </div>
@@ -54,6 +56,7 @@ export function TaskHistoryDialog({
   taskName: string;
   onClose: () => void;
 }) {
+  const t = useTranslations("tasks");
   const { data: runs = [], isLoading } = useQuery({
     queryKey: ["task-runs", taskId],
     queryFn: () => getTaskRuns(taskId),
@@ -79,7 +82,7 @@ export function TaskHistoryDialog({
             <div className="flex items-center gap-2">
               <Clock size={14} className="text-primary" />
               <span className="text-[14px] font-semibold text-foreground/90">
-                {taskName} · 执行历史
+                {t("historyTitle", { name: taskName })}
               </span>
             </div>
             <button type="button" onClick={onClose} className="rounded-md p-1 text-muted-foreground/50 hover:text-foreground">
@@ -94,7 +97,7 @@ export function TaskHistoryDialog({
               </div>
             ) : runs.length === 0 ? (
               <p className="py-8 text-center text-[13px] text-muted-foreground/50">
-                暂无执行记录
+                {t("noHistory")}
               </p>
             ) : (
               <div className="space-y-2">

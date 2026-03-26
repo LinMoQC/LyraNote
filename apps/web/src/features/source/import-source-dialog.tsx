@@ -220,7 +220,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                           <input
                             autoFocus
                             type="url"
-                            placeholder="粘贴网址，例如 https://example.com"
+                            placeholder={t("webPlaceholder")}
                             value={urlInput}
                             onChange={(e) => setUrlInput(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") handleAddUrl() }}
@@ -233,7 +233,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                           onClick={handleAddUrl}
                           className="rounded-xl bg-primary px-4 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40"
                         >
-                          添加
+                          {t("addBtn")}
                         </button>
                       </div>
 
@@ -270,7 +270,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                             animate={{ opacity: 1 }}
                             className="py-6 text-center text-xs text-muted-foreground/50"
                           >
-                            支持网页、文章、在线文档等链接
+                            {t("webHint")}
                           </m.p>
                         )}
                       </AnimatePresence>
@@ -304,7 +304,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                         <div>
                           <p className="text-sm font-medium">{t("dropFiles")}</p>
                           <p className="mt-0.5 text-xs text-muted-foreground/60">
-                            支持 PDF、Word、TXT、MP3、MP4
+                            {t("fileHint")}
                           </p>
                         </div>
                         <button
@@ -312,7 +312,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                           onClick={() => fileInputRef.current?.click()}
                           className="rounded-lg border border-border/50 bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent"
                         >
-                          浏览文件
+                          {t("browseFiles")}
                         </button>
                         <input
                           ref={fileInputRef}
@@ -400,12 +400,12 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                     {isUploading ? (
                       <>
                         <Loader2 size={13} className="animate-spin" />
-                        上传中…
+                        {t("uploading")}
                       </>
                     ) : uploadDone ? (
                       <>
                         <CheckCircle2 size={13} />
-                        已导入
+                        {t("imported")}
                       </>
                     ) : (
                       t("importSource")

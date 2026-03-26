@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, m } from "framer-motion";
 import { Bell, Check, Eye, Lightbulb } from "lucide-react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 
 import {
   getInsights,
@@ -25,6 +26,7 @@ function InsightItem({
   insight: ProactiveInsight;
   onRead: () => void;
 }) {
+  const t = useTranslations("home");
   const cfg = TYPE_CONFIG[insight.insight_type] || TYPE_CONFIG.knowledge_update!;
   const Icon = cfg.icon;
 
@@ -58,7 +60,7 @@ function InsightItem({
               href={`/app/notebooks/${insight.notebook_id}`}
               className="text-[10px] text-primary/50 hover:text-primary/80"
             >
-              查看笔记本
+            {t("viewNotebook")}
             </Link>
           )}
           {!insight.is_read && (
@@ -68,7 +70,7 @@ function InsightItem({
               className="flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-foreground/60"
             >
               <Eye size={9} />
-              标记已读
+              {t("markRead")}
             </button>
           )}
         </div>
@@ -78,6 +80,7 @@ function InsightItem({
 }
 
 export function InsightsBar() {
+  const t = useTranslations("home");
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -106,7 +109,7 @@ export function InsightsBar() {
       <div className="mb-1 flex items-center justify-between px-1">
         <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground/40">
           <Lightbulb size={11} />
-          AI 洞察
+          {t("aiInsights")}
           {unreadCount > 0 && (
             <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[9px] font-bold text-primary">
               {unreadCount}
@@ -119,7 +122,7 @@ export function InsightsBar() {
             onClick={() => readAllMutation.mutate()}
             className="text-[11px] text-muted-foreground/40 hover:text-foreground/60"
           >
-            全部已读
+            {t("markAllRead")}
           </button>
         )}
       </div>

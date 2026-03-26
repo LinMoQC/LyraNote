@@ -18,6 +18,7 @@ class SourceOut(BaseModel):
     url: str | None
     summary: str | None
     created_at: datetime
+    metadata_: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -53,10 +54,21 @@ class RechunkRequest(BaseModel):
       standard – 512 chars / 64 overlap (default)
       fine     – 256 chars / 32 overlap
     Or override manually via chunk_size / chunk_overlap.
+
+    splitter_type:
+      auto       – try SemanticChunker first, fall back to recursive (default)
+      semantic   – force SemanticChunker (embedding-based boundary detection)
+      recursive  – force RecursiveCharacterTextSplitter (rule-based, respects size/overlap)
+
+    separators: custom separator priority list for recursive splitter
+    min_chunk_size: discard chunks shorter than this (chars)
     """
     strategy: str = "standard"   # coarse | standard | fine | custom
     chunk_size: int | None = None
     chunk_overlap: int | None = None
+    splitter_type: str = "auto"   # auto | semantic | recursive
+    separators: list[str] | None = None
+    min_chunk_size: int = 50
 
 
 STRATEGY_PARAMS: dict[str, tuple[int, int]] = {
