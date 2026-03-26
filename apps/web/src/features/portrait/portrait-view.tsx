@@ -53,7 +53,7 @@ export function PortraitView() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4 dark:border border-border/40">
         <Loader color="#7c3aed" />
         <p className="text-sm text-muted-foreground/50">{t("loading")}</p>
       </div>
@@ -61,7 +61,7 @@ export function PortraitView() {
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full overflow-y-auto dark:border border-border/40">
       {/* ── Header ─────────────────────────────────── */}
       <div className="sticky top-0 z-20 border-b border-foreground/[0.05] bg-background/80 px-8 py-5 backdrop-blur-md">
         <div className="mx-auto flex max-w-5xl items-center justify-between">
