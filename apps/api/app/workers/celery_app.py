@@ -40,6 +40,10 @@ celery_app.conf.update(
             "task": "expire_stuck_sources",
             "schedule": 600.0,  # every 10 minutes
         },
+        "precompute-ai-suggestions": {
+            "task": "precompute_ai_suggestions",
+            "schedule": 600.0,  # every 10 minutes
+        },
     },
 )
 
