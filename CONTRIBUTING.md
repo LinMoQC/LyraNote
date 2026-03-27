@@ -86,14 +86,12 @@ Use the following prefixes:
 
 | Prefix | Purpose |
 |---|---|
-| `feat/` | New feature |
+| `feature/` | New feature |
 | `fix/` | Bug fix |
-| `docs/` | Documentation only |
-| `chore/` | Tooling, CI, dependencies |
-| `refactor/` | Code refactor (no functional change) |
-| `test/` | Adding or improving tests |
 
-Examples: `feat/notebook-sharing`, `fix/upload-500-error`, `docs/api-reference`
+Only `feature/` and `fix/` branches are allowed for local commits by the Git hook.
+
+Examples: `feature/notebook-sharing`, `fix/upload-500-error`
 
 ---
 

@@ -1,3 +1,17 @@
+branch_name="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+
+if [ -n "$branch_name" ]; then
+  case "$branch_name" in
+    feature/*|fix/*)
+      ;;
+    *)
+      echo "Invalid branch name: $branch_name"
+      echo "Use a branch name starting with 'feature/' or 'fix/'."
+      exit 1
+      ;;
+  esac
+fi
+
 npx lint-staged
 
 # Run API tests if Python venv is available
