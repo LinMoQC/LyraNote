@@ -167,17 +167,40 @@ class ConversationService:
 
         history = await self._load_history(conversation_id)
 
+        from app.agents.rag.graph_retrieval import graph_augmented_context
         from app.agents.rag.retrieval import retrieve_chunks
         from app.agents.writing.composer import compose_answer
         from app.agents.memory import get_user_memories, get_notebook_summary
 
         user_memories = await get_user_memories(self.user_id, self.db)
         notebook_summary = await get_notebook_summary(conv.notebook_id, self.db)
-        chunks = await retrieve_chunks(content, str(conv.notebook_id), self.db)
+        if conv.notebook_id:
+            chunks, graph_ctx = await asyncio.gather(
+                retrieve_chunks(
+                    content,
+                    str(conv.notebook_id),
+                    self.db,
+                    user_id=self.user_id,
+                ),
+                graph_augmented_context(content, str(conv.notebook_id), self.db),
+            )
+        else:
+            chunks = await retrieve_chunks(
+                content,
+                None,
+                self.db,
+                global_search=True,
+                user_id=self.user_id,
+            )
+            graph_ctx = ""
         answer, citations = await compose_answer(
-            content, chunks, history,
+            content,
+            chunks,
+            history,
             user_memories=user_memories,
             notebook_summary=notebook_summary,
+            db=self.db,
+            extra_graph_context=graph_ctx or None,
         )
 
         assistant_msg = Message(

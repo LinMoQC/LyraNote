@@ -338,11 +338,20 @@ async def compose_answer(
     user_memories: list[dict] | None = None,
     notebook_summary: dict | None = None,
     db: "AsyncSession | None" = None,
+    *,
+    extra_graph_context: str | None = None,
 ) -> tuple[str, list[dict]]:
     """Non-streaming: return (answer_text, citations)."""
     from app.providers.llm import chat
 
     context, citations = _build_context(chunks)
+    eg = (extra_graph_context or "").strip()
+    if eg:
+        context = (
+            f"## 结构化知识关联（图谱）\n{eg}\n\n---\n\n{context}"
+            if context
+            else f"## 结构化知识关联（图谱）\n{eg}"
+        )
     messages = await _build_messages(query, context, history, user_memories, notebook_summary, db)
     answer = await chat(messages)
     return answer, citations

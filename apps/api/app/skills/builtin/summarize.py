@@ -71,7 +71,7 @@ class SummarizeSkill(SkillBase):
     async def _fetch_chunks_direct(ctx) -> list[dict]:
         """Direct DB fetch without similarity filter — used as a fallback."""
         from uuid import UUID
-        from sqlalchemy import func, select
+        from sqlalchemy import select
         from app.models import Chunk, Source
 
         try:
@@ -89,7 +89,7 @@ class SummarizeSkill(SkillBase):
                     Chunk.notebook_id == UUID(ctx.notebook_id),
                     (Source.status == "indexed") | (Chunk.source_type == "note"),
                 )
-                .order_by(func.random())
+                .order_by(Chunk.created_at.desc())
                 .limit(10)
             )
             rows = result.all()
