@@ -141,8 +141,24 @@ class AccessLogFormatter(logging.Formatter):
         return f"{self.DIM}{ts}{self.RESET} {color}{msg}{self.RESET}"
 
 
-def _make_file_handler(logs_dir: Path, use_json: bool = False) -> TimedRotatingFileHandler:
-    """Create a daily file handler: each day gets its own YYYY-MM-DD.log file."""
+class LoggerPrefixFilter(logging.Filter):
+    """Allow only records emitted from specific logger prefixes."""
+
+    def __init__(self, *prefixes: str):
+        super().__init__()
+        self._prefixes = tuple(prefixes)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        name = record.name
+        return any(name == prefix or name.startswith(f"{prefix}.") for prefix in self._prefixes)
+
+
+def _make_file_handler(
+    logs_dir: Path,
+    use_json: bool = False,
+    filename_prefix: str = "",
+) -> TimedRotatingFileHandler:
+    """Create a daily file handler: each day gets its own dated log file."""
     import os
     import time
 
@@ -154,9 +170,10 @@ def _make_file_handler(logs_dir: Path, use_json: bool = False) -> TimedRotatingF
 
         def __init__(self, directory: Path):
             self._logs_dir = directory
+            self._filename_prefix = filename_prefix
             today = datetime.now().strftime("%Y-%m-%d")
             super().__init__(
-                filename=str(directory / f"{today}.log"),
+                filename=str(directory / f"{self._filename_prefix}{today}.log"),
                 when="midnight",
                 backupCount=30,
                 encoding="utf-8",
@@ -169,7 +186,9 @@ def _make_file_handler(logs_dir: Path, use_json: bool = False) -> TimedRotatingF
                 self.stream.close()
                 self.stream = None  # type: ignore[assignment]
             today = datetime.now().strftime("%Y-%m-%d")
-            self.baseFilename = os.path.abspath(str(self._logs_dir / f"{today}.log"))
+            self.baseFilename = os.path.abspath(
+                str(self._logs_dir / f"{self._filename_prefix}{today}.log")
+            )
             self.stream = self._open()
             self.rolloverAt = self.computeRollover(int(time.time()))
 
@@ -178,7 +197,7 @@ def _make_file_handler(logs_dir: Path, use_json: bool = False) -> TimedRotatingF
     return handler
 
 
-def setup_logging(debug: bool = False) -> None:
+def setup_logging(debug: bool = False, logs_dir: Path | None = None) -> None:
     """Configure logging for the entire application."""
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if debug else logging.INFO)
@@ -193,10 +212,20 @@ def setup_logging(debug: bool = False) -> None:
 
     # Daily rotating file handler — apps/api/logs/YYYY-MM-DD.log (WARNING+ only)
     # Production: JSON structured format; development: plain text
-    logs_dir = Path(__file__).resolve().parent.parent / "logs"
+    logs_dir = logs_dir or (Path(__file__).resolve().parent.parent / "logs")
     file_handler = _make_file_handler(logs_dir, use_json=not debug)
     file_handler.setLevel(logging.WARNING)
     root.addHandler(file_handler)
+
+    # Background task file handler — captures task lifecycle INFO logs separately.
+    task_file_handler = _make_file_handler(
+        logs_dir,
+        use_json=not debug,
+        filename_prefix="scheduled-tasks-",
+    )
+    task_file_handler.setLevel(logging.INFO)
+    task_file_handler.addFilter(LoggerPrefixFilter("app.workers.tasks"))
+    root.addHandler(task_file_handler)
 
     # Suppress noisy loggers
     for name in [

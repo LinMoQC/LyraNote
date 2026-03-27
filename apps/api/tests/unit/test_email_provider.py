@@ -19,7 +19,7 @@ os.environ.setdefault("STORAGE_LOCAL_PATH", "/tmp/lyranote-test-storage")
 os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 os.environ.setdefault("DEBUG", "false")
 
-from app.providers.email import _get_smtp_config, send_email
+from app.providers.email import _format_email_exception, _get_smtp_config, send_email
 
 
 def _smtp_instance_mock() -> MagicMock:
@@ -35,7 +35,7 @@ def _smtp_instance_mock() -> MagicMock:
 class TestSendEmail:
     async def test_returns_false_when_host_missing(self):
         with patch("app.providers.email.aiosmtplib.SMTP") as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="a@b.com",
                 subject="s",
                 html_body="<p>x</p>",
@@ -45,12 +45,13 @@ class TestSendEmail:
                     "smtp_from": "",
                 },
             )
-        assert ok is False
+        assert result.ok is False
+        assert result.error == "SMTP not configured: missing host or username"
         smtp_cls.assert_not_called()
 
     async def test_returns_false_when_username_missing(self):
         with patch("app.providers.email.aiosmtplib.SMTP") as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="a@b.com",
                 subject="s",
                 html_body="<p>x</p>",
@@ -59,13 +60,14 @@ class TestSendEmail:
                     "smtp_password": "p",
                 },
             )
-        assert ok is False
+        assert result.ok is False
+        assert result.error == "SMTP not configured: missing host or username"
         smtp_cls.assert_not_called()
 
     async def test_returns_false_when_smtp_username_empty_string(self):
         """Early exit: missing username before from_addr is evaluated."""
         with patch("app.providers.email.aiosmtplib.SMTP") as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="a@b.com",
                 subject="s",
                 html_body="<p>x</p>",
@@ -75,13 +77,14 @@ class TestSendEmail:
                     "smtp_password": "p",
                 },
             )
-        assert ok is False
+        assert result.ok is False
+        assert result.error == "SMTP not configured: missing host or username"
         smtp_cls.assert_not_called()
 
     async def test_returns_false_when_from_addr_empty_after_strip(self):
         """Hits `if not from_addr`: smtp_from is whitespace-only (truthy before .strip())."""
         with patch("app.providers.email.aiosmtplib.SMTP") as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="a@b.com",
                 subject="s",
                 html_body="<p>x</p>",
@@ -92,13 +95,14 @@ class TestSendEmail:
                     "smtp_from": "   ",
                 },
             )
-        assert ok is False
+        assert result.ok is False
+        assert result.error == "SMTP not configured: empty smtp_from and username; set From address or SMTP user"
         smtp_cls.assert_not_called()
 
     async def test_returns_false_when_whitespace_only_username_no_from(self):
         """from_addr = ('' or '   ' or '').strip() -> empty."""
         with patch("app.providers.email.aiosmtplib.SMTP") as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="a@b.com",
                 subject="s",
                 html_body="<p>x</p>",
@@ -108,13 +112,14 @@ class TestSendEmail:
                     "smtp_password": "p",
                 },
             )
-        assert ok is False
+        assert result.ok is False
+        assert result.error == "SMTP not configured: empty smtp_from and username; set From address or SMTP user"
         smtp_cls.assert_not_called()
 
     async def test_smtp_from_empty_string_falls_back_to_username(self):
         inst = _smtp_instance_mock()
         with patch("app.providers.email.aiosmtplib.SMTP", return_value=inst) as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="to@example.com",
                 subject="Subj",
                 html_body="<p>h</p>",
@@ -127,7 +132,8 @@ class TestSendEmail:
                     "smtp_from": "",
                 },
             )
-        assert ok is True
+        assert result.ok is True
+        assert result.error is None
         smtp_cls.assert_called_once()
         _, kwargs = smtp_cls.call_args
         assert kwargs["hostname"] == "smtp.example.com"
@@ -145,7 +151,7 @@ class TestSendEmail:
     async def test_smtp_from_set_uses_config_value(self):
         inst = _smtp_instance_mock()
         with patch("app.providers.email.aiosmtplib.SMTP", return_value=inst):
-            ok = await send_email(
+            result = await send_email(
                 to="to@example.com",
                 subject="S",
                 html_body="<p>x</p>",
@@ -157,14 +163,14 @@ class TestSendEmail:
                     "smtp_from": "Custom <custom@example.com>",
                 },
             )
-        assert ok is True
+        assert result.ok is True
         msg = inst.send_message.await_args[0][0]
         assert msg["From"] == "Custom <custom@example.com>"
 
     async def test_port_465_uses_tls_not_start_tls(self):
         inst = _smtp_instance_mock()
         with patch("app.providers.email.aiosmtplib.SMTP", return_value=inst) as smtp_cls:
-            ok = await send_email(
+            result = await send_email(
                 to="t@e.com",
                 subject="S",
                 html_body="<p>x</p>",
@@ -176,7 +182,7 @@ class TestSendEmail:
                     "smtp_from": "",
                 },
             )
-        assert ok is True
+        assert result.ok is True
         _, kwargs = smtp_cls.call_args
         assert kwargs["port"] == 465
         assert kwargs["use_tls"] is True
@@ -186,7 +192,7 @@ class TestSendEmail:
         inst = _smtp_instance_mock()
         inst.login = AsyncMock(side_effect=RuntimeError("auth failed"))
         with patch("app.providers.email.aiosmtplib.SMTP", return_value=inst):
-            ok = await send_email(
+            result = await send_email(
                 to="t@e.com",
                 subject="S",
                 html_body="<p>x</p>",
@@ -197,7 +203,8 @@ class TestSendEmail:
                     "smtp_from": "u@e.com",
                 },
             )
-        assert ok is False
+        assert result.ok is False
+        assert result.error == "auth failed"
 
 
 class _KeyValueResult:
@@ -243,3 +250,8 @@ class TestGetSmtpConfig:
         sess = _FakeAsyncSession([("smtp_host", "only-host")])
         cfg = await _get_smtp_config(sess)  # type: ignore[arg-type]
         assert cfg == {"smtp_host": "only-host"}
+
+
+def test_format_email_exception_falls_back_to_exception_type():
+    assert _format_email_exception(RuntimeError("")) == "RuntimeError"
+    assert _format_email_exception(RuntimeError("auth failed")) == "auth failed"

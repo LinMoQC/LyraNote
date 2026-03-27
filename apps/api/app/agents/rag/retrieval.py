@@ -94,6 +94,12 @@ def _mmr_filter(chunks: list[dict], threshold: float = MMR_SIMILARITY_THRESHOLD)
 # DB search functions
 # ---------------------------------------------------------------------------
 
+def _uuid_or_none(value: UUID | str | None) -> UUID | None:
+    if value is None:
+        return None
+    return value if isinstance(value, UUID) else UUID(str(value))
+
+
 async def _vector_search(
     query_vec: list[float],
     notebook_id: str | None,
@@ -101,6 +107,9 @@ async def _vector_search(
     top_k: int,
     global_search: bool,
     user_id: UUID | None,
+    *,
+    exclude_notebook_id: UUID | None = None,
+    source_id: UUID | None = None,
 ) -> list[dict]:
     """Vector-only search. Returns top candidates with updated_at for recency scoring."""
     candidate_k = min(200, max(RERANK_CANDIDATE_K * 2, top_k * 4))
@@ -133,6 +142,11 @@ async def _vector_search(
             Chunk.notebook_id == UUID(notebook_id) if notebook_id else text("1=1")
         )
 
+    if exclude_notebook_id is not None:
+        stmt = stmt.where(Chunk.notebook_id != exclude_notebook_id)
+    if source_id is not None:
+        stmt = stmt.where(Chunk.source_id == source_id)
+
     result = await db.execute(stmt)
     return [
         {
@@ -160,6 +174,9 @@ async def _fts_search(
     top_k: int,
     global_search: bool,
     user_id: UUID | None,
+    *,
+    exclude_notebook_id: UUID | None = None,
+    source_id: UUID | None = None,
 ) -> list[dict]:
     """
     PostgreSQL FTS search via plainto_tsquery (handles Chinese via 'simple' config).
@@ -191,6 +208,11 @@ async def _fts_search(
             stmt = base.where(
                 Chunk.notebook_id == UUID(notebook_id) if notebook_id else text("1=1")
             )
+
+        if exclude_notebook_id is not None:
+            stmt = stmt.where(Chunk.notebook_id != exclude_notebook_id)
+        if source_id is not None:
+            stmt = stmt.where(Chunk.source_id == source_id)
 
         result = await db.execute(stmt)
         rows = result.all()
@@ -412,6 +434,8 @@ async def retrieve_chunks(
     user_id: UUID | None = None,
     history: list[dict] | None = None,
     _precomputed_variants: list[str] | None = None,
+    exclude_notebook_id: UUID | str | None = None,
+    source_id: UUID | str | None = None,
 ) -> list[dict]:
     """
     Full RAG retrieval pipeline:
@@ -427,6 +451,8 @@ async def retrieve_chunks(
 
     - global_search=False: restrict to chunks in `notebook_id`
     - global_search=True: search across ALL notebooks owned by `user_id`
+    - exclude_notebook_id: with global_search, drop chunks in this notebook
+    - source_id: only chunks from this source
     """
     import asyncio
 
@@ -439,6 +465,8 @@ async def retrieve_chunks(
         top_k=top_k,
         global_search=global_search,
         user_id=user_id,
+        exclude_notebook_id=_uuid_or_none(exclude_notebook_id),
+        source_id=_uuid_or_none(source_id),
     )
 
     # ── Step 1 & 2: Variant generation + primary embed IN PARALLEL ───────

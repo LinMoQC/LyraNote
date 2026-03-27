@@ -20,6 +20,7 @@ os.environ.setdefault("DEBUG", "false")
 
 # Alias: importing as `test_email` is picked up by pytest as a test function.
 from app.domains.config.router import test_email as config_test_email_handler
+from app.providers.email import EmailSendResult
 
 
 class _CfgRow:
@@ -67,7 +68,10 @@ class TestConfigTestEmailRoute:
         ]
         db = _ConfigFakeSession(rows)
         user = MagicMock()
-        with patch("app.providers.email.send_email", AsyncMock(return_value=True)) as send:
+        with patch(
+            "app.providers.email.send_email",
+            AsyncMock(return_value=EmailSendResult(ok=True)),
+        ) as send:
             resp = await config_test_email_handler(user, db)  # type: ignore[arg-type]
         assert resp.code == 0
         assert resp.data is not None
@@ -108,7 +112,11 @@ class TestConfigTestEmailRoute:
             _CfgRow("smtp_username", "u@example.com"),
             _CfgRow("smtp_password", "pw"),
         ]
-        with patch("app.providers.email.send_email", AsyncMock(return_value=False)):
+        with patch(
+            "app.providers.email.send_email",
+            AsyncMock(return_value=EmailSendResult(ok=False, error="auth failed")),
+        ):
             resp = await config_test_email_handler(MagicMock(), _ConfigFakeSession(rows))  # type: ignore[arg-type]
         assert resp.data is not None
         assert resp.data.ok is False
+        assert "auth failed" in resp.data.message

@@ -1033,7 +1033,12 @@
     "newTaskCardLabel": "New Task",
     "historyTitle": "{name} · Execution History",
     "noHistory": "No execution records",
-    "sourcesCount": "{count} sources"
+    "sourcesCount": "{count} sources",
+    "deliveryEmailSent": "Email sent",
+    "deliveryEmailFailed": "Email failed",
+    "deliveryEmailSkippedNoAddress": "Missing recipient email",
+    "deliveryNoteCreated": "Saved to note",
+    "deliveryNoteSkippedNoNotebook": "No notebook available"
   },
   "genui": {
     "kanbanStreaming": "Generating kanban...",

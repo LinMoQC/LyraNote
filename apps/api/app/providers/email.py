@@ -2,6 +2,7 @@
 Email sending provider using SMTP configuration from app_config.
 """
 
+from dataclasses import dataclass
 import logging
 import ssl
 from email.mime.multipart import MIMEMultipart
@@ -14,6 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import AppConfig
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class EmailSendResult:
+    ok: bool
+    error: str | None = None
+
+
+def _format_email_exception(exc: Exception) -> str:
+    """Return a stable, user-visible SMTP error message."""
+    message = str(exc).strip()
+    if message:
+        return message
+    return exc.__class__.__name__
 
 
 async def _get_smtp_config(db: AsyncSession) -> dict:
@@ -31,7 +46,7 @@ async def send_email(
     text_body: str = "",
     db: AsyncSession | None = None,
     smtp_config: dict | None = None,
-) -> bool:
+) -> EmailSendResult:
     config = smtp_config or (await _get_smtp_config(db) if db else {})
 
     host = config.get("smtp_host", "")
@@ -43,14 +58,16 @@ async def send_email(
     from_addr = (config.get("smtp_from") or username or "").strip()
 
     if not host or not username:
-        logger.error("SMTP not configured: missing host or username")
-        return False
+        error = "SMTP not configured: missing host or username"
+        logger.error(error)
+        return EmailSendResult(ok=False, error=error)
 
     if not from_addr:
-        logger.error(
+        error = (
             "SMTP not configured: empty smtp_from and username; set From address or SMTP user"
         )
-        return False
+        logger.error(error)
+        return EmailSendResult(ok=False, error=error)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -81,7 +98,7 @@ async def send_email(
         await smtp.send_message(msg)
         await smtp.quit()
         logger.info("Email sent to %s: %s", to, subject)
-        return True
+        return EmailSendResult(ok=True)
     except Exception as exc:
         logger.error("Failed to send email to %s: %s", to, exc)
-        return False
+        return EmailSendResult(ok=False, error=_format_email_exception(exc))

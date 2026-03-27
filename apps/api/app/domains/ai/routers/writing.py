@@ -3,7 +3,7 @@
 import json
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
@@ -14,9 +14,9 @@ from app.domains.ai.schemas import (
     WritingContextOut,
     WritingContextRequest,
 )
-from app.models import Chunk, Source
+from app.models import Notebook
 from app.schemas.response import ApiResponse, success
-from app.providers.llm import get_client, get_utility_model, get_utility_client
+from app.providers.llm import get_utility_model, get_utility_client
 
 router = APIRouter()
 
@@ -64,43 +64,39 @@ async def polish_text(body: PolishRequest, current_user: CurrentUser):
 @router.post("/ai/writing-context", response_model=ApiResponse[WritingContextOut])
 async def get_writing_context(body: WritingContextRequest, current_user: CurrentUser, db: DbDep):
     """Return top-3 related knowledge chunks based on what the user is currently writing."""
-    from app.providers.embedding import embed_query
+    from app.agents.rag.retrieval import retrieve_chunks
 
     text = body.text_around_cursor[:500]
     if len(text.strip()) < 20:
         return success(WritingContextOut(chunks=[]))
 
-    query_vec = await embed_query(text)
-
-    stmt = (
-        select(
-            Chunk.id,
-            Chunk.content,
-            Chunk.source_id,
-            Source.title.label("source_title"),
-            (1 - Chunk.embedding.cosine_distance(query_vec)).label("score"),
+    nb_row = await db.execute(
+        select(Notebook.id).where(
+            Notebook.id == UUID(body.notebook_id),
+            Notebook.user_id == current_user.id,
         )
-        .join(Source, Chunk.source_id == Source.id)
-        .where(
-            Source.status == "indexed",
-            Chunk.notebook_id == UUID(body.notebook_id),
-        )
-        .order_by(Chunk.embedding.cosine_distance(query_vec))
-        .limit(12)
     )
+    if nb_row.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Notebook not found")
 
-    result = await db.execute(stmt)
-    rows = result.all()
+    q = text.strip()
+    rows = await retrieve_chunks(
+        q,
+        body.notebook_id,
+        db,
+        top_k=3,
+        user_id=current_user.id,
+        _precomputed_variants=[q],
+    )
 
     chunks = [
         WritingContextChunk(
-            source_title=row.source_title or "未知来源",
-            excerpt=row.content[:300],
-            score=round(float(row.score), 3),
-            chunk_id=str(row.id),
+            source_title=r.get("source_title") or "未知来源",
+            excerpt=(r.get("excerpt") or r.get("content") or "")[:300],
+            score=round(float(r.get("score") or 0), 3),
+            chunk_id=str(r.get("chunk_id", "")),
         )
-        for row in rows
-        if float(row.score) >= 0.35
-    ][:3]
+        for r in rows
+    ]
 
     return success(WritingContextOut(chunks=chunks))

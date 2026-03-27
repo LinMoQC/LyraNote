@@ -159,7 +159,7 @@ cd LyraNote
 ./lyra local    # start local dev mode
 ```
 
-The CLI automatically: detects/starts database containers → creates a Python venv → installs dependencies → runs DB migrations → starts FastAPI, Celery Worker, and Next.js Dev Server in parallel.
+The CLI automatically: detects/starts database containers → creates a Python venv → installs dependencies → runs DB migrations → starts FastAPI, Celery Worker, Celery Beat, and Next.js Dev Server in parallel.
 
 Press `Ctrl+C` to stop local processes; database containers are unaffected.
 
@@ -167,7 +167,7 @@ Press `Ctrl+C` to stop local processes; database containers are unaffected.
 
 ### Option 2 — Docker Compose (All-in-one)
 
-Runs everything — frontend, backend, worker, and all infrastructure — in containers. Good for a quick full-stack preview or self-hosted server deployment.
+Runs everything — frontend, backend, worker, beat, and all infrastructure — in containers. Good for a quick full-stack preview or self-hosted server deployment.
 
 **1. Configure environment variables**
 
@@ -218,7 +218,7 @@ Deploy the backend via Docker Compose on your server, and the frontend separatel
 
 ```bash
 ./lyra init     # generates root .env (choose "production server" mode)
-docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
+docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker beat
 ```
 
 Open host Nginx ports `80`/`443` in your firewall. Do not expose `3000`/`8000` publicly; they are loopback-only.

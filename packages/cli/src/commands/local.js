@@ -4,10 +4,106 @@ import fs from 'fs';
 import path from 'path';
 import chalk from 'chalk';
 import { section, log, warn, info, printAccessInfo, waitTcp, tcpReady } from '../utils/ui.js';
-import { checkCommand, checkPort, prompt, exec } from '../utils/proc.js';
+import { checkCommand, checkPort, prompt, exec, execQ } from '../utils/proc.js';
 import { ROOT_DIR, API_DIR, WEB_DIR } from '../utils/paths.js';
 
 const VENV = path.join(API_DIR, '.venv');
+const APP_CONTAINER_NAMES = ['lyranote-api-1', 'lyranote-worker-1', 'lyranote-beat-1', 'lyranote-web-1'];
+
+function shQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function listPidsByPattern(pattern) {
+  const out = execQ(`pgrep -f ${shQuote(pattern)}`);
+  return out.split(/\s+/).filter(Boolean);
+}
+
+function describePid(pid) {
+  return execQ(`ps -p ${pid} -o command= 2>/dev/null`) || 'unknown';
+}
+
+async function terminatePids(pids, label) {
+  if (!pids.length) return;
+
+  for (const pid of pids) {
+    try {
+      exec(`kill ${pid}`, { shell: true, stdio: 'ignore' });
+    } catch { /* ignore */ }
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  const survivors = pids.filter((pid) => !!execQ(`ps -p ${pid} -o pid= 2>/dev/null`));
+  for (const pid of survivors) {
+    try {
+      exec(`kill -9 ${pid}`, { shell: true, stdio: 'ignore' });
+    } catch { /* ignore */ }
+  }
+
+  log(`已清理 ${label} 残留进程 ${pids.join(', ')}`);
+}
+
+async function cleanupWorkspacePort(port, label) {
+  const pid = execQ(`lsof -i :${port} -sTCP:LISTEN -t 2>/dev/null | head -1`);
+  if (!pid) return;
+
+  const command = describePid(pid);
+  const cwd = execQ(`lsof -a -p ${pid} -d cwd -Fn 2>/dev/null | tail -n 1 | sed 's/^n//'`);
+  const belongsToWorkspace = command.includes(ROOT_DIR) || cwd.startsWith(ROOT_DIR);
+
+  if (!belongsToWorkspace) return;
+
+  warn(`${label} 检测到 LyraNote 残留端口占用 (PID ${pid})`);
+  await terminatePids([pid], `${label} 端口`);
+}
+
+async function cleanupStaleProcesses() {
+  section('预清理残留进程');
+  process.chdir(ROOT_DIR);
+
+  const runningContainers = execQ("docker ps --format '{{.Names}}'")
+    .split('\n')
+    .map((name) => name.trim())
+    .filter((name) => APP_CONTAINER_NAMES.includes(name));
+
+  if (runningContainers.length) {
+    warn(`检测到残留应用容器：${runningContainers.join(', ')}`);
+    try { exec('docker compose stop api worker beat web', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' }); } catch { /* ignore */ }
+    try { exec('docker compose -f docker-compose.prod.yml stop api worker beat web', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' }); } catch { /* ignore */ }
+    log('已停止残留应用层容器（保留数据层容器）');
+  } else {
+    info('未检测到残留应用层容器');
+  }
+
+  const uvicorn = path.join(VENV, 'bin', 'uvicorn');
+  const celery = path.join(VENV, 'bin', 'celery');
+  const patterns = [
+    { label: 'API', pids: listPidsByPattern(`${uvicorn} app.main:app`) },
+    { label: 'Celery Worker', pids: listPidsByPattern(`${celery} -A app.workers.tasks.celery_app worker`) },
+    { label: 'Celery Beat', pids: listPidsByPattern(`${celery} -A app.workers.tasks.celery_app beat`) },
+  ];
+
+  let cleaned = false;
+  for (const item of patterns) {
+    if (!item.pids.length) continue;
+    cleaned = true;
+    const preview = item.pids
+      .slice(0, 2)
+      .map((pid) => describePid(pid))
+      .filter(Boolean)
+      .join(' | ');
+    if (preview) warn(`${item.label} 残留命令：${preview}`);
+    await terminatePids(item.pids, item.label);
+  }
+
+  await cleanupWorkspacePort(8000, 'FastAPI');
+  await cleanupWorkspacePort(3000, 'Next.js');
+
+  if (!cleaned) {
+    info('未检测到残留 API / Worker / Beat 进程');
+  }
+}
 
 async function ensureEnv() {
   const envFile = path.join(API_DIR, '.env');
@@ -33,6 +129,7 @@ export async function startLocal() {
   checkCommand('docker');
 
   await ensureEnv();
+  await cleanupStaleProcesses();
 
   // ── 数据层 ──
   section('检查数据层');
@@ -115,6 +212,13 @@ export async function startLocal() {
       cwd: API_DIR,
     },
     {
+      name: 'beat',
+      label: 'Beat',
+      command: celery,
+      args: ['-A', 'app.workers.tasks.celery_app', 'beat', '--loglevel=info'],
+      cwd: API_DIR,
+    },
+    {
       name: 'web',
       label: 'Web',
       command: 'pnpm',
@@ -123,4 +227,3 @@ export async function startLocal() {
     },
   ]);
 }
-

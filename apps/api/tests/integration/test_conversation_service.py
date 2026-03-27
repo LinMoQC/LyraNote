@@ -224,3 +224,84 @@ class TestMessageService:
 
         msgs2 = await svc.list_messages(conv2.id)
         assert msgs2 == []
+
+
+# ── Non-streaming send_message (RAG + graph) ─────────────────────────────────
+
+@pytest.mark.skipif(
+    __import__("os").environ.get("DATABASE_URL", "sqlite").startswith("sqlite"),
+    reason="SQLite test DB cannot compile JSONB schema; set DATABASE_URL to PostgreSQL",
+)
+class TestConversationSendMessageRag:
+    """send Message wires retrieve_chunks, graph_augmented_context, and compose_answer."""
+
+    @pytest.mark.asyncio
+    async def test_send_message_passes_graph_context_to_compose(self, db_session, test_user, monkeypatch):
+        user, _ = test_user
+        nb = await _create_notebook(db_session, user.id)
+        svc = ConversationService(db_session, user.id)
+        conv = await svc.create(nb.id, title="RAG test")
+
+        compose_kw: dict = {}
+
+        async def fake_retrieve(*_a, **_k):
+            return [
+                {
+                    "chunk_id": "c1",
+                    "source_id": "s1",
+                    "source_title": "T",
+                    "excerpt": "ex",
+                    "content": "body",
+                    "score": 0.5,
+                }
+            ]
+
+        async def fake_graph(*_a, **_k):
+            return "GRAPHCTX"
+
+        async def fake_compose(_q, _chunks, _hist, **kwargs):
+            compose_kw.update(kwargs)
+            return "composed", []
+
+        monkeypatch.setattr("app.agents.rag.retrieval.retrieve_chunks", fake_retrieve)
+        monkeypatch.setattr(
+            "app.agents.rag.graph_retrieval.graph_augmented_context",
+            fake_graph,
+        )
+        monkeypatch.setattr("app.agents.writing.composer.compose_answer", fake_compose)
+
+        msg = await svc.send_message(conv.id, "hello")
+
+        assert msg.content == "composed"
+        assert compose_kw.get("extra_graph_context") == "GRAPHCTX"
+
+    @pytest.mark.asyncio
+    async def test_send_message_global_conversation_skips_graph(self, db_session, test_user, monkeypatch):
+        user, _ = test_user
+        svc = ConversationService(db_session, user.id)
+        conv = await svc.create(None, title="global")
+
+        compose_kw: dict = {}
+
+        async def fake_retrieve(*_a, **k):
+            compose_kw["retrieve_kw"] = k
+            return []
+
+        async def fake_graph(*_a, **_k):
+            raise AssertionError("graph should not run for global conversation")
+
+        async def fake_compose(_q, _chunks, _hist, **kwargs):
+            compose_kw.update(kwargs)
+            return "ok", []
+
+        monkeypatch.setattr("app.agents.rag.retrieval.retrieve_chunks", fake_retrieve)
+        monkeypatch.setattr(
+            "app.agents.rag.graph_retrieval.graph_augmented_context",
+            fake_graph,
+        )
+        monkeypatch.setattr("app.agents.writing.composer.compose_answer", fake_compose)
+
+        await svc.send_message(conv.id, "hi")
+
+        assert compose_kw["retrieve_kw"].get("global_search") is True
+        assert compose_kw.get("extra_graph_context") is None

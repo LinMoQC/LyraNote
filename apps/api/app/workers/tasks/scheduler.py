@@ -14,6 +14,36 @@ from app.workers.celery_app import celery_app
 from app.workers._helpers import _run_async, _task_db
 
 
+def summarize_delivery_outcome(delivery_status: dict[str, object]) -> tuple[str | None, str | None]:
+    """Build user-facing delivery summary and error message from per-channel results."""
+    summary_parts: list[str] = []
+    issue_parts: list[str] = []
+
+    email_status = delivery_status.get("email")
+    email_error = delivery_status.get("email_error")
+    note_status = delivery_status.get("note")
+
+    if email_status == "sent":
+        summary_parts.append("邮件已发送")
+    elif email_status == "failed":
+        summary_parts.append("邮件发送失败")
+        detail = str(email_error).strip() if email_error else "请检查 SMTP 配置"
+        issue_parts.append(f"邮件投递失败：{detail}")
+    elif email_status == "skipped_no_address":
+        summary_parts.append("缺少收件邮箱")
+        issue_parts.append("邮件投递失败：未配置收件邮箱")
+
+    if note_status == "created":
+        summary_parts.append("已写入笔记")
+    elif note_status == "skipped_no_notebook":
+        summary_parts.append("未找到笔记本")
+        issue_parts.append("笔记投递失败：未找到可写入的系统笔记本")
+
+    summary = "，".join(summary_parts) if summary_parts else None
+    issues = "；".join(issue_parts) if issue_parts else None
+    return summary, issues
+
+
 async def _fetch_rss_feeds(feed_urls: list[str], max_items: int = 10) -> list[dict]:
     """Fetch and parse RSS/Atom feeds, returning items in the same format as web search results."""
     import logging
@@ -199,11 +229,13 @@ def execute_scheduled_task(self, task_id: str):
                         from app.utils.markdown_email import markdown_to_email_html
 
                         html = markdown_to_email_html(article_md, article_title)
-                        sent = await send_email(
+                        email_result = await send_email(
                             to=email_to, subject=article_title,
                             html_body=html, text_body=article_md, db=db,
                         )
-                        delivery_status["email"] = "sent" if sent else "failed"
+                        delivery_status["email"] = "sent" if email_result.ok else "failed"
+                        if email_result.error:
+                            delivery_status["email_error"] = email_result.error
                     else:
                         delivery_status["email"] = "skipped_no_address"
 
@@ -238,18 +270,24 @@ def execute_scheduled_task(self, task_id: str):
                         delivery_status["note"] = "skipped_no_notebook"
 
                 elapsed_ms = int((time.monotonic() - start_time) * 1000)
+                delivery_summary, delivery_issues = summarize_delivery_outcome(delivery_status)
+                result_summary = f"生成 {len(article_md)} 字文章，{len(all_sources)} 个来源"
+                if delivery_summary:
+                    result_summary = f"{result_summary}，{delivery_summary}"
+
                 run.status = "success"
                 run.finished_at = datetime.now(timezone.utc)
                 run.duration_ms = elapsed_ms
-                run.result_summary = f"生成 {len(article_md)} 字文章，{len(all_sources)} 个来源"
+                run.result_summary = result_summary
+                run.error_message = delivery_issues
                 run.generated_content = article_md
                 run.sources_count = len(all_sources)
                 run.delivery_status = delivery_status
 
                 task.run_count += 1
                 task.last_run_at = datetime.now(timezone.utc)
-                task.last_result = run.result_summary
-                task.last_error = None
+                task.last_result = result_summary
+                task.last_error = delivery_issues
                 task.consecutive_failures = 0
 
                 try:
@@ -265,7 +303,14 @@ def execute_scheduled_task(self, task_id: str):
                     pass
 
                 await db.commit()
-                logger.info("Scheduled task %s executed successfully", task.name)
+                if delivery_issues:
+                    logger.warning(
+                        "Scheduled task %s completed with delivery issues: %s",
+                        task.name,
+                        delivery_issues,
+                    )
+                else:
+                    logger.info("Scheduled task %s executed successfully", task.name)
 
             except Exception as exc:
                 elapsed_ms = int((time.monotonic() - start_time) * 1000)

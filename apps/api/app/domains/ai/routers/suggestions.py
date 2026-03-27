@@ -164,7 +164,11 @@ async def get_context_greeting(notebook_id: UUID, current_user: CurrentUser, db:
 @router.get("/sources/{source_id}/suggestions", response_model=ApiResponse[SourceSuggestionsOut])
 async def get_source_suggestions(source_id: UUID, current_user: CurrentUser, db: DbDep):
     """Generate suggested questions for a newly indexed source."""
-    source_result = await db.execute(select(Source).where(Source.id == source_id))
+    source_result = await db.execute(
+        select(Source)
+        .join(Notebook, Source.notebook_id == Notebook.id)
+        .where(Source.id == source_id, Notebook.user_id == current_user.id)
+    )
     source = source_result.scalar_one_or_none()
     if source is None or source.status != "indexed":
         return success(SourceSuggestionsOut(summary=None, questions=[]))
@@ -175,13 +179,28 @@ async def get_source_suggestions(source_id: UUID, current_user: CurrentUser, db:
             questions=source.metadata_["suggestions"],
         ))
 
-    chunks_result = await db.execute(
-        select(Chunk.content)
-        .where(Chunk.source_id == source_id)
-        .order_by(Chunk.chunk_index)
-        .limit(3)
+    from app.agents.rag.retrieval import retrieve_chunks
+
+    q = f"{source.title or ''}\n{source.summary or ''}".strip()[:800] or "资料要点"
+    chunk_dicts = await retrieve_chunks(
+        q,
+        str(source.notebook_id),
+        db,
+        top_k=5,
+        user_id=current_user.id,
+        source_id=source.id,
+        _precomputed_variants=[q],
     )
-    context = "\n".join(row[0][:500] for row in chunks_result.all())
+    if chunk_dicts:
+        context = "\n".join((c.get("content") or "")[:500] for c in chunk_dicts)
+    else:
+        chunks_result = await db.execute(
+            select(Chunk.content)
+            .where(Chunk.source_id == source_id)
+            .order_by(Chunk.chunk_index)
+            .limit(3)
+        )
+        context = "\n".join(row[0][:500] for row in chunks_result.all())
 
     client = get_utility_client()
     try:
