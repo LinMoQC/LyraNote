@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit: https://docs.coderabbit.ai/getting-started/yaml-configuration
+
+language: "zh-CN"
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  collapse_walkthrough: true
+  review_status: true
+  review_details: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    ignore_title_keywords:
+      - "wip"
+      - "draft"
+      - "[skip review]"
+
+  # 减少无意义 diff（与 CodeRabbit sparse-checkout 行为一致）
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/.next/**"
+    - "!**/dist/**"
+    - "!**/.venv/**"
+    - "!**/__pycache__/**"
+    - "!**/pnpm-lock.yaml"
+    - "!**/uv.lock"
+    - "!**/*.min.js"
+    - "!**/coverage/**"
+
+  path_instructions:
+    - path: "apps/web/**/*.{ts,tsx}"
+      instructions: |
+        栈：Next.js App Router、React、TypeScript、Tailwind。优先与现有组件/目录约定一致；
+        注意客户端/服务端边界、next-intl、以及 NEXT_PUBLIC 与运行时可观测行为。
+    - path: "apps/api/**/*.py"
+      instructions: |
+        栈：FastAPI、SQLAlchemy 2 async、Pydantic v2。保持与现有 domains/ 分层一致；
+        异步路径用 async/await；新增行为优先补 pytest（unit 与现有 tests/ 布局一致）。
+
+chat:
+  auto_reply: true
