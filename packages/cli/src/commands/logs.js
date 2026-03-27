@@ -14,6 +14,7 @@ export async function showLogs() {
       { name: '所有服务', value: '' },
       { name: 'API',      value: 'api' },
       { name: 'Worker',   value: 'worker' },
+      { name: 'Beat',     value: 'beat' },
       { name: 'Web',      value: 'web' },
       { name: '数据库',   value: 'db' },
       { name: 'Redis',    value: 'redis' },

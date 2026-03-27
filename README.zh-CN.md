@@ -159,7 +159,7 @@ cd LyraNote
 ./lyra local    # 启动本地开发模式
 ```
 
-CLI 会自动：检测/启动数据库容器 → 创建 Python 虚拟环境 → 安装依赖 → 执行数据库迁移 → 并行启动 FastAPI、Celery Worker 和 Next.js Dev Server。
+CLI 会自动：检测/启动数据库容器 → 创建 Python 虚拟环境 → 安装依赖 → 执行数据库迁移 → 并行启动 FastAPI、Celery Worker、Celery Beat 和 Next.js Dev Server。
 
 按 `Ctrl+C` 停止本地进程，数据库容器不受影响。
 
@@ -218,7 +218,7 @@ CLI 会自动：检测/启动数据库容器 → 创建 Python 虚拟环境 → 
 
 ```bash
 ./lyra init     # 生成根目录 .env（选择「生产服务器」模式）
-docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker
+docker compose -f docker-compose.prod.yml up -d db redis minio minio-init api worker beat
 ```
 
 确保防火墙开放宿主机 Nginx 的 `80`/`443`；业务端口仅监听回环，勿对公网放行 3000/8000。

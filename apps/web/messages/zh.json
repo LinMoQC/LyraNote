@@ -1034,7 +1034,12 @@
     "newTaskCardLabel": "新建任务",
     "historyTitle": "{name} · 执行历史",
     "noHistory": "暂无执行记录",
-    "sourcesCount": "{count} 来源"
+    "sourcesCount": "{count} 来源",
+    "deliveryEmailSent": "邮件已发送",
+    "deliveryEmailFailed": "邮件发送失败",
+    "deliveryEmailSkippedNoAddress": "未配置收件邮箱",
+    "deliveryNoteCreated": "已写入笔记",
+    "deliveryNoteSkippedNoNotebook": "未找到投递笔记本"
   },
   "genui": {
     "kanbanStreaming": "正在生成看板...",

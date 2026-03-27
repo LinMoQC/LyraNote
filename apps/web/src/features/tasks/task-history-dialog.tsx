@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2, Clock, Loader2, X } from "lucide-react";
 import { AnimatePresence, m } from "framer-motion";
 import { useTranslations } from "next-intl";
 import { getTaskRuns, type TaskRun } from "@/services/task-service";
+import { getTaskDeliveryBadges } from "./task-delivery";
 
 function formatDuration(ms: number | null) {
   if (!ms) return "—";
@@ -16,6 +17,7 @@ function RunItem({ run }: { run: TaskRun }) {
   const t = useTranslations("tasks");
   const isSuccess = run.status === "success";
   const isFailed = run.status === "failed";
+  const deliveryBadges = getTaskDeliveryBadges(run.delivery_status);
 
   return (
     <div className="rounded-lg border border-border/30 bg-card/50 px-3 py-2.5">
@@ -42,6 +44,33 @@ function RunItem({ run }: { run: TaskRun }) {
       )}
       {run.error_message && (
         <p className="mt-1 text-[11px] text-red-400/70">{run.error_message}</p>
+      )}
+      {deliveryBadges.length > 0 && (
+        <div className="mt-2 space-y-1">
+          <div className="flex flex-wrap gap-1.5">
+            {deliveryBadges.map((badge) => (
+              <span
+                key={`${run.id}-${badge.key}`}
+                className={`inline-flex rounded-md px-2 py-0.5 text-[10px] ${
+                  badge.tone === "success"
+                    ? "bg-emerald-500/10 text-emerald-400"
+                    : badge.tone === "error"
+                      ? "bg-red-500/10 text-red-400"
+                      : "bg-muted/30 text-muted-foreground/60"
+                }`}
+              >
+                {t(badge.key)}
+              </span>
+            ))}
+          </div>
+          {deliveryBadges
+            .filter((badge) => badge.detail)
+            .map((badge) => (
+              <p key={`${run.id}-${badge.key}-detail`} className="text-[11px] text-red-400/70">
+                {badge.detail}
+              </p>
+            ))}
+        </div>
       )}
     </div>
   );

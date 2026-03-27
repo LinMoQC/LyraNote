@@ -4,6 +4,7 @@ import { execQ } from '../utils/proc.js';
 const CONTAINERS = [
   'lyranote-api-1',
   'lyranote-worker-1',
+  'lyranote-beat-1',
   'lyranote-web-1',
   'lyranote-db-1',
   'lyranote-redis-1',

@@ -173,7 +173,7 @@ async def test_email(_current_user: CurrentUser, db: DbDep):
       <p style="color:#9ca3af;font-size:12px;margin-top:24px;">— LyraNote</p>
     </div>"""
 
-    sent = await send_email(
+    result = await send_email(
         to=to,
         subject="LyraNote 测试邮件",
         html_body=html,
@@ -181,8 +181,10 @@ async def test_email(_current_user: CurrentUser, db: DbDep):
         smtp_config=cfg,
     )
 
-    if sent:
+    if result.ok:
         return success(TestEmailResult(ok=True, message=f"测试邮件已发送至 {to}"))
+    if result.error:
+        return success(TestEmailResult(ok=False, message=f"发送失败：{result.error}"))
     return success(TestEmailResult(ok=False, message="发送失败，请检查 SMTP 配置"))
 
 
