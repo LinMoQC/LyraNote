@@ -34,6 +34,7 @@ export interface ChatInputProps {
 
   maxHeight?: number;
   showHint?: boolean;
+  hideHintOnMobile?: boolean;
   hintText?: string;
   sendTitle?: string;
   cancelTitle?: string;
@@ -68,6 +69,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
       maxHeight,
       showHint = false,
+      hideHintOnMobile = false,
       hintText,
       sendTitle,
       cancelTitle,
@@ -220,7 +222,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           </div>
         </div>
         {showHint && hintText && (
-          <p className="mt-1.5 px-1 text-center text-[10px] text-muted-foreground/25">
+          <p
+            className={cn(
+              "mt-1.5 px-1 text-center text-[10px] text-muted-foreground/25",
+              hideHintOnMobile && "hidden md:block",
+            )}
+          >
             {hintText}
           </p>
         )}

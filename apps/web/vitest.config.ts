@@ -7,8 +7,8 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    setupFiles: ["./tests/setup/vitest.setup.ts"],
+    include: ["tests/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["node_modules", ".next"],
     coverage: {
       provider: "v8",
@@ -20,12 +20,13 @@ export default defineConfig({
         "src/hooks/**",
         "src/utils/**",
       ],
-      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
+      exclude: ["tests/**", "src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
     },
   },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@test": path.resolve(__dirname, "./tests"),
     },
   },
 })

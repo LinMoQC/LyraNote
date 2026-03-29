@@ -91,7 +91,7 @@ function KnowledgeCard({ source, index, t, onClick }: { source: Source; index: n
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 300, damping: 28, delay: index * 0.04 }}
       onClick={onClick}
-      className="group flex cursor-pointer flex-col gap-3 rounded-xl border border-border/60 bg-card p-4 shadow-sm transition-all duration-200 hover:border-border hover:shadow-md"
+      className="group flex min-h-[188px] cursor-pointer flex-col gap-3 rounded-2xl border border-border/60 bg-card p-4 shadow-sm transition-all duration-200 hover:border-border hover:shadow-md"
     >
       <div className="flex items-start justify-between">
         <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", config.bg)}>
@@ -100,7 +100,7 @@ function KnowledgeCard({ source, index, t, onClick }: { source: Source; index: n
         <StatusBadge status={source.status} t={t} />
       </div>
 
-      <div>
+      <div className="space-y-1.5">
         <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
           {source.title}
         </p>
@@ -301,38 +301,64 @@ export function KnowledgeView() {
   const { pullDistance, refreshing } = usePullToRefresh(scrollRef, handleRefresh);
 
   return (
-    <div className="flex h-full flex-col dark:border border-border/40">
+    <div className="flex h-full flex-col border border-border/40 dark:border">
       {/* Header */}
-      <div className="flex-shrink-0 border-b border-border/30 px-4 pb-0 pt-6 md:px-8 md:pt-8">
-        <div className="mb-6 flex items-center gap-4">
-          <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
-          <div className="flex gap-0.5 rounded-lg border border-border/40 bg-muted/40 p-0.5">
-            <button
-              type="button"
-              onClick={() => setPageView("sources")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                pageView === "sources"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <List size={12} />
-              {t("sourceView")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setPageView("graph")}
-              className={cn(
-                "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                pageView === "graph"
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <Share2 size={12} />
-              {t("graphView")}
-            </button>
+      <div className="flex-shrink-0 border-b border-border/30 px-4 pb-0 pt-5 md:px-8 md:pt-8">
+        <div className="mb-4 flex flex-col gap-4 md:mb-6 md:flex-row md:items-center md:justify-between md:gap-4">
+          <h1 className="text-[2rem] font-semibold leading-none tracking-tight md:text-2xl md:leading-tight">
+            {t("title")}
+          </h1>
+          <div className="flex items-center justify-between gap-3 md:ml-auto md:flex-1 md:justify-between">
+            <div className="flex w-fit gap-0.5 rounded-2xl border border-border/40 bg-muted/40 p-0.5 md:rounded-lg">
+              <button
+                type="button"
+                onClick={() => setPageView("sources")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors md:rounded-md md:px-3 md:py-1.5",
+                  pageView === "sources"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <List size={12} />
+                {t("sourceView")}
+              </button>
+              <button
+                type="button"
+                onClick={() => setPageView("graph")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium transition-colors md:rounded-md md:px-3 md:py-1.5",
+                  pageView === "graph"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <Share2 size={12} />
+                {t("graphView")}
+              </button>
+            </div>
+
+            {pageView === "sources" && (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  disabled={isRefetching}
+                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-border/40 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40 md:h-9 md:w-9 md:rounded-lg"
+                  title={t("refresh")}
+                >
+                  <RefreshCw size={14} className={cn(isRefetching && "animate-spin")} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUploadOpen(true)}
+                  className="flex items-center gap-2 rounded-2xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90 md:rounded-lg md:px-4 md:py-2"
+                >
+                  <Upload size={14} />
+                  {t("add")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -347,14 +373,14 @@ export function KnowledgeView() {
         />
 
         {/* Search + tabs + actions row (sources view only) */}
-        {pageView === "sources" && <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-0 flex-1 basis-40">
+        {pageView === "sources" && <div className="flex flex-col gap-3 md:flex-row md:flex-wrap md:items-center md:gap-2">
+          <div className="relative min-w-0 w-full md:flex-1 md:basis-40">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={t("search")}
-              className="w-full rounded-lg border border-border/40 bg-background py-2 pl-8 pr-8 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20"
+              className="w-full rounded-2xl border border-border/40 bg-background py-3 pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground/40 focus:border-primary/40 focus:outline-none focus:ring-1 focus:ring-primary/20 md:rounded-lg md:py-2"
             />
             {search && (
               <button
@@ -367,65 +393,49 @@ export function KnowledgeView() {
             )}
           </div>
 
-          <div className="flex gap-0.5 overflow-x-auto rounded-lg border border-border/40 bg-muted/40 p-0.5 no-scrollbar">
-            {TYPE_TAB_KEYS.map((key) => (
+          <div className="flex items-center gap-3">
+            <div className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto rounded-2xl border border-border/40 bg-muted/40 p-1 no-scrollbar md:rounded-lg md:p-0.5">
+              {TYPE_TAB_KEYS.map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveType(key)}
+                  className={cn(
+                    "shrink-0 rounded-xl px-3 py-2 text-xs font-medium transition-colors md:rounded-md md:px-3 md:py-1.5",
+                    activeType === key
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {t(`types.${key}`)}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex shrink-0 items-center rounded-2xl border border-border/40 bg-muted/40 p-1 md:rounded-lg md:p-0.5">
               <button
-                key={key}
                 type="button"
-                onClick={() => setActiveType(key)}
+                data-testid="knowledge-grid-toggle"
+                onClick={() => setViewMode("grid")}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
-                  activeType === key
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                  "flex h-9 w-9 items-center justify-center rounded-xl transition-colors md:h-7 md:w-7 md:rounded-md",
+                  viewMode === "grid" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {t(`types.${key}`)}
+                <LayoutGrid size={13} />
               </button>
-            ))}
-          </div>
-
-          <div className="flex gap-0.5 rounded-lg border border-border/40 bg-muted/40 p-0.5">
-            <button
-              type="button"
-              onClick={() => setViewMode("grid")}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                viewMode === "grid" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <LayoutGrid size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("list")}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              <List size={13} />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 md:ml-auto">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              disabled={isRefetching}
-              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/40 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
-              title={t("refresh")}
-            >
-              <RefreshCw size={14} className={cn(isRefetching && "animate-spin")} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setUploadOpen(true)}
-              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            >
-              <Upload size={14} />
-              {t("add")}
-            </button>
+              <button
+                type="button"
+                data-testid="knowledge-list-toggle"
+                onClick={() => setViewMode("list")}
+                className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-xl transition-colors md:h-7 md:w-7 md:rounded-md",
+                  viewMode === "list" ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <List size={13} />
+              </button>
+            </div>
           </div>
         </div>}
 
@@ -461,7 +471,7 @@ export function KnowledgeView() {
       </AnimatePresence>
 
       {/* Content */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-6 no-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 no-scrollbar md:px-8 md:py-6">
         <AnimatePresence mode="wait">
           {isLoading ? (
             <m.div
@@ -470,7 +480,7 @@ export function KnowledgeView() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               className={viewMode === "grid"
-                ? "grid grid-cols-4 gap-3 2xl:grid-cols-5 w-full"
+                ? "grid w-full grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
                 : "flex flex-col gap-2"}
             >
               {Array.from({ length: viewMode === "grid" ? 8 : 6 }).map((_, i) => (
@@ -533,10 +543,11 @@ export function KnowledgeView() {
           ) : viewMode === "grid" ? (
             <m.div
               key="grid"
+              data-testid="knowledge-grid"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="grid grid-cols-4 gap-3 2xl:grid-cols-5 w-full"
+              className="grid w-full grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
             >
               {allSources.map((source, i) => (
                 <KnowledgeCard key={source.id} source={source} index={i} t={t} onClick={() => setActiveSource(source)} />
@@ -545,6 +556,7 @@ export function KnowledgeView() {
           ) : (
             <m.div
               key="list"
+              data-testid="knowledge-list"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}

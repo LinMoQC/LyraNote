@@ -1,7 +1,7 @@
 "use client";
 
 import { type Variants, m } from "framer-motion";
-import { LayoutGrid, List, Plus, SlidersHorizontal } from "lucide-react";
+import { LayoutGrid, List, Plus } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -9,11 +9,12 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { createNotebook } from "@/services/notebook-service";
 import type { Notebook } from "@/types";
 
-import { NewNotebookCard, NotebookCard, NotebookListRow } from "./notebook-card";
+import { NotebookCard, NotebookListRow } from "./notebook-card";
 
 const container: Variants = {
   hidden: {},
@@ -36,11 +37,12 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
   const router = useRouter();
   const t = useTranslations("notebooks");
   const tc = useTranslations("common");
-  const tn = useTranslations("nav");
+  const { matches: isMobile } = useMediaQuery("(max-width: 767px)");
   const [view, setView] = useState<ViewMode>("grid");
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [creating, setCreating] = useState(false);
+  const activeView: ViewMode = isMobile ? "list" : view;
 
   async function handleCreate() {
     const title = newTitle.trim();
@@ -60,25 +62,31 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-6 p-8 dark:border border-border/40">
+    <div className="flex h-full flex-col gap-7 border border-border/40 px-5 py-7 sm:gap-6 sm:p-8 dark:border">
       {/* ── Toolbar ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("myNotebooks")}</h1>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start justify-between gap-4 sm:block">
+          <div className="min-w-0">
+            <h1 className="text-[2.15rem] font-semibold leading-[0.96] tracking-tight whitespace-nowrap sm:text-2xl sm:leading-tight">
+              {t("myNotebooks")}
+            </h1>
+          </div>
 
-        <div className="flex items-center gap-2">
-          {/* Sort */}
           <button
             type="button"
-            className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            onClick={() => setCreateOpen(true)}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_10px_30px_rgba(59,130,246,0.18)] transition-opacity hover:opacity-90 sm:hidden"
           >
-            <SlidersHorizontal size={14} />
-            {tn("recent")}
+            <Plus size={14} />
+            {t("new")}
           </button>
+        </div>
 
-          {/* View toggle */}
+        <div className="hidden items-center gap-2 sm:flex">
           <div className="flex items-center rounded-lg border border-border/40 p-0.5">
             <button
               type="button"
+              data-testid="notebooks-grid-toggle"
               onClick={() => setView("grid")}
               className={cn(
                 "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
@@ -91,6 +99,7 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
             </button>
             <button
               type="button"
+              data-testid="notebooks-list-toggle"
               onClick={() => setView("list")}
               className={cn(
                 "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
@@ -103,7 +112,6 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
             </button>
           </div>
 
-          {/* Create */}
           <button
             type="button"
             onClick={() => setCreateOpen(true)}
@@ -116,18 +124,15 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
       </div>
 
       {/* ── Grid ────────────────────────────────────────────────────────── */}
-      {view === "grid" ? (
+      {activeView === "grid" ? (
         <m.div
           key="grid"
+          data-testid="notebooks-grid"
           variants={container}
           initial="hidden"
           animate="show"
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 w-full"
+          className="grid w-full grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
         >
-          <m.div variants={item} className="h-full">
-            <NewNotebookCard onClick={() => setCreateOpen(true)} />
-          </m.div>
-
           {notebooks.map((nb) => (
             <m.div key={nb.id} variants={item} className="h-full">
               <NotebookCard notebook={nb} />
@@ -138,10 +143,11 @@ export function NotebooksView({ notebooks }: { notebooks: Notebook[] }) {
         /* ── List ──────────────────────────────────────────────────────── */
         <m.div
           key="list"
+          data-testid="notebooks-list"
           variants={container}
           initial="hidden"
           animate="show"
-          className="flex flex-col gap-0.5"
+          className="flex flex-col gap-4 sm:gap-1"
         >
           {notebooks.map((nb) => (
             <m.div key={nb.id} variants={item}>

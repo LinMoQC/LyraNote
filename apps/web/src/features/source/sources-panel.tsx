@@ -109,9 +109,11 @@ function SourceItem({ source }: { source: Source }) {
 export function SourcesPanel({
   notebookId,
   onClose,
+  variant = "sidebar",
 }: {
   notebookId: string;
   onClose?: () => void;
+  variant?: "sidebar" | "sheet";
 }) {
   const t = useTranslations("source");
   const setImportDialogOpen = useUiStore((state) => state.setImportDialogOpen);
@@ -163,8 +165,18 @@ export function SourcesPanel({
   const processing = sources.filter((s) => s.status === "processing" || s.status === "pending");
   const failed = sources.filter((s) => s.status === "failed");
 
+  const isSheet = variant === "sheet";
+
   return (
-    <aside className="flex h-full w-[260px] flex-shrink-0 flex-col overflow-hidden border-r border-border/25 bg-card/20">
+    <aside
+      className={cn(
+        "flex h-full flex-col overflow-hidden bg-card/20",
+        isSheet
+          ? "w-full"
+          : "w-[260px] flex-shrink-0 border-r border-border/25",
+      )}
+      data-testid={`sources-panel-${variant}`}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
           <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -179,7 +191,7 @@ export function SourcesPanel({
             >
               <Plus size={15} />
             </button>
-            {onClose ? (
+            {!isSheet && onClose ? (
               <button
                 className="rounded-lg p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
                 onClick={onClose}

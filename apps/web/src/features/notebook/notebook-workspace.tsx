@@ -19,6 +19,8 @@ import { FloatingOrb } from "@/features/copilot/floating-orb";
 import { NoteEditor } from "@/features/editor/note-editor";
 import { NotebookTopBar } from "@/features/notebook/notebook-header";
 import type { SaveStatus } from "@/features/notebook/notebook-header";
+import { MobileWorkspaceSheet } from "@/features/notebook/mobile-workspace-sheet";
+import type { MobileCopilotSnap, MobileWorkspaceSheetKey } from "@/features/notebook/mobile-workspace-sheet";
 import { NotebookTOC } from "@/features/notebook/notebook-toc";
 import { FloatingTOC } from "@/features/notebook/floating-toc";
 import { ImportSourceDialog } from "@/features/source/import-source-dialog";
@@ -58,12 +60,15 @@ export function NotebookWorkspace({
 }) {
   const tNotebook = useTranslations("notebook");
   const setImportDialogOpen = useUiStore((state) => state.setImportDialogOpen);
+  const setMobileHeaderMode = useUiStore((state) => state.setMobileHeaderMode);
   const activeSourceId = useNotebookStore((state) => state.activeSourceId);
   const setActiveSourceId = useNotebookStore((state) => state.setActiveSourceId);
-  const isMobile = useMediaQuery("(max-width: 767px)");
+  const { matches: isMobile, ready: mediaReady } = useMediaQuery("(max-width: 767px)");
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [copilotMode, setCopilotMode] = useState<CopilotMode>("floating");
+  const [mobileActiveSheet, setMobileActiveSheet] = useState<MobileWorkspaceSheetKey>("none");
+  const [mobileCopilotSnap, setMobileCopilotSnap] = useState<MobileCopilotSnap>("half");
   const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
   const [notebookTitle, setNotebookTitle] = useState(title);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -71,6 +76,7 @@ export function NotebookWorkspace({
 
   // Hydrate copilot state from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
+    if (!mediaReady || isMobile) return;
     const storedMode = localStorage.getItem("lyra:copilot-mode") as CopilotMode | null;
     if (storedMode === "floating" || storedMode === "docked") {
       setCopilotMode(storedMode);
@@ -79,14 +85,21 @@ export function NotebookWorkspace({
     if (storedOpen === "true") {
       setCopilotOpen(true);
     }
-  }, []);
+  }, [isMobile, mediaReady]);
 
   useEffect(() => {
     if (isMobile) {
       setCopilotOpen(false);
       setSourcesOpen(false);
+      setIsFullscreen(false);
+      setMobileActiveSheet("none");
     }
   }, [isMobile]);
+
+  useEffect(() => {
+    setMobileHeaderMode(isMobile ? "hidden" : "default");
+    return () => setMobileHeaderMode("default");
+  }, [isMobile, setMobileHeaderMode]);
 
   useEffect(() => {
     localStorage.setItem("lyra:copilot-mode", copilotMode);
@@ -176,14 +189,18 @@ export function NotebookWorkspace({
   }, []);
 
   const handleAskAI = useCallback((text: string, action: string) => {
-    setCopilotOpen(true);
+    if (isMobile) {
+      setMobileActiveSheet("copilot");
+    } else {
+      setCopilotOpen(true);
+    }
     if (action === "ask") {
       setPendingQuote({ text, key: Date.now() });
     } else {
       const promptKey = ACTION_PROMPT_KEYS[action] ?? ACTION_PROMPT_KEYS.ask;
       setPendingPrompt({ text: tNotebook(promptKey, { text }), key: Date.now() });
     }
-  }, [tNotebook]);
+  }, [isMobile, tNotebook]);
 
   const handleInsertToEditor = useCallback(async (content: string) => {
     const html = await convertMarkdown(content);
@@ -245,6 +262,16 @@ export function NotebookWorkspace({
   const isDocked = effectiveMode === "docked";
   const showCopilotInFlow = !isFullscreen && isDocked && copilotOpen;
 
+  const handleMobileSheetChange = useCallback((sheet: MobileWorkspaceSheetKey) => {
+    setMobileActiveSheet(sheet);
+    if (sheet !== "sources") {
+      startTransition(() => setActiveSourceId(null));
+    }
+    if (sheet === "copilot") {
+      setMobileCopilotSnap("half");
+    }
+  }, [setActiveSourceId]);
+
   // 测量内容区域的视口位置，让面板高度与内容区完全对齐
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerBounds, setContainerBounds] = useState({ top: 0, height: 800 });
@@ -263,7 +290,11 @@ export function NotebookWorkspace({
   }, []);
 
   return (
-    <div ref={containerRef} className="flex h-full flex-col overflow-hidden dark:border border-border/40">
+    <div
+      ref={containerRef}
+      className="flex h-full flex-col overflow-hidden dark:border border-border/40"
+      data-testid="notebook-workspace"
+    >
       <ImportSourceDialog notebookId={notebookId} />
 
       <NotebookTopBar
@@ -278,11 +309,14 @@ export function NotebookWorkspace({
         onNoteSelect={handleNoteSelect}
         onNoteCreated={handleNoteCreated}
         onNoteDeleted={handleNoteDeleted}
+        isMobile={isMobile}
+        mobileActiveSheet={mobileActiveSheet}
+        onMobileSheetChange={handleMobileSheetChange}
       />
 
-      <div className="relative flex flex-1 overflow-hidden">
+      <div className="relative flex flex-1 overflow-hidden" data-testid="notebook-workspace-main">
         <AnimatePresence initial={false}>
-          {!isFullscreen && sourcesOpen && (
+          {!isMobile && !isFullscreen && sourcesOpen && (
             <m.div
               key="sources"
               initial={{ width: 0, opacity: 0 }}
@@ -316,8 +350,9 @@ export function NotebookWorkspace({
             onToggleSources={() => setSourcesOpen((v) => !v)}
             sourcesOpen={sourcesOpen}
             wideLayout={isFullscreen}
+            isMobileLayout={isMobile}
           />
-          {isFullscreen && <FloatingTOC editor={editorInstance} />}
+          {!isMobile && isFullscreen && <FloatingTOC editor={editorInstance} />}
         </div>
 
         {/*
@@ -325,14 +360,16 @@ export function NotebookWorkspace({
          * CopilotPanel 永远 position:fixed，不参与 flex 排列，
          * 故两者分离：占位控制布局，面板控制视觉位置。
          */}
-        <m.div
-          className="flex-shrink-0 h-full"
-          animate={{ width: showCopilotInFlow ? panelWidth : 0 }}
-          transition={{ type: "spring", stiffness: 300, damping: 32, mass: 0.75 }}
-          style={{ pointerEvents: "none", overflow: "hidden" }}
-        />
+        {!isMobile && (
+          <m.div
+            className="h-full flex-shrink-0"
+            animate={{ width: showCopilotInFlow ? panelWidth : 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 32, mass: 0.75 }}
+            style={{ pointerEvents: "none", overflow: "hidden" }}
+          />
+        )}
 
-        {!isFullscreen && (
+        {!isMobile && !isFullscreen && (
           <CopilotPanel
             notebookId={notebookId}
             initialMessages={initialMessages}
@@ -360,7 +397,7 @@ export function NotebookWorkspace({
 
         {/* TOC — show when copilot is not taking docked space */}
         <AnimatePresence initial={false}>
-          {!isFullscreen && !isMobile && !showCopilotInFlow && (
+          {!isMobile && !isFullscreen && !showCopilotInFlow && (
             <m.div
               key="toc"
               initial={{ width: 0, opacity: 0 }}
@@ -378,13 +415,13 @@ export function NotebookWorkspace({
         </AnimatePresence>
 
         <AnimatePresence>
-          {!isFullscreen && !copilotOpen && (
+          {!isMobile && !isFullscreen && !copilotOpen && (
             <FloatingOrb onClick={() => setCopilotOpen(true)} />
           )}
         </AnimatePresence>
 
         {/* Floating sources toggle */}
-        {!isFullscreen && (
+        {!isMobile && !isFullscreen && (
           <button
             type="button"
             onClick={() => setSourcesOpen((v) => !v)}
@@ -400,9 +437,55 @@ export function NotebookWorkspace({
           </button>
         )}
 
+        {isMobile && (
+          <MobileWorkspaceSheet
+            activeSheet={mobileActiveSheet}
+            copilotSnap={mobileCopilotSnap}
+            onClose={() => handleMobileSheetChange("none")}
+            onSnapChange={setMobileCopilotSnap}
+          >
+            <div className={cn("h-full", mobileActiveSheet === "sources" ? "block" : "hidden")}>
+              <SourcesPanel notebookId={notebookId} variant="sheet" />
+            </div>
+            <div className={cn("h-full", mobileActiveSheet === "toc" ? "block" : "hidden")}>
+              <NotebookTOC
+                editor={editorInstance}
+                variant="sheet"
+                onNavigate={() => handleMobileSheetChange("none")}
+              />
+            </div>
+            <div className={cn("h-full min-h-0", mobileActiveSheet === "copilot" ? "block" : "hidden")}>
+              <CopilotPanel
+                notebookId={notebookId}
+                initialMessages={initialMessages}
+                isOpen={mobileActiveSheet === "copilot"}
+                onClose={() => handleMobileSheetChange("none")}
+                onInsertToEditor={handleInsertToEditor}
+                onInsertMindMap={handleInsertMindMap}
+                onNoteCreated={(noteId, noteTitle) => {
+                  setActiveNoteId(noteId);
+                  setActiveNoteTitle(noteTitle);
+                  void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+                  setNoteRefreshKey((k) => k + 1);
+                }}
+                pendingPrompt={pendingPrompt}
+                pendingQuote={pendingQuote}
+                getEditorContext={getEditorContext}
+                mode="floating"
+                panelWidth={panelWidth}
+                onWidthChange={setPanelWidth}
+                containerTop={containerBounds.top}
+                containerHeight={containerBounds.height}
+                presentation="sheet"
+              />
+            </div>
+          </MobileWorkspaceSheet>
+        )}
+
         <SourceDetailDrawer
           source={activeSource}
           onClose={() => startTransition(() => setActiveSourceId(null))}
+          presentation={isMobile ? "modal" : "side"}
         />
       </div>
     </div>

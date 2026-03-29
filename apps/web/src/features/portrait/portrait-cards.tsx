@@ -60,7 +60,7 @@ export function IdentityHeroCard({ portrait }: { portrait: UserPortrait }) {
         y: { duration: 0.5 },
         boxShadow: { delay: 0.5, duration: 6, repeat: Infinity, ease: "easeInOut" },
       }}
-      className="relative overflow-hidden rounded-2xl border border-violet-500/20 p-6"
+      className="relative overflow-hidden rounded-2xl border border-violet-500/20 p-4 md:p-6"
       style={{
         background:
           "linear-gradient(135deg, rgba(139,92,246,0.08) 0%, rgba(99,102,241,0.05) 50%, rgba(15,23,42,0.02) 100%)",
@@ -78,9 +78,9 @@ export function IdentityHeroCard({ portrait }: { portrait: UserPortrait }) {
       />
 
       {/* Decorative orb */}
-      <div className="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-violet-500/[0.08] blur-3xl" />
+      <div className="pointer-events-none absolute -right-12 -top-12 hidden h-40 w-40 rounded-full bg-violet-500/[0.08] blur-3xl md:block" />
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div className="flex-1">
           <div className="mb-3 flex items-center gap-2.5">
             <m.span
@@ -93,7 +93,7 @@ export function IdentityHeroCard({ portrait }: { portrait: UserPortrait }) {
             </m.span>
           </div>
 
-          <p className="mb-5 max-w-2xl text-[14px] leading-[1.8] text-foreground/80">
+          <p className="mb-4 text-[13px] leading-[1.75] text-foreground/80 md:mb-5 md:max-w-2xl md:text-[14px] md:leading-[1.8]">
             <TypewriterText text={portrait.identity_summary} speed={20} />
           </p>
 
@@ -132,7 +132,7 @@ export function IdentityHeroCard({ portrait }: { portrait: UserPortrait }) {
             initial={{ opacity: 0, scale: 0.6 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.6, type: "spring", stiffness: 200 }}
-            className="flex-shrink-0"
+            className="flex-shrink-0 self-start md:self-auto"
           >
             <ConfidenceRing value={identity.confidence} />
           </m.div>
@@ -169,7 +169,7 @@ export function KnowledgeMapCard({ portrait }: { portrait: UserPortrait }) {
   }, []);
 
   return (
-    <div className="h-full rounded-2xl border border-border/40 bg-card p-5">
+    <div className="h-full rounded-2xl border border-border/40 bg-card p-4 md:p-5">
       <div className="mb-4 flex items-center gap-2">
         <Map className="h-3.5 w-3.5 text-blue-400" />
         <span className="text-[12px] font-semibold text-foreground/70">{t("knowledgeMap")}</span>
@@ -214,7 +214,7 @@ export function ThoughtStream({ portrait }: { portrait: UserPortrait }) {
   ].filter(Boolean) as Array<{ type: "focus" | "topic" | "direction"; text: string }>;
 
   return (
-    <div ref={ref} className="h-full rounded-2xl border border-border/40 bg-card p-5">
+    <div ref={ref} className="h-full rounded-2xl border border-border/40 bg-card p-4 md:p-5">
       <div className="mb-5 flex items-center gap-2">
         <TrendingUp className="h-3.5 w-3.5 text-indigo-400" />
         <span className="text-[12px] font-semibold text-foreground/70">{t("trajectory")}</span>
@@ -304,7 +304,7 @@ export function InteractionStyleCard({ portrait }: { portrait: UserPortrait }) {
   ].filter((item) => item.value);
 
   return (
-    <div ref={ref} className="h-full rounded-2xl border border-border/40 bg-card p-5">
+    <div ref={ref} className="h-full rounded-2xl border border-border/40 bg-card p-4 md:p-5">
       <div className="mb-4 flex items-center gap-2">
         <MessageCircle className="h-3.5 w-3.5 text-teal-400" />
         <span className="text-[12px] font-semibold text-foreground/70">{t("interactionStyle")}</span>
@@ -372,7 +372,7 @@ export function GrowthVelocityCard({ portrait }: { portrait: UserPortrait }) {
   ].filter(Boolean) as Array<{ label: string; value: string; short: boolean }>;
 
   return (
-    <div ref={ref} className="h-full rounded-2xl border border-border/40 bg-card p-5">
+    <div ref={ref} className="h-full rounded-2xl border border-border/40 bg-card p-4 md:p-5">
       <div className="mb-4 flex items-center gap-2">
         <Zap className="h-3.5 w-3.5 text-amber-400" />
         <span className="text-[12px] font-semibold text-foreground/70">{t("growthVelocity")}</span>
@@ -453,14 +453,14 @@ export function GrowthSignalsCard({ portrait }: { portrait: UserPortrait }) {
       initial={{ opacity: 0, y: 10 }}
       animate={inView ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.45 }}
-      className="rounded-2xl border border-border/40 bg-card p-5"
+      className="rounded-2xl border border-border/40 bg-card p-4 md:p-5"
     >
       <div className="mb-5 flex items-center gap-2">
         <BookOpen className="h-3.5 w-3.5 text-emerald-400" />
         <span className="text-[12px] font-semibold text-foreground/70">{t("growthSignals")}</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 md:gap-6">
         {gs.this_period_learned && gs.this_period_learned.length > 0 && (
           <div>
             <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-400/70">{t("recentLearned")}</p>
@@ -527,7 +527,7 @@ export function LyraNotesCard({ notes }: { notes: string }) {
       initial={{ opacity: 0, y: 10 }}
       animate={inView ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.45 }}
-      className="flex items-start gap-3 rounded-2xl border border-violet-500/10 bg-violet-500/[0.04] px-5 py-4"
+      className="flex items-start gap-3 rounded-2xl border border-violet-500/10 bg-violet-500/[0.04] px-4 py-4 md:px-5"
     >
       <m.div
         animate={{ opacity: [0.5, 1, 0.5] }}

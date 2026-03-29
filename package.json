@@ -10,6 +10,8 @@
     "dev": "turbo run dev --filter=@lyranote/web",
     "dev:all": "turbo run dev --filter=./apps/*",
     "build": "turbo run build",
+    "test": "turbo run test",
+    "test:web": "turbo run test --filter=@lyranote/web",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "docs:dev": "turbo run dev --filter=@lyranote/docs",
