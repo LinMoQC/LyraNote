@@ -144,6 +144,8 @@ class UserPortrait(Base):
     )
     # 六维画像 JSON，结构见 docs/lyra-soul-system.md
     portrait_json: Mapped[dict | None] = mapped_column(JSONB)
+    # AI 生成的头像 URL（由公开主页生成时写入）
+    avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 合成摘要（供 Lyra 直接引用的自然语言描述）
     synthesis_summary: Mapped[str | None] = mapped_column(Text)
     # 画像版本号（每次合成 +1）

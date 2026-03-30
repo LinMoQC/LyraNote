@@ -40,6 +40,10 @@ EDITABLE_KEYS = {
     # AI — Search
     "tavily_api_key",
     "perplexity_api_key",
+    # AI — Image generation (avatar for public home page)
+    "image_gen_api_key",
+    "image_gen_base_url",
+    "image_gen_model",
     # Storage
     "storage_backend",
     "storage_region",
@@ -72,6 +76,7 @@ _SENSITIVE_KEYS = {
     "storage_s3_secret_key",
     "tavily_api_key",
     "perplexity_api_key",
+    "image_gen_api_key",
     "smtp_password",
 }
 

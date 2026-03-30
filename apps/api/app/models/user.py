@@ -31,6 +31,11 @@ class User(Base):
     scheduled_tasks: Mapped[list["ScheduledTask"]] = relationship(back_populates="user", passive_deletes=True)
     agent_thoughts: Mapped[list["AgentThought"]] = relationship(back_populates="user", passive_deletes=True)
     portrait: Mapped["UserPortrait | None"] = relationship(back_populates="user", uselist=False, passive_deletes=True)
+    public_home_state: Mapped["PublicHomeState | None"] = relationship(
+        back_populates="user",
+        uselist=False,
+        passive_deletes=True,
+    )
 
 
 class AppConfig(Base):

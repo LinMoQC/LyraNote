@@ -30,6 +30,7 @@ class MessageCreate(BaseModel):
     tool_hint: str | None = None  # summarize | insights | outline | deep_read | compare
     attachment_ids: list[str] = []  # temp upload IDs to inject as context
     attachments_meta: list[AttachmentMeta] = []  # metadata for frontend display persistence
+    thinking_enabled: bool | None = None  # enable provider reasoning/thinking when supported
 
 
 class MessageSave(BaseModel):

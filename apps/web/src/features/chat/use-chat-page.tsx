@@ -198,6 +198,8 @@ export function useChatPage() {
     setStreaming,
     setActiveConvId,
     setDrProgress: dr.setDrProgress,
+    isThinkingModel,
+    thinkingEnabled,
   });
 
   // ── Conversation list ────────────────────────────────────────────────────

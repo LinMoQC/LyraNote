@@ -26,10 +26,24 @@ async def get_my_portrait(
     current_user: CurrentUser,
     db: DbDep,
 ) -> ApiResponse[dict | None]:
-    """返回当前用户的最新用户画像 JSON。"""
+    """返回当前用户的最新用户画像 JSON（含 avatar_url 字段）。"""
+    from sqlalchemy import select
     from app.agents.portrait.loader import load_latest_portrait
+    from app.models import UserPortrait
 
     portrait = await load_latest_portrait(db, current_user.id)
+    if portrait is None:
+        return success(None)
+
+    # Merge avatar_url from the DB column so the portrait page can display it
+    row = (
+        await db.execute(
+            select(UserPortrait.avatar_url).where(UserPortrait.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+    if row:
+        portrait = {**portrait, "avatar_url": row}
+
     return success(portrait)
 
 

@@ -73,15 +73,19 @@ class AnthropicProvider(BaseLLMProvider):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[dict, None]:
         system, msgs = _convert_messages(messages)
-        async with self._client.messages.stream(
+        kwargs: dict = dict(
             model=model or self._default_model,
             system=system or "You are a helpful assistant.",
             messages=msgs,
             temperature=temperature,
             max_tokens=max_tokens or 4096,
-        ) as stream:
+        )
+        if thinking_enabled:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 2048}
+        async with self._client.messages.stream(**kwargs) as stream:
             async for text in stream.text_stream:
                 yield {"type": "token", "content": text}
 

@@ -325,6 +325,7 @@ export function CopilotPanel({
           undefined, // toolHint
           undefined, // attachmentIds
           undefined, // attachmentsMeta
+          undefined, // thinkingEnabled
           true,      // isCopilot
         );
         // Persist the conversation ID so subsequent messages stay in the same conversation

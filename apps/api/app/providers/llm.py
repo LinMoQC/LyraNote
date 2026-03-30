@@ -143,9 +143,16 @@ async def chat_stream(
     model: str | None = None,
     temperature: float = 0.7,
     max_tokens: int | None = None,
+    thinking_enabled: bool | None = None,
 ) -> AsyncGenerator[dict, None]:
     """Yield dicts with ``type`` ('token' | 'reasoning') and ``content``."""
-    async for chunk in get_provider().chat_stream(messages, model, temperature, max_tokens):
+    async for chunk in get_provider().chat_stream(
+        messages,
+        model,
+        temperature,
+        max_tokens,
+        thinking_enabled,
+    ):
         yield chunk
 
 

@@ -60,6 +60,104 @@ export type PublicNotebookDetail = PublicNotebook & {
   notes: PublicNote[];
 };
 
+export interface PublicResearchTimelineItem {
+  title: string;
+  summary: string;
+  timeLabel: string;
+  sourceNotebookIds: string[];
+}
+
+export interface PublicPortraitIdentity {
+  primaryRole: string;
+  expertiseLevel: string;
+  personalityType: string;
+  confidence?: number;
+}
+
+export interface PublicPortraitKnowledgeMap {
+  expertDomains: string[];
+  learningDomains: string[];
+  weakDomains: string[];
+  emergingInterest: string[];
+}
+
+export interface PublicPortraitResearchTrajectory {
+  currentFocus: string;
+  recentlyCompleted: string[];
+  nextLikelyTopics: string[];
+  longTermDirection: string;
+}
+
+export interface PublicPortraitInteractionStyle {
+  preferredDepth: string;
+  answerFormat: string;
+  preferredLanguage: string;
+  engagementStyle: string;
+}
+
+export interface PublicPortraitGrowthSignals {
+  knowledgeVelocity: string;
+  thisPeriodLearned: string[];
+  recurringQuestions: string[];
+  knowledgeGapsDetected: string[];
+}
+
+export interface PublicPortraitWorkPatterns {
+  prefersDeepFocus?: boolean;
+  writingToReadingRatio?: number;
+  sessionStyle: string;
+}
+
+export interface PublicPortraitSnapshot {
+  identitySummary: string;
+  identity: PublicPortraitIdentity;
+  knowledgeMap: PublicPortraitKnowledgeMap;
+  researchTrajectory: PublicPortraitResearchTrajectory;
+  interactionStyle: PublicPortraitInteractionStyle;
+  growthSignals: PublicPortraitGrowthSignals;
+  workPatterns: PublicPortraitWorkPatterns;
+}
+
+export interface PublicSiteProfile {
+  heroSummary: string;
+  professionGuess?: string;
+  interestTags: string[];
+  currentResearch: string[];
+  timelineItems: PublicResearchTimelineItem[];
+  topicClusters: string[];
+  featuredNotebookIds: string[];
+  portraitSnapshot?: PublicPortraitSnapshot | null;
+  generatedAt?: string;
+  isAiGenerated: boolean;
+  /** AI-generated anime avatar URL stored in object storage. Null when not configured or generation failed. */
+  avatarUrl?: string | null;
+}
+
+export interface PublicSiteStats {
+  notebookCount: number;
+  wordCount: number;
+  sourceCount: number;
+  topicCount: number;
+}
+
+export interface PublicSitePayload {
+  profile: PublicSiteProfile | null;
+  featuredNotebooks: PublicNotebook[];
+  recentNotebooks: PublicNotebook[];
+  notebooks: PublicNotebook[];
+  stats: PublicSiteStats;
+}
+
+export interface PublicHomeDraftState {
+  draftProfile: PublicSiteProfile | null;
+  approvedProfile: PublicSiteProfile | null;
+  draftGeneratedAt?: string;
+  approvedAt?: string;
+  notebooks: PublicNotebook[];
+  featuredNotebooks: PublicNotebook[];
+  stats: PublicSiteStats;
+}
+
 /** 知识来源 */
 export type Source = {
   id: string;

@@ -8,6 +8,7 @@ import {
   Bot,
   Globe,
   HardDrive,
+  Lightbulb,
   Palette,
   Shield,
   Sparkles,
@@ -32,11 +33,12 @@ import {
   MemorySection,
   SkillsSection,
   MCPSection,
+  PublicHomeSection,
 } from "./settings-sections";
 
 // ── Nav config ────────────────────────────────────────────────────────────────
 
-const NAV_IDS = ["general", "appearance", "account", "ai", "personality", "memory", "skills", "mcp", "storage", "notify", "security"] as const;
+const NAV_IDS = ["general", "appearance", "account", "ai", "personality", "publicHome", "memory", "skills", "mcp", "storage", "notify", "security"] as const;
 type SectionId = (typeof NAV_IDS)[number];
 
 const NAV_ICONS: Record<SectionId, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -45,6 +47,7 @@ const NAV_ICONS: Record<SectionId, React.ComponentType<{ size?: number; classNam
   account: User,
   ai: Bot,
   personality: Sparkles,
+  publicHome: Lightbulb,
   memory: BookOpen,
   skills: Blocks,
   mcp: Unplug,
@@ -59,6 +62,7 @@ const NAV_LABEL_KEYS: Record<SectionId, string> = {
   account: "sections.account",
   ai: "sections.ai",
   personality: "sections.personality",
+  publicHome: "sections.publicHome",
   memory: "sections.memory",
   skills: "sections.skills",
   mcp: "sections.mcp",
@@ -73,6 +77,7 @@ const SECTION_COMPONENTS: Record<SectionId, React.ComponentType> = {
   account: AccountSection,
   ai: AIConfigSection,
   personality: PersonalitySection,
+  publicHome: PublicHomeSection,
   memory: MemorySection,
   skills: SkillsSection,
   mcp: MCPSection,

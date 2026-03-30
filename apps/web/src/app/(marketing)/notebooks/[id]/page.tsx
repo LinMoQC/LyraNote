@@ -6,17 +6,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { m } from "framer-motion";
+import { m, useScroll, useTransform } from "framer-motion";
 
 import { getPublicNotebook } from "@/services/public-service";
 import type { PublicNotebookDetail, PublicNote } from "@/types";
 import { formatDate } from "@/utils/format-date";
 import { ReadOnlyNote } from "@/app/(marketing)/notebooks/[id]/read-only-note";
-
-import {
-  getNotebookIcon,
-  pickDefaultIcon,
-} from "@/features/notebook/notebook-icons";
+import { getNotebookIcon, pickDefaultIcon } from "@/features/notebook/notebook-icons";
+import { publicHomeStyles } from "@/features/public-home/public-home-styles";
 
 type TocItem = { id: string; title: string; level: number };
 
@@ -57,19 +54,16 @@ function ReadingProgress() {
     const handleScroll = () => {
       const scrollTop = window.scrollY;
       const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      if (docHeight > 0) {
-        setProgress(Math.min(1, scrollTop / docHeight));
-      }
+      if (docHeight > 0) setProgress(Math.min(1, scrollTop / docHeight));
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   return (
-    <div className="fixed left-0 right-0 top-0 z-50 h-0.5 bg-border/30">
+    <div style={{ position: "fixed", left: 0, right: 0, top: 0, zIndex: 50, height: 2, background: "rgba(200,148,60,0.12)" }}>
       <m.div
-        className="h-full bg-primary"
-        style={{ width: `${progress * 100}%` }}
+        style={{ height: "100%", width: `${progress * 100}%`, background: "linear-gradient(90deg, var(--gold), var(--gold-l))" }}
         transition={{ duration: 0.1 }}
       />
     </div>
@@ -78,29 +72,28 @@ function ReadingProgress() {
 
 function TableOfContents({ items, activeId }: { items: TocItem[]; activeId: string }) {
   const t = useTranslations("marketing");
-
   if (items.length === 0) return null;
 
   return (
-    <nav className="space-y-1">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">
-        {t("toc")}
-      </p>
+    <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <p className="lp-eyebrow" style={{ marginBottom: 12 }}>{t("toc")}</p>
       {items.map((item) => (
         <a
           key={item.id}
           href={`#${item.id}`}
-          className={`block text-[13px] leading-relaxed transition-colors duration-150 ${
-            item.level === 1
-              ? "font-medium"
-              : item.level === 2
-                ? "pl-3"
-                : "pl-6 text-[12px]"
-          } ${
-            activeId === item.id
-              ? "text-primary"
-              : "text-muted-foreground/70 hover:text-foreground"
-          }`}
+          style={{
+            display: "block",
+            fontSize: item.level === 3 ? 11 : 12.5,
+            lineHeight: 1.7,
+            paddingLeft: item.level === 2 ? 12 : item.level === 3 ? 22 : 0,
+            color: activeId === item.id ? "var(--gold)" : "rgba(237,231,218,0.38)",
+            textDecoration: "none",
+            transition: "color 0.15s",
+            fontWeight: item.level === 1 ? 500 : 400,
+            borderLeft: activeId === item.id ? "2px solid var(--gold)" : "2px solid transparent",
+            paddingTop: 3,
+            paddingBottom: 3,
+          }}
         >
           {item.title}
         </a>
@@ -124,10 +117,7 @@ export default function PublicNotebookPage() {
   useEffect(() => {
     if (!id) return;
     getPublicNotebook(id)
-      .then((nb) => {
-        if (nb) setNotebook(nb);
-        else setNotFound(true);
-      })
+      .then((nb) => { if (nb) setNotebook(nb); else setNotFound(true); })
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [id]);
@@ -139,10 +129,7 @@ export default function PublicNotebookPage() {
     const headings = contentRef.current.querySelectorAll("[id]");
     let current = "";
     for (const heading of headings) {
-      const rect = heading.getBoundingClientRect();
-      if (rect.top <= 100) {
-        current = heading.id;
-      }
+      if (heading.getBoundingClientRect().top <= 100) current = heading.id;
     }
     setActiveHeading(current);
   }, [tocItems.length]);
@@ -155,180 +142,216 @@ export default function PublicNotebookPage() {
   const iconId = notebook ? (notebook.coverEmoji || pickDefaultIcon(notebook.id)) : "book";
   const NotebookIconComp = getNotebookIcon(iconId);
 
+  const { scrollY } = useScroll();
+  const navBg = useTransform(scrollY, [0, 80], ["rgba(7,11,20,0)", "rgba(7,11,20,0.88)"]);
+  const navBlur = useTransform(scrollY, [0, 80], [0, 32]);
+  const navBorderOpacity = useTransform(scrollY, [0, 80], [0, 0.12]);
+
   return (
-    <main className="relative min-h-screen bg-background">
-      <ReadingProgress />
+    <>
+      <style>{publicHomeStyles}</style>
+      <main className="lp lp-grain" style={{ minHeight: "100vh" }}>
+        <div className="lp-orb lp-orb-1" />
+        <div className="lp-orb lp-orb-2" />
+        <ReadingProgress />
 
-      {/* Background */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/2 top-0 h-[400px] w-[700px] -translate-x-1/2 rounded-full bg-primary/[0.04] blur-[120px]" />
-      </div>
-
-      <div className="relative mx-auto max-w-6xl px-6">
-        {/* Navbar */}
-        <nav className="flex h-14 items-center justify-between">
-          <Link
-            href="/"
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        <div style={{ position: "relative", zIndex: 1 }}>
+          {/* Nav */}
+          <m.nav
+            className="lp-nav"
+            style={{
+              backgroundColor: navBg,
+              backdropFilter: useTransform(navBlur, (v) => `blur(${v}px)`),
+              WebkitBackdropFilter: useTransform(navBlur, (v) => `blur(${v}px)`),
+              borderBottomColor: useTransform(navBorderOpacity, (v) => `rgba(200,148,60,${v})`),
+            }}
           >
-            <ArrowLeft size={14} />
-            {t("backToGallery")}
-          </Link>
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/lyra.png" alt="LyraNote" width={20} height={20} className="h-5 w-5 rounded-md" />
-            <span className="text-sm font-semibold text-foreground/80">LyraNote</span>
-          </Link>
-        </nav>
-
-        {/* Loading */}
-        {loading && (
-          <div className="flex items-center justify-center py-40">
-            <Loader2 size={24} className="animate-spin text-muted-foreground/40" />
-          </div>
-        )}
-
-        {/* Not found */}
-        {!loading && notFound && (
-          <div className="py-32 text-center">
-            <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-border/60 bg-card">
-              <FileText size={28} className="text-muted-foreground/40" />
-            </div>
-            <h2 className="text-lg font-semibold text-foreground/80">{t("notFoundTitle")}</h2>
-            <Link
-              href="/"
-              className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:opacity-80"
-            >
-              <ArrowLeft size={13} />
-              {t("backToGallery")}
-            </Link>
-          </div>
-        )}
-
-        {/* Notebook content */}
-        {!loading && notebook && (
-          <m.article
-            initial="hidden"
-            animate="visible"
-            variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
-          >
-            {/* Title area */}
-            <m.header variants={fadeUp} className="mx-auto max-w-3xl pb-8 pt-12 text-center">
-              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50">
-                <NotebookIconComp size={36} />
-              </div>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground md:text-4xl">
-                {notebook.title}
-              </h1>
-              {notebook.description && (
-                <p className="mt-3 text-sm text-muted-foreground">{notebook.description}</p>
-              )}
-              <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs text-muted-foreground/70">
-                {notebook.publishedAt && (
-                  <span>{t("publishedAt", { date: formatDate(notebook.publishedAt) })}</span>
-                )}
-                <span className="opacity-40">·</span>
-                <span>{t("sourceCount", { count: notebook.sourceCount })}</span>
-                {notebook.wordCount > 0 && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span>
-                      {notebook.wordCount >= 1000
-                        ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
-                        : t("wordCount", { count: notebook.wordCount })}
-                    </span>
-                  </>
-                )}
-                <span className="opacity-40">·</span>
-                <span>{t("noteCount", { count: notebook.notes.length })}</span>
-              </div>
-            </m.header>
-
-            {/* Summary — skewed accent block */}
-            {notebook.summary && (
-              <m.div
-                variants={fadeUp}
-                className="relative my-8 -mx-4 lg:-mx-8 overflow-hidden [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+            <div className="lp-nav-inner">
+              <Link href="/" className="lp-nav-brand" style={{ textDecoration: "none" }}>
+                <Image src="/lyra.png" alt="LyraNote" width={22} height={22} style={{ borderRadius: 5, display: "block" }} />
+                <span className="lp-display lp-nav-brand-name">LyraNote</span>
+              </Link>
+              <Link
+                href="/"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  fontSize: 12.5, color: "rgba(237,231,218,0.4)",
+                  textDecoration: "none", transition: "color 0.2s",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(237,231,218,0.4)")}
               >
-                <div className="relative -skew-x-2 transform bg-gradient-to-b from-primary/10 via-primary/5 to-transparent px-8 py-6 pb-10 transition-all duration-300">
-                  <div className="skew-x-2 transform">
-                    <div className="absolute right-8 top-3 flex items-center gap-2 text-xs text-muted-foreground/40">
-                      <span className="size-2 animate-pulse rounded-full bg-primary/60" />
-                      <span className="font-mono">AI·GEN</span>
-                    </div>
-                    <div className="max-w-4xl pt-3">
-                      <h3 className="mb-3 flex items-center gap-2 text-base font-medium leading-tight text-primary">
-                        <Sparkles size={18} />
-                        {t("summary")}
-                      </h3>
-                      <p className="text-sm leading-relaxed text-muted-foreground/80">
-                        {notebook.summary}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </m.div>
+                <ArrowLeft size={13} strokeWidth={2} />
+                {t("backToGallery")}
+              </Link>
+            </div>
+          </m.nav>
+
+          <div className="lp-page-inner" style={{ paddingTop: 56, paddingBottom: 80 }}>
+            {/* Loading */}
+            {loading && (
+              <div style={{ display: "flex", justifyContent: "center", paddingTop: 160 }}>
+                <Loader2 size={22} style={{ color: "var(--gold)", animation: "lp-spin 1s linear infinite" }} />
+              </div>
             )}
 
-            {/* Content + TOC layout */}
-            <div className="relative flex gap-10">
-              {/* Main content */}
-              <div ref={contentRef} className="min-w-0 flex-1">
-                {notebook.notes.length > 0 ? (
-                  <div className="space-y-12">
-                    {notebook.notes.map((note) => (
-                      <m.div
-                        key={note.id}
-                        variants={fadeUp}
-                        id={`note-${note.id}`}
-                        className="scroll-mt-16"
-                      >
-                        {note.title && (
-                          <div className="mb-4">
-                            <h2 className="text-xl font-bold text-foreground">{note.title}</h2>
-                            <p className="mt-1 text-xs text-muted-foreground/50">
-                              {formatDate(note.updatedAt)}
-                              {note.wordCount > 0 && t("wordCountSuffix", { count: note.wordCount })}
-                            </p>
-                          </div>
-                        )}
-                        <div>
-                          {note.contentJson ? (
-                            <ReadOnlyNote content={note.contentJson} noteId={note.id} />
-                          ) : note.contentText ? (
-                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                              {note.contentText}
-                            </p>
-                          ) : (
-                            <p className="text-sm italic text-muted-foreground/40">{t("emptyNote")}</p>
-                          )}
-                        </div>
-                      </m.div>
-                    ))}
+            {/* Not found */}
+            {!loading && notFound && (
+              <div style={{ paddingTop: 120, textAlign: "center" }}>
+                <div style={{
+                  margin: "0 auto 20px", width: 64, height: 64, borderRadius: 16,
+                  border: "1px solid rgba(255,255,255,0.08)", background: "var(--surface)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>
+                  <FileText size={26} style={{ color: "rgba(237,231,218,0.25)" }} />
+                </div>
+                <h2 style={{ fontSize: 16, color: "var(--text-2)", margin: 0 }}>{t("notFoundTitle")}</h2>
+                <Link href="/" style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 16, fontSize: 13, color: "var(--gold)", textDecoration: "none" }}>
+                  <ArrowLeft size={13} />
+                  {t("backToGallery")}
+                </Link>
+              </div>
+            )}
+
+            {/* Notebook content */}
+            {!loading && notebook && (
+              <m.article
+                initial="hidden"
+                animate="visible"
+                variants={{ visible: { transition: { staggerChildren: 0.08 } } }}
+              >
+                {/* Title */}
+                <m.header variants={fadeUp} style={{ maxWidth: 680, margin: "0 auto", paddingBottom: 40, paddingTop: 20, textAlign: "center" }}>
+                  <div style={{
+                    margin: "0 auto 20px", width: 60, height: 60, borderRadius: 14,
+                    background: "rgba(200,148,60,0.08)", border: "1px solid rgba(200,148,60,0.18)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: "var(--gold)",
+                  }}>
+                    <NotebookIconComp size={28} />
                   </div>
-                ) : (
-                  <m.div variants={fadeUp} className="py-16 text-center text-sm text-muted-foreground/50">
-                    {t("emptyNotebook")}
+                  <h1 className="lp-display" style={{ fontSize: "clamp(1.8rem, 4vw, 2.8rem)", letterSpacing: "-0.03em", lineHeight: 1.15, color: "var(--text)", margin: 0 }}>
+                    {notebook.title}
+                  </h1>
+                  {notebook.description && (
+                    <p style={{ marginTop: 12, fontSize: 14, lineHeight: 1.75, color: "var(--text-2)" }}>
+                      {notebook.description}
+                    </p>
+                  )}
+                  <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: "4px 10px", fontSize: 11, letterSpacing: "0.12em", color: "var(--text-3)", textTransform: "uppercase" }}>
+                    {notebook.publishedAt && <span>{formatDate(notebook.publishedAt)}</span>}
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span>{t("sourceCount", { count: notebook.sourceCount })}</span>
+                    {notebook.wordCount > 0 && (
+                      <>
+                        <span style={{ opacity: 0.4 }}>·</span>
+                        <span>
+                          {notebook.wordCount >= 1000
+                            ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
+                            : t("wordCount", { count: notebook.wordCount })}
+                        </span>
+                      </>
+                    )}
+                    <span style={{ opacity: 0.4 }}>·</span>
+                    <span>{t("noteCount", { count: notebook.notes.length })}</span>
+                  </div>
+                </m.header>
+
+                {/* Summary */}
+                {notebook.summary?.trim() && (
+                  <m.div variants={fadeUp} style={{ margin: "0 0 48px" }}>
+                    <div style={{
+                      background: "#1a1d2e", borderRadius: 10, padding: "14px 18px",
+                      border: "1px solid rgba(200,148,60,0.18)",
+                      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 12 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#ff5f57", display: "inline-block" }} />
+                        <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#ffbd2e", display: "inline-block" }} />
+                        <span style={{ width: 12, height: 12, borderRadius: "50%", background: "#28c941", display: "inline-block" }} />
+                        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Sparkles size={10} style={{ color: "var(--gold)" }} />
+                          <span style={{ fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(237,231,218,0.3)" }}>
+                            AI · GEN
+                          </span>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <span style={{ color: "#57c7ff", fontSize: "0.8rem", flexShrink: 0, lineHeight: 1.8 }}>~</span>
+                        <span style={{ color: "#ff6ac1", fontSize: "0.8rem", flexShrink: 0, lineHeight: 1.8 }}>❯</span>
+                        <p style={{ margin: 0, color: "rgba(251,235,226,0.82)", fontSize: "0.8rem", lineHeight: 1.8 }}>
+                          {notebook.summary}
+                        </p>
+                      </div>
+                    </div>
                   </m.div>
                 )}
-              </div>
 
-              {/* TOC sidebar */}
-              {tocItems.length > 0 && (
-                <aside className="hidden w-56 shrink-0 lg:block">
-                  <div className="sticky top-16">
-                    <TableOfContents items={tocItems} activeId={activeHeading} />
+                {/* Content + TOC */}
+                <div style={{ display: "flex", gap: 48, alignItems: "flex-start" }}>
+                  <div ref={contentRef} style={{ flex: 1, minWidth: 0 }}>
+                    {notebook.notes.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 96 }}>
+                        {notebook.notes.map((note) => (
+                          <m.div key={note.id} variants={fadeUp} id={`note-${note.id}`} style={{ scrollMarginTop: 80 }}>
+                            {note.title && (
+                              <div style={{ marginBottom: 18, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                <h2 className="lp-display" style={{ fontSize: "1.55rem", letterSpacing: "-0.025em", lineHeight: 1.2, color: "var(--text)", margin: 0 }}>
+                                  {note.title}
+                                </h2>
+                                <p style={{ marginTop: 6, fontSize: 11, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--text-3)" }}>
+                                  {formatDate(note.updatedAt)}
+                                  {note.wordCount > 0 && t("wordCountSuffix", { count: note.wordCount })}
+                                </p>
+                              </div>
+                            )}
+                            {(() => {
+                              const doc = note.contentJson as { content?: unknown[] } | null
+                              const hasJson = doc?.content && doc.content.length > 0
+                              if (hasJson) return <div className="lp-prose"><ReadOnlyNote content={note.contentJson!} noteId={note.id} /></div>
+                              if (note.contentText?.trim()) return (
+                                <div className="lp-prose">
+                                  <p style={{ whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.9, color: "var(--text-2)", margin: 0 }}>
+                                    {note.contentText}
+                                  </p>
+                                </div>
+                              )
+                              return null
+                            })()}
+                          </m.div>
+                        ))}
+                      </div>
+                    ) : (
+                      <m.div variants={fadeUp} style={{ paddingTop: 64, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>
+                        {t("emptyNotebook")}
+                      </m.div>
+                    )}
                   </div>
-                </aside>
-              )}
-            </div>
-          </m.article>
-        )}
 
-        {/* Footer */}
-        <footer className="mt-16 border-t border-border/60 py-8 text-center text-xs text-muted-foreground/50">
-          {t("footer")}
-        </footer>
-      </div>
-    </main>
+                  {/* TOC sidebar */}
+                  {tocItems.length > 0 && (
+                    <aside style={{ width: 200, flexShrink: 0, display: "none" }} className="lp-toc-aside">
+                      <div style={{ position: "sticky", top: 80 }}>
+                        <TableOfContents items={tocItems} activeId={activeHeading} />
+                      </div>
+                    </aside>
+                  )}
+                </div>
+              </m.article>
+            )}
+
+            {/* Footer */}
+            <footer className="lp-footer" style={{ marginTop: 80 }}>
+              <div className="lp-footer-rule" />
+              <div className="lp-footer-brand">
+                <Image src="/lyra.png" alt="LyraNote" width={18} height={18} style={{ borderRadius: 4, opacity: 0.55 }} />
+                <span className="lp-display" style={{ fontSize: "1.05rem", letterSpacing: "-0.02em", color: "var(--text-3)" }}>LyraNote</span>
+              </div>
+              <p className="lp-footer-copy">{t("footer")}</p>
+            </footer>
+          </div>
+        </div>
+      </main>
+    </>
   );
 }

@@ -9,6 +9,7 @@ from app.dependencies import CurrentUser, DbDep
 from app.exceptions import NotFoundError
 from app.models import Note, Notebook, Source
 from app.schemas.response import ApiResponse, success
+from app.services.public_home_service import refresh_public_home_draft
 from .schemas import NotebookCreate, NotebookOut, NotebookUpdate
 
 router = APIRouter(prefix="/notebooks", tags=["notebooks"])
@@ -137,6 +138,7 @@ async def publish_notebook(notebook_id: UUID, db: DbDep, current_user: CurrentUs
     notebook.is_public = True
     notebook.published_at = datetime.now(timezone.utc)
     await db.flush()
+    await refresh_public_home_draft(db, current_user.id)
     await db.refresh(notebook)
     await db.refresh(notebook, attribute_names=["summary"])
     return success(await _fill_counts(db, notebook))
@@ -147,6 +149,7 @@ async def unpublish_notebook(notebook_id: UUID, db: DbDep, current_user: Current
     notebook = await _get_owned(db, notebook_id, current_user.id)
     notebook.is_public = False
     await db.flush()
+    await refresh_public_home_draft(db, current_user.id)
     await db.refresh(notebook)
     await db.refresh(notebook, attribute_names=["summary"])
     return success(await _fill_counts(db, notebook))

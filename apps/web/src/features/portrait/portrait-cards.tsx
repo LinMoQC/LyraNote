@@ -12,7 +12,7 @@
  *   - LyraNotesCard        Lyra 私人备注（逐词渐入）
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { m, useInView } from "framer-motion";
 import { useTranslations } from "next-intl";
 import {
@@ -25,6 +25,7 @@ import {
   Lightbulb,
   MessageCircle,
   ArrowRight,
+  Sparkles,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -36,6 +37,57 @@ import {
 } from "./portrait-primitives";
 
 /* ─── IdentityHeroCard ───────────────────────────── */
+
+function PortraitAvatar({ portrait }: { portrait: UserPortrait }) {
+  const identity = portrait.identity
+  const seed = encodeURIComponent(identity?.primary_role || "lyranote")
+  const fallbackUrl = `https://api.dicebear.com/9.x/lorelei/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9`
+  const src = portrait.avatar_url || fallbackUrl
+  const isAiGenerated = Boolean(portrait.avatar_url)
+  const [imgError, setImgError] = useState(false)
+
+  return (
+    <m.div
+      initial={{ opacity: 0, scale: 0.7 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ delay: 0.5, type: "spring", stiffness: 180, damping: 18 }}
+      className="relative flex-shrink-0 self-start"
+    >
+      {/* Glow ring */}
+      <m.div
+        className="absolute inset-0 rounded-full"
+        animate={{ rotate: 360 }}
+        transition={{ repeat: Infinity, duration: 12, ease: "linear" }}
+        style={{
+          background: "conic-gradient(from 0deg, rgba(139,92,246,0.6), rgba(99,102,241,0.2), rgba(139,92,246,0.6))",
+          borderRadius: "50%",
+          padding: "2px",
+          margin: "-3px",
+        }}
+      />
+      <div className="relative h-20 w-20 overflow-hidden rounded-full border-2 border-violet-500/30 bg-muted/40 md:h-24 md:w-24">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imgError ? fallbackUrl : src}
+          alt="portrait avatar"
+          className="h-full w-full object-cover"
+          onError={() => setImgError(true)}
+        />
+      </div>
+      {isAiGenerated && !imgError && (
+        <m.div
+          initial={{ opacity: 0, scale: 0 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.9, type: "spring" }}
+          className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-violet-500/40 bg-background"
+          title="AI generated"
+        >
+          <Sparkles className="h-2.5 w-2.5 text-violet-400" />
+        </m.div>
+      )}
+    </m.div>
+  )
+}
 
 export function IdentityHeroCard({ portrait }: { portrait: UserPortrait }) {
   const t = useTranslations("portraitCards");
@@ -127,16 +179,18 @@ export function IdentityHeroCard({ portrait }: { portrait: UserPortrait }) {
           )}
         </div>
 
-        {identity?.confidence && (
-          <m.div
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.6, type: "spring", stiffness: 200 }}
-            className="flex-shrink-0 self-start md:self-auto"
-          >
-            <ConfidenceRing value={identity.confidence} />
-          </m.div>
-        )}
+        <div className="flex flex-col items-end gap-3">
+          <PortraitAvatar portrait={portrait} />
+          {identity?.confidence && (
+            <m.div
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.7, type: "spring", stiffness: 200 }}
+            >
+              <ConfidenceRing value={identity.confidence} />
+            </m.div>
+          )}
+        </div>
       </div>
     </m.div>
   );

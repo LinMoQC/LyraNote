@@ -99,6 +99,9 @@ export function AIConfigSection() {
       reranker_base_url: form.reranker_base_url,
       tavily_api_key: form.tavily_api_key,
       perplexity_api_key: form.perplexity_api_key,
+      image_gen_api_key: form.image_gen_api_key,
+      image_gen_base_url: form.image_gen_base_url,
+      image_gen_model: form.image_gen_model,
     });
   }
 
@@ -303,6 +306,35 @@ export function AIConfigSection() {
             value={form.perplexity_api_key === "••••••••" ? "" : (form.perplexity_api_key ?? "")}
             onChange={(v) => set("perplexity_api_key", v)}
             placeholder={form.perplexity_api_key === "••••••••" ? tc("alreadySetHint") : "pplx-..."}
+          />
+        </div>
+      </div>
+
+      {/* ── 图像生成（公开主页 AI 头像）─────────────────────── */}
+      <div className="pt-4">
+        <SectionHeader title={t("ai.sectionImageGen")} note={t("ai.sectionImageGenNote")} />
+        <div className="space-y-4 rounded-xl border border-border/40 bg-muted/20 p-4">
+          <FieldInput
+            label={t("ai.imageGenKeyLabel")}
+            description={t("ai.imageGenKeyDesc")}
+            type="password"
+            value={form.image_gen_api_key === "••••••••" ? "" : (form.image_gen_api_key ?? "")}
+            onChange={(v) => set("image_gen_api_key", v)}
+            placeholder={form.image_gen_api_key === "••••••••" ? tc("alreadySetHint") : "sk-..."}
+          />
+          <FieldInput
+            label={t("ai.imageGenBaseUrlLabel")}
+            description={t("ai.imageGenBaseUrlDesc")}
+            value={form.image_gen_base_url ?? ""}
+            onChange={(v) => set("image_gen_base_url", v)}
+            placeholder="https://api.siliconflow.cn/v1"
+          />
+          <FieldInput
+            label={t("ai.imageGenModelLabel")}
+            description={t("ai.imageGenModelDesc")}
+            value={form.image_gen_model ?? ""}
+            onChange={(v) => set("image_gen_model", v)}
+            placeholder="black-forest-labs/FLUX.1-schnell"
           />
         </div>
       </div>

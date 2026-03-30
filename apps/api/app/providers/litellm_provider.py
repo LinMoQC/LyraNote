@@ -17,6 +17,7 @@ from collections.abc import AsyncGenerator
 import litellm
 
 from app.providers.base import BaseLLMProvider
+from app.providers.reasoning import litellm_reasoning_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,11 @@ class LiteLLMProvider(BaseLLMProvider):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[dict, None]:
         kwargs = self._call_kwargs(model, temperature, max_tokens)
         kwargs["stream"] = True
+        kwargs.update(litellm_reasoning_kwargs(model or self._default_model, thinking_enabled))
         stream = await litellm.acompletion(messages=messages, **kwargs)
         async for chunk in stream:
             if not chunk.choices:

@@ -131,6 +131,7 @@ async def stream_message(
             tool_hint=body.tool_hint,
             attachment_ids=body.attachment_ids,
             attachments_meta=[a.model_dump() for a in body.attachments_meta] if body.attachments_meta else None,
+            thinking_enabled=body.thinking_enabled,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
