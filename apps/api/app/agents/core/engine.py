@@ -138,11 +138,13 @@ class AgentEngine:
         tool_ctx: ToolContext,
         tool_schemas: list[dict],
         thought_labels: dict[str, str],
+        thinking_enabled: bool | None = None,
     ) -> None:
         self.brain = brain
         self.tool_ctx = tool_ctx
         self.tool_schemas = tool_schemas
         self.thought_labels = thought_labels
+        self.thinking_enabled = thinking_enabled
 
     async def run(self, state: AgentState) -> AsyncGenerator[dict, None]:
         while state.phase not in ("done", "error"):
@@ -605,7 +607,7 @@ class AgentEngine:
         ttft: float | None = None
 
         try:
-            async for chunk in chat_stream(clean):
+            async for chunk in chat_stream(clean, thinking_enabled=self.thinking_enabled):
                 if chunk.get("type") == "token":
                     token_count += 1
                     if ttft is None:

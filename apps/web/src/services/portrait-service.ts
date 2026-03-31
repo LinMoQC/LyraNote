@@ -54,6 +54,8 @@ export interface UserPortrait {
   interaction_style: InteractionStyle;
   growth_signals: GrowthSignals;
   lyra_service_notes: string;
+  /** AI-generated avatar URL (set when public home is generated). May be null if not yet generated. */
+  avatar_url?: string | null;
 }
 
 export interface PortraitVersion {

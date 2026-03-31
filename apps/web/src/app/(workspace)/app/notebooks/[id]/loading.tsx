@@ -46,38 +46,21 @@ export default function NotebookLoading() {
           </div>
         </div>
 
-        {/* Floating Copilot panel skeleton — bottom-right corner */}
+        {/* Floating Copilot orb skeleton — keeps the loading state calm */}
         <div
-          className="pointer-events-none fixed bottom-6 right-6 flex flex-col overflow-hidden rounded-2xl border border-border/30 bg-card/80 shadow-2xl backdrop-blur-sm"
-          style={{ width: 440, height: 420 }}
+          data-testid="notebook-loading-orb"
+          className="pointer-events-none fixed bottom-6 right-6 z-10 flex h-12 w-12 items-center justify-center"
         >
-          {/* Panel header */}
-          <div className="flex h-12 flex-shrink-0 items-center justify-between border-b border-border/30 px-4">
-            <div className="flex items-center gap-2">
-              <div className="h-5 w-5 animate-pulse rounded-md bg-primary/20" />
-              <div className="h-3.5 w-10 animate-pulse rounded bg-muted/50" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="h-6 w-6 animate-pulse rounded-md bg-accent/60" />
-              <div className="h-6 w-6 animate-pulse rounded-md bg-accent/60" />
-            </div>
-          </div>
-
-          {/* Suggested prompts */}
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-10 w-full animate-pulse rounded-xl bg-muted/40"
-                style={{ animationDelay: `${i * 80}ms` }}
-              />
-            ))}
-          </div>
-
-          {/* Input area */}
-          <div className="border-t border-border/30 p-3">
-            <div className="h-10 w-full animate-pulse rounded-xl bg-accent/60" />
-          </div>
+          <div
+            className="absolute inset-0 animate-pulse rounded-full shadow-lg shadow-indigo-950/30 ring-1 ring-white/10"
+            style={{
+              background:
+                "radial-gradient(circle at 35% 35%, rgba(167,139,250,0.75), rgba(99,102,241,0.65) 55%, rgba(59,130,246,0.6))",
+            }}
+          />
+          <div className="absolute inset-[4px] animate-pulse rounded-full bg-card/70 backdrop-blur-[6px]" />
+          <div className="absolute left-3 top-2.5 h-2.5 w-2.5 rounded-full bg-white/20 blur-[3px]" />
+          <div className="absolute inset-0 rounded-full ring-2 ring-indigo-400/20" />
         </div>
       </div>
     </div>

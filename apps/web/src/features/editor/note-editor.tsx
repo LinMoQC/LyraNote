@@ -39,6 +39,7 @@ type NoteEditorProps = {
   onToggleSources?: () => void;
   sourcesOpen?: boolean;
   wideLayout?: boolean;
+  isMobileLayout?: boolean;
 };
 
 export function NoteEditor({
@@ -52,6 +53,7 @@ export function NoteEditor({
   onNoteSaved,
   refreshKey = 0,
   wideLayout = false,
+  isMobileLayout = false,
 }: NoteEditorProps) {
   const t = useTranslations("editor")
   const tNotebook = useTranslations("notebook")
@@ -289,10 +291,21 @@ export function NoteEditor({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* ── Editor body ──────────────────────────────────────── */}
-      <div className="hide-scrollbar flex-1 overflow-y-auto">
-        <div className={`mx-auto px-10 py-8 ${wideLayout ? "max-w-[980px] xl:max-w-[1200px] 2xl:max-w-[1500px]" : "max-w-[680px] xl:max-w-[800px] 2xl:max-w-[960px]"}`}>
+      <div className="hide-scrollbar flex-1 overflow-y-auto" data-testid="note-editor-scroll">
+        <div
+          className={[
+            "mx-auto",
+            isMobileLayout ? "max-w-[680px] px-4 py-4 sm:px-6 sm:py-5" : "px-10 py-8",
+            wideLayout
+              ? "max-w-[980px] xl:max-w-[1200px] 2xl:max-w-[1500px]"
+              : "max-w-[680px] xl:max-w-[800px] 2xl:max-w-[960px]",
+          ].join(" ")}
+        >
           <input
-            className="mb-8 w-full bg-transparent text-[30px] font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-foreground/15"
+            className={[
+              "w-full bg-transparent font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-foreground/15",
+              isMobileLayout ? "mb-5 text-[24px]" : "mb-8 text-[30px]",
+            ].join(" ")}
             value={title}
             placeholder={t("titlePlaceholder")}
             onChange={(e) => {

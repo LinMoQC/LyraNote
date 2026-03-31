@@ -75,7 +75,7 @@ export function Sidebar() {
   const toggle = useUiStore((s) => s.toggleSidebar);
   const sidebarMobileOpen = useUiStore((s) => s.sidebarMobileOpen);
   const setSidebarMobileOpen = useUiStore((s) => s.setSidebarMobileOpen);
-  const isMobile = useMediaQuery("(max-width: 767px)");
+  const { matches: isMobile, ready: mediaQueryReady } = useMediaQuery("(max-width: 767px)");
   const [logoHovered, setLogoHovered] = useState(false);
   const [recentNotebooks, setRecentNotebooks] = useState<Pick<Notebook, "id" | "title">[]>([]);
   const [notebooksLoading, setNotebooksLoading] = useState(true);
@@ -139,16 +139,15 @@ export function Sidebar() {
     <m.aside
       initial={false}
       animate={
-        isMobile
+        !mediaQueryReady
+          ? undefined
+          : isMobile
           ? { x: sidebarMobileOpen ? 0 : -288 }
           : { width: collapsed ? 64 : 240 }
       }
       transition={hydrated ? { type: "spring", stiffness: 320, damping: 32, restDelta: 0.5 } : { duration: 0 }}
       className={cn(
-        "flex h-screen flex-shrink-0 flex-col overflow-hidden bg-sidebar",
-        isMobile
-          ? "fixed left-0 top-0 z-50 w-72"
-          : ""
+        "fixed left-0 top-0 z-50 flex h-screen w-72 -translate-x-full flex-shrink-0 flex-col overflow-hidden bg-sidebar md:static md:z-auto md:w-auto md:translate-x-0",
       )}
       style={isMobile ? undefined : { width: collapsed ? 64 : 240 }}
     >

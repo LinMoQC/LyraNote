@@ -11,6 +11,7 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { createTask, getTasks, type TaskCreateInput } from "@/services/task-service";
@@ -33,6 +34,7 @@ const item: Variants = {
 
 export function TasksView() {
   const t = useTranslations("tasks");
+  const { matches: isMobile } = useMediaQuery("(max-width: 767px)");
   const queryClient = useQueryClient();
   const { data: tasks = [], isLoading } = useQuery({
     queryKey: ["tasks"],
@@ -111,16 +113,19 @@ export function TasksView() {
   }
 
   return (
-    <div className="flex h-full flex-col gap-6 p-8 dark:border border-border/40">
+    <div className="flex h-full flex-col gap-7 border border-border/40 px-5 py-7 dark:border sm:gap-6 sm:p-8">
       {/* ── Toolbar ─────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("title")}</h1>
+      <div className="flex items-start justify-between gap-4 sm:items-center">
+        <h1 className="text-[2.15rem] font-semibold leading-[0.96] tracking-tight sm:text-2xl">
+          {t("title")}
+        </h1>
         <button
           type="button"
           onClick={() => setCreateOpen(true)}
-          className="flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+          className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground shadow-[0_10px_30px_rgba(59,130,246,0.18)] transition-opacity hover:opacity-90 sm:h-auto sm:rounded-lg sm:px-3.5 sm:py-1.5 sm:shadow-none"
         >
-          <Plus size={15} />
+          <Plus size={14} className="sm:hidden" />
+          <Plus size={15} className="hidden sm:block" />
           {t("newTask")}
         </button>
       </div>
@@ -147,19 +152,21 @@ export function TasksView() {
           animate="show"
           className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3"
         >
-          {/* New task card */}
-          <m.div variants={item}>
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className="flex h-full min-h-[140px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/40 bg-card/20 transition-colors hover:border-primary/30 hover:bg-primary/[0.03]"
-            >
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <Plus size={18} className="text-primary" />
-              </div>
-              <span className="text-[13px] text-muted-foreground/60">{t("newTask")}</span>
-            </button>
-          </m.div>
+          {!isMobile && (
+            <m.div variants={item}>
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                data-testid="new-task-card"
+                className="flex h-full min-h-[140px] w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border/40 bg-card/20 transition-colors hover:border-primary/30 hover:bg-primary/[0.03]"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                  <Plus size={18} className="text-primary" />
+                </div>
+                <span className="text-[13px] text-muted-foreground/60">{t("newTask")}</span>
+              </button>
+            </m.div>
+          )}
 
           {tasks.map((task) => (
             <m.div key={task.id} variants={item}>

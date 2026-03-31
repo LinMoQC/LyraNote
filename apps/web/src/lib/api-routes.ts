@@ -258,6 +258,21 @@ export const PUBLIC = {
   NOTEBOOKS: "/public/notebooks",
   /** GET - 公开笔记本详情 */
   notebook: (id: string) => `/public/notebooks/${id}`,
+  /** GET - 公开知识主页 */
+  SITE: "/public/site",
+} as const;
+
+export const PUBLIC_HOME = {
+  /** GET - 当前用户的公开主页状态 */
+  BASE: "/public-home",
+  /** POST - 生成草稿 */
+  GENERATE: "/public-home/generate",
+  /** POST - 批准草稿 */
+  APPROVE: "/public-home/approve",
+  /** POST - 回填当前已批准版本的画像快照 */
+  BACKFILL_PORTRAIT: "/public-home/backfill-portrait",
+  /** POST - 丢弃草稿 */
+  DISCARD: "/public-home/discard",
 } as const;
 
 // ── 活动心跳 ──────────────────────────────────────────────────────────────────

@@ -26,6 +26,8 @@ interface UseChatStreamOpts {
   setStreaming: Dispatch<SetStateAction<boolean>>;
   setActiveConvId: Dispatch<SetStateAction<string | null>>;
   setDrProgress: Dispatch<SetStateAction<DrProgress | null>>;
+  isThinkingModel?: boolean;
+  thinkingEnabled?: boolean;
 }
 
 export function useChatStream({
@@ -41,6 +43,8 @@ export function useChatStream({
   setStreaming,
   setActiveConvId,
   setDrProgress,
+  isThinkingModel,
+  thinkingEnabled,
 }: UseChatStreamOpts) {
   const queryClient = useQueryClient();
   const t = useTranslations("chat");
@@ -297,6 +301,7 @@ export function useChatStream({
         toolHintRef.current ?? undefined,
         attachmentIdsRef.current.length > 0 ? attachmentIdsRef.current : undefined,
         attachmentMetaRef.current.length > 0 ? attachmentMetaRef.current : undefined,
+        isThinkingModel ? thinkingEnabled : undefined,
       );
       toolHintRef.current = null;
       attachmentIdsRef.current = [];
@@ -320,7 +325,7 @@ export function useChatStream({
     } finally {
       streamAbortRef.current = null;
     }
-  }, [input, streaming, activeConvId, queryClient, router, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain, buildSavedSteps, handleAgentEvent, resetAgentState]);
+  }, [input, streaming, activeConvId, queryClient, router, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, isThinkingModel, thinkingEnabled, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain, buildSavedSteps, handleAgentEvent, resetAgentState]);
 
   const handleRegenerate = useCallback(async (messages: LocalMessage[]) => {
     if (streaming) return;

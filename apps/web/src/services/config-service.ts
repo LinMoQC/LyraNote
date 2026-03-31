@@ -28,6 +28,10 @@ export interface AppConfigMap {
   // AI — Search
   tavily_api_key: string
   perplexity_api_key: string
+  // AI — Image generation (avatar for public home page)
+  image_gen_api_key: string
+  image_gen_base_url: string
+  image_gen_model: string
   // Storage
   storage_backend: StorageBackend
   storage_region: string

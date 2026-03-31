@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getTaskDeliveryBadges } from "./task-delivery";
+import { getTaskDeliveryBadges } from "@/features/tasks/task-delivery";
 
 describe("getTaskDeliveryBadges", () => {
   it("maps email failures with detail", () => {

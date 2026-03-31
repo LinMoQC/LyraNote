@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     # Leave empty to fall back to storage_s3_endpoint_url.
     storage_s3_public_url: str = ""
 
+    # Image generation (optional — used for AI avatar on public home page)
+    # Recommended: SiliconFlow (https://siliconflow.cn) — supports domestic payment
+    # Leave image_gen_api_key empty to skip avatar generation (falls back to DiceBear on frontend)
+    image_gen_api_key: str = ""
+    image_gen_base_url: str = "https://api.siliconflow.cn/v1"
+    image_gen_model: str = "black-forest-labs/FLUX.1-schnell"
+
     # Cross-Encoder Reranker (optional — leave empty to skip reranking)
     # Recommended: SiliconFlow free tier (https://siliconflow.cn)
     reranker_api_key: str = ""

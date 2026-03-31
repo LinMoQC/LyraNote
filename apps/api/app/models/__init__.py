@@ -29,6 +29,7 @@ from app.models.skill import SkillInstall, UserSkillConfig
 from app.models.task import ScheduledTask, ScheduledTaskRun, ResearchTask
 from app.models.knowledge import KnowledgeEntity, KnowledgeRelation, ProactiveInsight
 from app.models.mcp import MCPServerConfig
+from app.models.public_home import PublicHomeState
 
 __all__ = [
     "Base",
@@ -72,4 +73,6 @@ __all__ = [
     "ProactiveInsight",
     # mcp
     "MCPServerConfig",
+    # public home
+    "PublicHomeState",
 ]

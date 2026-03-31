@@ -32,6 +32,7 @@ class BaseLLMProvider(ABC):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Yield dicts with ``type`` ('token' | 'reasoning') and ``content``."""
         ...

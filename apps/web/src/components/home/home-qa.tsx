@@ -15,7 +15,7 @@ import { CHAT_TOOL_DEFS } from "@/lib/chat-tools";
 import { getNotebooks } from "@/services/notebook-service";
 import type { Notebook } from "@/types";
 
-export function HomeQA() {
+export function HomeQA({ showHint = true }: HomeQAProps) {
   const router = useRouter();
   const t = useTranslations("chat");
   const th = useTranslations("home");
@@ -125,7 +125,7 @@ export function HomeQA() {
           ? "border-amber-500/25 focus-within:border-amber-500/50 focus-within:shadow-[0_0_0_3px_rgba(245,158,11,0.08)]"
           : undefined
         }
-        showHint
+        showHint={showHint}
         hintText={t("sendHint")}
         sendTitle={t("send")}
         cancelTitle={t("cancelGenerate")}
@@ -145,4 +145,8 @@ export function HomeQA() {
       />
     </div>
   );
+}
+
+interface HomeQAProps {
+  showHint?: boolean;
 }

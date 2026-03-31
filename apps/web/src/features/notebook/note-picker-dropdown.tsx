@@ -18,6 +18,7 @@ type Props = {
   onSelect: (note: NoteRecord) => void;
   onCreated: (note: NoteRecord) => void;
   onDeleted: (noteId: string) => void;
+  variant?: "breadcrumb" | "compact";
 };
 
 export function NotePickerDropdown({
@@ -27,6 +28,7 @@ export function NotePickerDropdown({
   onSelect,
   onCreated,
   onDeleted,
+  variant = "breadcrumb",
 }: Props) {
   const t = useTranslations("notebook");
   const queryClient = useQueryClient();
@@ -100,16 +102,26 @@ export function NotePickerDropdown({
 
   return (
     <>
-      <span className="px-0.5 text-muted-foreground/30">/</span>
+      {variant === "breadcrumb" && (
+        <span className="px-0.5 text-muted-foreground/30">/</span>
+      )}
       <button
         ref={btnRef}
         type="button"
         onClick={handleToggle}
-        className="flex items-center gap-0.5 rounded-sm px-1.5 py-1 text-[13px] text-foreground/75 transition-colors hover:bg-accent/60 hover:text-foreground"
+        data-testid={variant === "compact" ? "note-picker-compact-trigger" : "note-picker-trigger"}
+        className={cn(
+          "flex items-center text-[13px] text-foreground/75 transition-colors hover:bg-accent/60 hover:text-foreground",
+          variant === "breadcrumb"
+            ? "gap-0.5 rounded-sm px-1.5 py-1"
+            : "h-11 w-full justify-between gap-2 rounded-xl border border-border/10 bg-background/60 px-3.5 shadow-sm shadow-black/10 backdrop-blur-sm",
+        )}
       >
-        <span className="max-w-[160px] truncate">{displayTitle}</span>
+        <span className={cn("truncate font-medium", variant === "compact" ? "max-w-[12rem]" : "max-w-[160px]")}>
+          {displayTitle}
+        </span>
         <ChevronDown
-          size={11}
+          size={12}
           className={cn(
             "flex-shrink-0 text-muted-foreground/40 transition-transform duration-150",
             open && "rotate-180"

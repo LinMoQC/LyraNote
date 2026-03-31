@@ -13,6 +13,7 @@ from openai import AsyncOpenAI
 from httpx import Timeout
 
 from app.providers.base import BaseLLMProvider
+from app.providers.reasoning import openai_reasoning_kwargs
 
 _HTTP_TIMEOUT = Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
 
@@ -50,15 +51,18 @@ class OpenAIProvider(BaseLLMProvider):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[dict, None]:
+        actual_model = model or self._default_model
         kwargs: dict = dict(
-            model=model or self._default_model,
+            model=actual_model,
             messages=messages,
             temperature=temperature,
             stream=True,
         )
         if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
+        kwargs.update(openai_reasoning_kwargs(actual_model, thinking_enabled))
         stream = await self._client.chat.completions.create(**kwargs)
         async for chunk in stream:
             if not chunk.choices:

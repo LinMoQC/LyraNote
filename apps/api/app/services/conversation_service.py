@@ -223,6 +223,7 @@ class ConversationService:
         tool_hint: str | None = None,
         attachment_ids: list[str] | None = None,
         attachments_meta: list[dict] | None = None,
+        thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[str, None]:
         """Run the ReAct agent and yield SSE lines."""
         conv = await self._get_owned(conversation_id)
@@ -283,6 +284,7 @@ class ConversationService:
             global_search=True if conv.notebook_id is None else global_search,
             tool_hint=tool_hint,
             attachment_ids=attachment_ids,
+            thinking_enabled=thinking_enabled,
         ):
             event_type = event.get("type")
 

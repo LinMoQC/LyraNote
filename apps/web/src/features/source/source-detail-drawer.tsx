@@ -170,9 +170,14 @@ function LabeledSlider({
 interface Props {
   source: Source | null
   onClose: () => void
+  presentation?: "side" | "modal"
 }
 
-export function SourceDetailDrawer({ source, onClose }: Props) {
+export function SourceDetailDrawer({
+  source,
+  onClose,
+  presentation = "side",
+}: Props) {
   const t = useTranslations("sourceDetail")
   const tc = useTranslations("common")
   const queryClient = useQueryClient()
@@ -191,6 +196,7 @@ export function SourceDetailDrawer({ source, onClose }: Props) {
   const [selectedNotebookId, setSelectedNotebookId] = useState<string>("")
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const isModal = presentation === "modal"
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -301,11 +307,17 @@ export function SourceDetailDrawer({ source, onClose }: Props) {
           {/* Drawer panel */}
           <m.aside
             key="drawer"
-            initial={{ x: "100%" }}
-            animate={{ x: 0 }}
-            exit={{ x: "100%" }}
+            initial={isModal ? { y: "100%" } : { x: "100%" }}
+            animate={isModal ? { y: 0 } : { x: 0 }}
+            exit={isModal ? { y: "100%" } : { x: "100%" }}
             transition={{ type: "spring", stiffness: 350, damping: 34, mass: 0.8 }}
-            className="fixed right-0 top-0 z-[70] flex h-screen w-full flex-col overflow-hidden border-l border-border/40 bg-background shadow-2xl md:w-[440px]"
+            className={cn(
+              "fixed z-[70] flex flex-col overflow-hidden bg-background shadow-2xl",
+              isModal
+                ? "inset-x-0 bottom-0 top-[8vh] rounded-t-2xl border-t border-border/40"
+                : "right-0 top-0 h-screen w-full border-l border-border/40 md:w-[440px]",
+            )}
+            data-testid={`source-detail-drawer-${presentation}`}
           >
             {/* ── Header ─────────────────────────────────────────── */}
             <div className="flex-shrink-0 border-b border-border/30 px-5 py-4">
@@ -801,4 +813,3 @@ export function SourceDetailDrawer({ source, onClose }: Props) {
   if (!mounted) return null
   return createPortal(content, document.body)
 }
-

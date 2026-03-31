@@ -9,3 +9,4 @@ export { SecuritySection } from "./sections/security-section";
 export { MemorySection } from "./sections/memory-section";
 export { SkillsSection } from "./sections/skills-section";
 export { MCPSection } from "./sections/mcp-section";
+export { PublicHomeSection } from "./sections/public-home-section";

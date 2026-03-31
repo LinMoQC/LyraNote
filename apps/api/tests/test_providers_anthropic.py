@@ -18,7 +18,7 @@ import pytest
 # ── Import _convert_messages without requiring anthropic SDK ───────────────────
 # AnthropicProvider.__init__ uses a lazy `from anthropic import AsyncAnthropic`
 # inside the constructor, so the module itself can be imported freely.
-from app.providers.anthropic_provider import _convert_messages
+from app.providers.anthropic_provider import _compute_thinking_budget_tokens, _convert_messages
 
 
 # ── _convert_messages ──────────────────────────────────────────────────────────
@@ -133,6 +133,21 @@ def _make_anthropic_provider(model: str = "claude-test"):
     return provider, mock_async_anthropic
 
 
+class _FakeStreamContext:
+    def __init__(self, chunks: list[str]) -> None:
+        self.text_stream = self._iter(chunks)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    async def _iter(self, chunks: list[str]):
+        for chunk in chunks:
+            yield chunk
+
+
 class TestAnthropicProviderChat:
     @pytest.mark.asyncio
     async def test_chat_returns_string(self):
@@ -216,6 +231,44 @@ class TestAnthropicProviderChat:
         call_kwargs = mock_client.messages.create.call_args
         # No system message → falls back to default
         assert call_kwargs.kwargs["system"] == "You are a helpful assistant."
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_thinking_removes_temperature_and_sets_top_p(self):
+        provider, mock_client = _make_anthropic_provider()
+        mock_client.messages.stream = MagicMock(return_value=_FakeStreamContext(["A", "B"]))
+
+        chunks = []
+        async for event in provider.chat_stream(
+            [{"role": "user", "content": "test"}],
+            max_tokens=3000,
+            thinking_enabled=True,
+        ):
+            chunks.append(event["content"])
+
+        assert chunks == ["A", "B"]
+        kwargs = mock_client.messages.stream.call_args.kwargs
+        assert "temperature" not in kwargs
+        assert kwargs["top_p"] == 1.0
+        assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 2048}
+
+    @pytest.mark.asyncio
+    async def test_chat_stream_thinking_budget_is_capped_below_max_tokens(self):
+        provider, mock_client = _make_anthropic_provider()
+        mock_client.messages.stream = MagicMock(return_value=_FakeStreamContext(["ok"]))
+
+        async for _event in provider.chat_stream(
+            [{"role": "user", "content": "test"}],
+            max_tokens=1200,
+            thinking_enabled=True,
+        ):
+            pass
+
+        kwargs = mock_client.messages.stream.call_args.kwargs
+        assert kwargs["thinking"] == {"type": "enabled", "budget_tokens": 1199}
+
+    def test_compute_thinking_budget_tokens_rejects_too_small_max_tokens(self):
+        with pytest.raises(ValueError, match="Anthropic thinking requires max_tokens > 1024"):
+            _compute_thinking_budget_tokens(1024)
 
 
 class TestAnthropicProviderChatWithTools:

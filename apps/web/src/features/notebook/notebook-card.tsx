@@ -42,6 +42,25 @@ function NotebookMenu({
   const tc = useTranslations("common");
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+    };
+  }, [open]);
 
   function show() {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -53,14 +72,19 @@ function NotebookMenu({
 
   return (
     <div
+      ref={menuRef}
       className="absolute right-2.5 top-2.5 z-10"
       onMouseEnter={show}
       onMouseLeave={hide}
     >
       <button
         type="button"
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground/60 opacity-0 transition-all hover:bg-accent hover:text-foreground group-hover:opacity-100"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOpen((prev) => !prev);
+        }}
+        className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground/70 opacity-100 transition-all hover:bg-accent hover:text-foreground sm:h-7 sm:w-7 sm:opacity-0 sm:group-hover:opacity-100"
       >
         <MoreHorizontal size={14} />
       </button>
@@ -278,7 +302,7 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block h-full">
-        <article className="group relative flex aspect-square cursor-pointer flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg">
+        <article className="group relative flex min-h-[180px] cursor-pointer flex-col overflow-hidden rounded-[24px] border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg sm:aspect-square sm:min-h-0 sm:rounded-2xl">
           <NotebookMenu
             isPublic={notebook.isPublic}
             onRename={() => setEditOpen(true)}
@@ -287,9 +311,9 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
           />
 
           {/* Top area with icon */}
-          <div className="flex items-center gap-3 px-4 pt-5 pb-2">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/50">
-              <Icon size={28} />
+          <div className="flex items-center gap-3 px-4 pb-2 pt-4 sm:pt-5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted/50 sm:h-12 sm:w-12">
+              <Icon size={26} />
             </div>
             {notebook.isPublic && (
               <div className="ml-auto flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
@@ -301,20 +325,20 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
 
           {/* Body */}
           <div className="flex flex-1 flex-col px-4 pb-4 pt-1">
-            <h3 className="line-clamp-1 text-sm font-semibold text-foreground">
+            <h3 className="line-clamp-1 text-base font-semibold text-foreground sm:text-sm">
               {notebook.title}
             </h3>
 
             {notebook.summary ? (
-              <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground/70">
+              <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground/70 sm:text-xs">
                 {notebook.summary}
               </p>
             ) : (
-              <p className="mt-1.5 text-xs italic text-muted-foreground/40">{t("noSummary")}</p>
+              <p className="mt-1.5 text-sm italic text-muted-foreground/40 sm:text-xs">{t("noSummary")}</p>
             )}
 
             {/* Footer stats */}
-            <div className="mt-auto flex items-center gap-1.5 border-t border-border/20 pt-3 text-[11px] text-muted-foreground/50">
+            <div className="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-border/20 pt-3 text-[11px] text-muted-foreground/50">
               <span>{formatDate(notebook.updatedAt)}</span>
               <span className="opacity-30">·</span>
               <span>{t("sourceCount", { count: notebook.sourceCount })}</span>
@@ -371,18 +395,26 @@ export const NotebookListRow = memo(function NotebookListRow({ notebook }: { not
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block">
-        <article className="group relative flex cursor-pointer items-center gap-3.5 rounded-xl border border-transparent px-3 py-2.5 transition-colors hover:bg-accent hover:border-border/40">
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-muted/50">
-            <Icon size={20} />
+        <article className="group relative flex min-h-[144px] cursor-pointer items-start gap-4 rounded-[28px] border border-border/40 bg-card/80 px-5 py-5 shadow-sm transition-colors hover:border-border/60 hover:bg-card sm:min-h-0 sm:items-center sm:rounded-xl sm:border-transparent sm:bg-transparent sm:px-3 sm:py-2.5 sm:shadow-none sm:hover:bg-accent sm:hover:border-border/40">
+          <div className="mt-0.5 flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-muted/50 sm:mt-0 sm:h-9 sm:w-9 sm:rounded-xl">
+            <Icon size={24} className="sm:hidden" />
+            <Icon size={20} className="hidden sm:block" />
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pr-10 sm:pr-0">
             <div className="flex items-center gap-2">
-              <p className="truncate text-sm font-medium text-foreground">{notebook.title}</p>
+              <p className="truncate text-[15px] font-semibold text-foreground sm:text-sm sm:font-medium">{notebook.title}</p>
               {notebook.isPublic && (
                 <Globe size={11} className="flex-shrink-0 text-primary/60" />
               )}
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-muted-foreground/55">
+            {notebook.summary ? (
+              <p className="mt-2 line-clamp-2 text-[13px] leading-6 text-muted-foreground/65 sm:hidden">
+                {notebook.summary}
+              </p>
+            ) : (
+              <p className="mt-2 text-[13px] italic text-muted-foreground/35 sm:hidden">{t("noSummary")}</p>
+            )}
+            <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/55 sm:mt-0">
               <span>{formatDate(notebook.updatedAt)}</span>
               <span className="opacity-40">·</span>
               <span>{t("sourceCount", { count: notebook.sourceCount })}</span>
@@ -430,7 +462,7 @@ export function NewNotebookCard({ onClick }: { onClick?: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex aspect-square w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-2xl border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50"
+      className="group flex min-h-[180px] w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-[24px] border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50 sm:aspect-square sm:min-h-0 sm:rounded-2xl"
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-primary transition-all duration-200 group-hover:scale-110 group-hover:bg-primary/25">
         <Plus size={20} />

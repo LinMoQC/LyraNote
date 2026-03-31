@@ -112,6 +112,7 @@ export async function sendMessageStream(
   toolHint?: string,
   attachmentIds?: string[],
   attachmentsMeta?: AttachmentMeta[],
+  thinkingEnabled?: boolean,
   /** When true, the conversation is tagged as "copilot" and excluded from the chat page list. */
   isCopilot?: boolean,
 ): Promise<string> {
@@ -144,6 +145,7 @@ export async function sendMessageStream(
       ...(toolHint ? { tool_hint: toolHint } : {}),
       ...(attachmentIds?.length ? { attachment_ids: attachmentIds } : {}),
       ...(attachmentsMeta?.length ? { attachments_meta: attachmentsMeta } : {}),
+      ...(thinkingEnabled !== undefined ? { thinking_enabled: thinkingEnabled } : {}),
     },
     { signal },
   );

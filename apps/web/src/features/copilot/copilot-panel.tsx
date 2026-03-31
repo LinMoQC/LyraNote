@@ -59,6 +59,7 @@ export function CopilotPanel({
   panelWidth: externalPanelWidth,
   containerTop = 0,
   containerHeight,
+  presentation = "fixed",
 }: {
   notebookId?: string;
   initialMessages: Message[];
@@ -79,8 +80,10 @@ export function CopilotPanel({
   containerTop?: number;
   /** 内容区域高度（px），用于侧边栏模式对齐 */
   containerHeight?: number;
+  presentation?: "fixed" | "sheet";
 }) {
   const isFloating = mode === "floating";
+  const isSheet = presentation === "sheet";
   const t = useTranslations("copilot");
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState("");
@@ -322,6 +325,7 @@ export function CopilotPanel({
           undefined, // toolHint
           undefined, // attachmentIds
           undefined, // attachmentsMeta
+          undefined, // thinkingEnabled
           true,      // isCopilot
         );
         // Persist the conversation ID so subsequent messages stay in the same conversation
@@ -389,32 +393,9 @@ export function CopilotPanel({
     ? { top: floatTop, right: 24, width: FLOAT_W, height: FLOAT_H, borderRadius: 16, opacity: 1, scale: 1 }
     : { top: floatTop + 16, right: 24, width: FLOAT_W, height: FLOAT_H, borderRadius: 16, opacity: 0, scale: 0.93 };
 
-  return (
-    <MotionConfig transition={SPRING}>
-      {/* ── Panel ─────────────────────────────────────────────── */}
-      {/*
-       * 永远 position:fixed，通过 animate 对坐标数值插值：
-       * 侧边栏: top=0, right=0,  width=panelW, height=windowH → 弹簧附着到屏幕右侧
-       * 浮窗:   top=floatTop, right=24, width=360, height=520 → 右下角小卡片
-       * 切换时所有数值由弹簧平滑过渡，避免 FLIP 跨 context 跳位问题
-       */}
-      <m.aside
-        initial={false}
-        animate={isFloating ? floatingAnim : dockedAnim}
-        transition={SPRING}
-        className={cn(
-          "fixed z-50 flex flex-col bg-card overflow-hidden",
-          isFloating
-            ? "border border-border/60 shadow-2xl shadow-black/30"
-            : "border-l border-border/40",
-        )}
-        style={{
-          pointerEvents: isOpen ? "auto" : "none",
-          transformOrigin: isFloating ? "bottom right" : "top right",
-        }}
-      >
-      {/* ── Resize handle (docked only) ─────────────────────────────────── */}
-      {!isFloating && (
+  const panelContent = (
+    <>
+      {!isFloating && !isSheet && (
         <div
           onMouseDown={handleResizeStart}
           onTouchStart={handleResizeTouchStart}
@@ -444,10 +425,9 @@ export function CopilotPanel({
         </div>
       )}
 
-      {/* ── Header ────────────────────────────────────────── */}
       <div className={cn(
         "relative flex flex-shrink-0 items-center justify-between overflow-hidden px-3 py-2.5",
-        isFloating && "rounded-t-2xl"
+        isFloating && !isSheet && "rounded-t-2xl"
       )}>
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
 
@@ -470,8 +450,7 @@ export function CopilotPanel({
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Mode toggle */}
-          {onModeChange && (
+          {!isSheet && onModeChange && (
             <button
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
               onClick={() => onModeChange(isFloating ? "docked" : "floating")}
@@ -494,14 +473,12 @@ export function CopilotPanel({
         <div className="absolute inset-x-0 bottom-0 h-px bg-border/30" />
       </div>
 
-      {/* ── Writing context bar ─────────────────────────── */}
       <WritingContextBar
         chunks={writingContext}
         onAskAbout={(q) => void submit(q)}
         onInsertCitation={onInsertToEditor}
       />
 
-      {/* ── Cross-notebook knowledge ─────────────────────── */}
       {relatedKnowledge.length > 0 && (
         <WritingContextBar
           chunks={relatedKnowledge.map((c) => ({
@@ -514,7 +491,6 @@ export function CopilotPanel({
         />
       )}
 
-      {/* ── Content ───────────────────────────────────────── */}
       <div className="relative flex-1 overflow-y-auto">
         {!hasMessages ? (
           <div className="p-4">
@@ -522,7 +498,6 @@ export function CopilotPanel({
               {greetingText || t("greeting")}
             </p>
 
-            {/* Proactive suggestions */}
             {unreadSuggestions.length > 0 && (
               <div className="mb-3 space-y-2">
                 <AnimatePresence>
@@ -545,7 +520,6 @@ export function CopilotPanel({
               </div>
             )}
 
-            {/* Backend insights */}
             {insights.length > 0 && (
               <div className="mb-3 space-y-1.5">
                 {insights.slice(0, 3).map((insight) => (
@@ -614,7 +588,6 @@ export function CopilotPanel({
           </div>
         ) : (
           <div className="space-y-4 p-4">
-            {/* Proactive cards above messages */}
             {unreadSuggestions.length > 0 && (
               <AnimatePresence>
                 {unreadSuggestions.map((s) =>
@@ -670,7 +643,6 @@ export function CopilotPanel({
           </div>
         )}
 
-        {/* ── Scroll to bottom button ────────────────────── */}
         {showScrollBtn && hasMessages && (
           <button
             className="absolute bottom-3 right-3 flex h-7 w-7 items-center justify-center rounded-full border border-border/50 bg-card text-muted-foreground shadow-lg transition-colors hover:border-border/80 hover:text-foreground"
@@ -682,7 +654,6 @@ export function CopilotPanel({
         )}
       </div>
 
-      {/* ── Input ─────────────────────────────────────────── */}
       <div className="flex-shrink-0 border-t border-border/30 p-3">
         <ChatInput
           value={input}
@@ -690,9 +661,9 @@ export function CopilotPanel({
           onSubmit={(text) => void submit(text)}
           placeholder={t("placeholder")}
           streaming={streaming}
-          variant="compact"
+          variant={isSheet ? "default" : "compact"}
           accentBorder="border-border/40 focus-within:border-primary/30 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.06)]"
-          showHint
+          showHint={!isSheet}
           hintText={t("sendHint")}
           aboveInput={
             quotedText ? (
@@ -711,15 +682,46 @@ export function CopilotPanel({
               </div>
             ) : undefined
           }
-          toolbarLeft={
+          toolbarLeft={!isSheet ? (
             <span className="flex items-center gap-1 rounded-full border border-border/30 bg-muted/20 px-2 py-0.5 text-[10px] text-muted-foreground/40">
               <Sparkles size={8} className="text-primary/50" />
               {t("notebookLabel")}
             </span>
-          }
+          ) : undefined}
         />
       </div>
-      </m.aside>
+    </>
+  );
+
+  return (
+    <MotionConfig transition={SPRING}>
+      {isSheet ? (
+        <div
+          className="flex h-full min-h-0 flex-col overflow-hidden bg-card"
+          data-testid="copilot-panel-sheet"
+        >
+          {panelContent}
+        </div>
+      ) : (
+        <m.aside
+          initial={false}
+          animate={isFloating ? floatingAnim : dockedAnim}
+          transition={SPRING}
+          className={cn(
+            "fixed z-50 flex flex-col overflow-hidden bg-card",
+            isFloating
+              ? "border border-border/60 shadow-2xl shadow-black/30"
+              : "border-l border-border/40",
+          )}
+          style={{
+            pointerEvents: isOpen ? "auto" : "none",
+            transformOrigin: isFloating ? "bottom right" : "top right",
+          }}
+          data-testid="copilot-panel-fixed"
+        >
+          {panelContent}
+        </m.aside>
+      )}
     </MotionConfig>
   );
 }

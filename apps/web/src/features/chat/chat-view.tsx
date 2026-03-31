@@ -150,6 +150,7 @@ export function ChatView() {
               : undefined
             }
             showHint
+            hideHintOnMobile
             hintText={t("sendHint")}
             sendTitle={t("send")}
             cancelTitle={t("cancelGenerate")}

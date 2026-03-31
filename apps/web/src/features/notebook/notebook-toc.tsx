@@ -118,12 +118,21 @@ function useReadingProgress(editor: Editor | null): number {
   return progress;
 }
 
-export function NotebookTOC({ editor }: { editor: Editor | null }) {
+export function NotebookTOC({
+  editor,
+  variant = "sidebar",
+  onNavigate,
+}: {
+  editor: Editor | null;
+  variant?: "sidebar" | "sheet";
+  onNavigate?: () => void;
+}) {
   const t = useTranslations("notebook");
   const headings = useEditorHeadings(editor);
   const activeId = useActiveHeading(editor, headings);
   const progress = useReadingProgress(editor);
   const containerRef = useRef<HTMLDivElement>(null);
+  const isSheet = variant === "sheet";
 
   const scrollToHeading = (h: HeadingItem) => {
     if (!editor) return;
@@ -132,6 +141,7 @@ export function NotebookTOC({ editor }: { editor: Editor | null }) {
       // First heading — scroll to top
       if (h.index === 0) {
         scrollParent?.scrollTo({ top: 0, behavior: "smooth" });
+        onNavigate?.();
         return;
       }
       const allHeadings = Array.from(
@@ -149,12 +159,19 @@ export function NotebookTOC({ editor }: { editor: Editor | null }) {
       } else {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
       }
+      onNavigate?.();
     } catch { /* detached node */ }
   };
 
   if (!headings.length) {
     return (
-      <div className="flex h-full w-[180px] flex-col items-center justify-center gap-2 border-l border-border/20 px-4">
+      <div
+        className={cn(
+          "flex h-full flex-col items-center justify-center gap-2 px-4",
+          isSheet ? "w-full" : "w-[180px] border-l border-border/20",
+        )}
+        data-testid={`notebook-toc-${variant}`}
+      >
         <AlignLeft size={14} className="text-muted-foreground/15" />
         <p className="text-center text-[11px] text-muted-foreground/25">
           {t("tocEmpty")}
@@ -166,7 +183,11 @@ export function NotebookTOC({ editor }: { editor: Editor | null }) {
   return (
     <div
       ref={containerRef}
-      className="h-full w-[180px] overflow-y-auto border-l border-border/20"
+      className={cn(
+        "h-full overflow-y-auto",
+        isSheet ? "w-full px-1" : "w-[180px] border-l border-border/20",
+      )}
+      data-testid={`notebook-toc-${variant}`}
     >
       <nav className="flex flex-col pt-8">
         {headings.map((h) => {
@@ -227,4 +248,3 @@ export function NotebookTOC({ editor }: { editor: Editor | null }) {
     </div>
   );
 }
-

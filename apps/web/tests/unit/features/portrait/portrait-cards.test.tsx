@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { UserPortrait } from "@/services/portrait-service";
-import { ThoughtStream } from "./portrait-cards";
+import { ThoughtStream } from "@/features/portrait/portrait-cards";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
