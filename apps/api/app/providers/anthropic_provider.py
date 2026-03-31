@@ -15,6 +15,11 @@ from app.providers.base import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_MAX_TOKENS = 4096
+_THINKING_MIN_BUDGET_TOKENS = 1024
+_THINKING_DEFAULT_BUDGET_TOKENS = 2048
+_THINKING_TOP_P = 1.0
+
 
 def _convert_messages(messages: list[dict]) -> tuple[str, list[dict]]:
     """Split an OpenAI-style message list into Anthropic's (system, messages) format."""
@@ -76,15 +81,21 @@ class AnthropicProvider(BaseLLMProvider):
         thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[dict, None]:
         system, msgs = _convert_messages(messages)
+        effective_max_tokens = max_tokens or _DEFAULT_MAX_TOKENS
         kwargs: dict = dict(
             model=model or self._default_model,
             system=system or "You are a helpful assistant.",
             messages=msgs,
-            temperature=temperature,
-            max_tokens=max_tokens or 4096,
+            max_tokens=effective_max_tokens,
         )
         if thinking_enabled:
-            kwargs["thinking"] = {"type": "enabled", "budget_tokens": 2048}
+            kwargs["top_p"] = _THINKING_TOP_P
+            kwargs["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": _compute_thinking_budget_tokens(effective_max_tokens),
+            }
+        else:
+            kwargs["temperature"] = temperature
         async with self._client.messages.stream(**kwargs) as stream:
             async for text in stream.text_stream:
                 yield {"type": "token", "content": text}
@@ -139,3 +150,12 @@ class AnthropicProvider(BaseLLMProvider):
             "content": text_content,
             "raw_message": response,
         }
+
+
+def _compute_thinking_budget_tokens(max_tokens: int) -> int:
+    budget_tokens = min(_THINKING_DEFAULT_BUDGET_TOKENS, max_tokens - 1)
+    if budget_tokens < _THINKING_MIN_BUDGET_TOKENS:
+        raise ValueError(
+            "Anthropic thinking requires max_tokens > 1024 so budget_tokens can be at least 1024 and strictly less than max_tokens."
+        )
+    return budget_tokens
