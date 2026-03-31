@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="120" alt="LyraNote Logo" src="./web/public/lyra.png">
+  <img width="120" alt="LyraNote Logo" src="./apps/web/public/lyra.png">
 
   <h1>LyraNote</h1>
 
