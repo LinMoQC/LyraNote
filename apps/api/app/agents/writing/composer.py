@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+    from app.skills.base import SkillBase
 
 ArtifactType = Literal["summary", "faq", "study_guide", "briefing", "outline"]
 
@@ -99,6 +100,7 @@ async def build_system_prompt(
     scene_instruction: str | None = None,
     db: "AsyncSession | None" = None,  # kept for API compatibility, not used for memory
     tool_schemas: list[dict] | None = None,
+    active_skills: list["SkillBase"] | None = None,
     user_portrait: dict | None = None,  # Lyra 用户画像（由 orchestrator 预加载）
 ) -> str:
     """Compose a personalised system prompt from base + L4 scene + L2/L3 memory + notebook context.
@@ -186,35 +188,27 @@ async def build_system_prompt(
     try:
         from app.skills.registry import skill_registry
 
-        if tool_schemas is not None:
-            tool_lines = ["<skills>"]
-            for schema in tool_schemas:
-                name = schema.get("name", "")
-                desc = schema.get("description", "")
-                if name:
-                    tool_lines.append(f'  <skill name="{name}">{desc}</skill>')
-            tool_lines.append("</skills>")
-            skills_block = "\n".join(tool_lines)
-            if len(tool_lines) > 2:
+        prompt_skills = active_skills or []
+        if prompt_skills:
+            skills_block = skill_registry.format_skills_for_prompt(prompt_skills)
+            if skills_block:
                 parts.append(f"\n{skills_block}")
                 parts.append(
                     "\n回复前扫描上方 <skills> 列表：\n"
-                    "- 有且仅有一个 skill 明确适用时，调用该工具并参考下方对应的技能知识库指引；\n"
+                    "- 有且仅有一个 skill 明确适用时，优先调用该工具；\n"
                     "- 多个 skill 可能适用时，选最具体的那个；\n"
                     "- 无明确匹配时直接回答，无需调用工具。"
                 )
-        else:
-            active_skills = [s for s in skill_registry.all_skills() if s.passes_gating()]
-            if active_skills:
-                skills_block = skill_registry.format_skills_for_prompt(active_skills)
-                if skills_block:
-                    parts.append(f"\n{skills_block}")
-                    parts.append(
-                        "\n回复前扫描上方 <skills> 列表：\n"
-                        "- 有且仅有一个 skill 明确适用时，调用该工具并参考下方对应的技能知识库指引；\n"
-                        "- 多个 skill 可能适用时，选最具体的那个；\n"
-                        "- 无明确匹配时直接回答，无需调用工具。"
-                    )
+
+            guide_block = skill_registry.format_guide_skills_for_prompt(prompt_skills)
+            if guide_block:
+                parts.append(f"\n{guide_block}")
+                parts.append(
+                    "\n上方 <skill-guides> 是可按需读取的技能指引清单：\n"
+                    "- 当某个 guide 明确相关、你需要详细操作规范时，先调用 `read_skill_guide` 读取正文；\n"
+                    "- 不要默认读取全部 guide；\n"
+                    "- 读取 guide 后，再决定是否调用相关工具。"
+                )
     except Exception:
         pass
 
@@ -288,18 +282,10 @@ async def build_system_prompt(
     if scene_instruction:
         parts.append(f"\n{scene_instruction}")
 
-    # 5. Skill guidance bodies (knowledge/workflow SKILL.md files)
-    try:
-        md_block = skill_registry.format_md_skills_for_prompt()
-        if md_block:
-            parts.append(f"\n## 技能知识库\n以下是各技能的详细操作指引，当你决定调用对应工具时，遵循相关章节的规范：\n\n{md_block}")
-    except Exception:
-        pass
-
-    # 6. GenUI protocol (output formatting — lower priority, moved down)
+    # 5. GenUI protocol (output formatting — lower priority, moved down)
     parts.append(f"\n{GENUI_PROTOCOL}")
 
-    # 7. End-of-prompt reinforcement (recency bias — bottom)
+    # 6. End-of-prompt reinforcement (recency bias — bottom)
     parts.append(
         "\n## 关键提醒\n"
         "- 引用必须用半角 [来源N]，禁止全角【】\n"

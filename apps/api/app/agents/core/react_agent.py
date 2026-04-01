@@ -280,6 +280,7 @@ async def _run_agent_single(
         scene_instruction,
         db=db,
         tool_schemas=tool_schemas,
+        active_skills=active_skills,
     )
     if tool_hint and tool_hint in TOOL_HINT_PROMPTS:
         system_prompt += f"\n\n## 当前工具指令\n{TOOL_HINT_PROMPTS[tool_hint]}"

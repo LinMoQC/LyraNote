@@ -20,6 +20,7 @@ import logging
 import os
 from pathlib import Path
 from uuid import UUID
+from xml.sax.saxutils import escape
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -133,6 +134,19 @@ class SkillRegistry:
     def all_skills(self) -> list[SkillBase]:
         return list(self._skills.values())
 
+    def resolve(self, skill_name: str) -> SkillBase | None:
+        """Resolve a skill by metadata name or function schema name."""
+        return (
+            self._skills.get(skill_name)
+            or self._skills.get(skill_name.replace("_", "-"))
+            or self._fn_name_index.get(skill_name)
+        )
+
+    def get_markdown_skill(self, skill_name: str) -> MarkdownSkill | None:
+        """Return a MarkdownSkill by name if it exists."""
+        skill = self.resolve(skill_name)
+        return skill if isinstance(skill, MarkdownSkill) else None
+
     async def get_active_skills(
         self,
         user_id: UUID,
@@ -243,11 +257,7 @@ class SkillRegistry:
         ctx: "ToolContext",
     ) -> str:
         """Dispatch to the named skill's execute() method."""
-        skill = (
-            self._skills.get(skill_name)
-            or self._skills.get(skill_name.replace("_", "-"))
-            or self._fn_name_index.get(skill_name)
-        )
+        skill = self.resolve(skill_name)
         if skill is None:
             return f"未知工具：{skill_name}"
         try:
@@ -263,10 +273,7 @@ class SkillRegistry:
     def format_skills_for_prompt(self, skills: list[SkillBase]) -> str:
         """
         Serialize active tool (Python) skills into an XML block for system prompt injection.
-        Compatible with OpenClaw formatSkillsForPrompt() output format.
-        Excludes MarkdownSkills (they are injected separately via format_md_skills_for_prompt).
-
-        Token cost ≈ 195 + Σ(97 + len(name) + len(description)) chars.
+        Excludes MarkdownSkills, which are represented separately as guide manifests.
         """
         tool_skills = [s for s in skills if not s.is_markdown_skill]
         if not tool_skills:
@@ -275,26 +282,37 @@ class SkillRegistry:
         lines = ["<skills>"]
         for skill in tool_skills:
             m = skill.meta
-            lines.append(
-                f'  <skill name="{m.name}" category="{m.category}">{m.description}</skill>'
-            )
+            when_to_use = m.when_to_use or m.description
+            lines.append(f'  <skill name="{escape(m.name)}" category="{escape(m.category)}">')
+            lines.append(f"    <description>{escape(m.description)}</description>")
+            if when_to_use:
+                lines.append(f"    <when_to_use>{escape(when_to_use)}</when_to_use>")
+            lines.append("  </skill>")
         lines.append("</skills>")
         return "\n".join(lines)
 
-    def format_md_skills_for_prompt(self) -> str:
+    def format_guide_skills_for_prompt(self, skills: list[SkillBase]) -> str:
         """
-        Return the concatenated Markdown bodies of all active MarkdownSkills.
-        Each skill is separated by a section header and divider.
+        Serialize active Markdown skills into a lightweight manifest.
+        The guide bodies themselves are loaded on demand via read_skill_guide.
         """
-        md_skills = [s for s in self._skills.values() if isinstance(s, MarkdownSkill) and s.passes_gating()]
+        md_skills = [s for s in skills if isinstance(s, MarkdownSkill)]
         if not md_skills:
             return ""
 
-        parts = []
+        parts = ["<skill-guides>"]
         for skill in md_skills:
-            if skill.body.strip():
-                parts.append(f"---\n### 技能参考：{skill.meta.display_name}\n{skill.body.strip()}")
-        return "\n\n".join(parts)
+            meta = skill.meta
+            when_to_use = meta.when_to_use or meta.description
+            parts.append(
+                f'  <guide name="{escape(meta.name)}" category="{escape(meta.category)}">'
+            )
+            parts.append(f"    <description>{escape(meta.description)}</description>")
+            if when_to_use:
+                parts.append(f"    <when_to_use>{escape(when_to_use)}</when_to_use>")
+            parts.append("  </guide>")
+        parts.append("</skill-guides>")
+        return "\n".join(parts)
 
     def get_thought_labels(self) -> dict[str, str]:
         """Return {skill_name: thought_label} for all registered skills."""

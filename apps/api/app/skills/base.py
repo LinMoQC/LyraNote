@@ -36,6 +36,7 @@ class SkillMeta:
     display_name: str
     description: str
     category: str                                        # knowledge | web | writing | memory | productivity
+    when_to_use: str | None = None                       # short trigger guidance for prompt-time matching
     version: str = "1.0.0"
     requires_env: list[str] = field(default_factory=list)  # env vars that must be set for this skill to load
     always: bool = False                                 # if True, skip is_enabled DB filter (core skills)
@@ -144,6 +145,7 @@ class MarkdownSkill(SkillBase):
             display_name=fm.get("display_name") or name.replace("-", " ").title(),
             description=fm.get("description") or "",
             category=fm.get("category") or "knowledge",
+            when_to_use=fm.get("when_to_use") or fm.get("whenToUse"),
             version=str(fm.get("version") or "1.0.0"),
             requires_env=list(fm.get("requires_env") or []),
             always=bool(fm.get("always", False)),
