@@ -37,10 +37,18 @@ class AgentState:
 
     query: str = ""
     global_search: bool = False
+    active_scene: str = "research"
+    execution_path: str = "direct_answer"
+    route_reason: str = ""
     context_compressed: bool = False
+    context_budget_chars: int = 6000
 
     # Cache tool results by (tool_name, args_json) to prevent redundant re-calls.
     tool_result_cache: dict[str, str] = field(default_factory=dict)
+    tool_call_counts: dict[str, int] = field(default_factory=dict)
+    tool_failure_counts: dict[str, int] = field(default_factory=dict)
+    recommended_next_tool: str | None = None
+    policy_trace: list[dict[str, str]] = field(default_factory=list)
 
     # Track tool call IDs that have already received user approval this session.
     # Brain uses this to avoid re-requesting approval for the same tool calls.
@@ -59,3 +67,12 @@ class AgentState:
             len(str(m.get("content", ""))) for m in self.messages
         )
         return total_chars // 3
+
+    def add_policy_trace(self, event: str, reason: str, detail: str = "") -> None:
+        self.policy_trace.append(
+            {
+                "event": event,
+                "reason": reason,
+                "detail": detail,
+            }
+        )

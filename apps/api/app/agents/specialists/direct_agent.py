@@ -10,9 +10,27 @@ from __future__ import annotations
 
 
 async def direct_agent_node(state: dict) -> dict:
+    from langchain_core.callbacks.manager import adispatch_custom_event
+
+    await adispatch_custom_event("sse", {
+        "type": "agent_trace",
+        "event": "specialist_selected",
+        "reason": "direct_specialist",
+        "detail": "direct",
+    })
+    outputs = list(state.get("specialist_outputs") or [])
+    outputs.append(
+        {
+            "specialist": "direct",
+            "type": "direct",
+            "summary": "无需额外检索，直接进入回答合成。",
+            "chunks": [],
+        }
+    )
     return {
         "specialist_result": {
             "type": "direct",
             "chunks": [],
-        }
+        },
+        "specialist_outputs": outputs,
     }

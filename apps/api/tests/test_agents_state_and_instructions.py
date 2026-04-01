@@ -13,6 +13,7 @@ from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
+    ClarifyInstruction,
     CompressContextInstruction,
     FinishInstruction,
     RequestHumanApprovalInstruction,
@@ -72,9 +73,25 @@ class TestAgentStateDefaults:
         state = AgentState(messages=[])
         assert state.global_search is False
 
+    def test_active_scene_default_research(self):
+        state = AgentState(messages=[])
+        assert state.active_scene == "research"
+
+    def test_execution_path_default_direct_answer(self):
+        state = AgentState(messages=[])
+        assert state.execution_path == "direct_answer"
+
     def test_context_compressed_default_false(self):
         state = AgentState(messages=[])
         assert state.context_compressed is False
+
+    def test_context_budget_default(self):
+        state = AgentState(messages=[])
+        assert state.context_budget_chars == 6000
+
+    def test_policy_trace_default_empty(self):
+        state = AgentState(messages=[])
+        assert state.policy_trace == []
 
 
 class TestAgentStateConstruction:
@@ -245,6 +262,16 @@ class TestCompressContextInstruction:
     def test_default_type(self):
         instr = CompressContextInstruction()
         assert instr.type == "compress_context"
+
+
+class TestClarifyInstruction:
+    def test_default_type(self):
+        instr = ClarifyInstruction()
+        assert instr.type == "clarify"
+
+    def test_reason_stored(self):
+        instr = ClarifyInstruction(reason="query_is_too_ambiguous")
+        assert instr.reason == "query_is_too_ambiguous"
 
 
 class TestRequestHumanApprovalInstruction:

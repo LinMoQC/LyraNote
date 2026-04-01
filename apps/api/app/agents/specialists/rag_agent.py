@@ -31,6 +31,14 @@ async def rag_agent_node(state: dict) -> dict:
     db = state["db"]
     global_search: bool = state.get("global_search", False)
     history: list[dict] = state.get("messages", [])[-6:]
+    outputs = list(state.get("specialist_outputs") or [])
+
+    await adispatch_custom_event("sse", {
+        "type": "agent_trace",
+        "event": "specialist_selected",
+        "reason": "rag_specialist",
+        "detail": query[:80],
+    })
 
     # 先生成查询变体，这样 tool_call 事件能展示改写后的主查询
     try:
@@ -80,10 +88,20 @@ async def rag_agent_node(state: dict) -> dict:
         ),
     })
 
+    result = {
+        "specialist": "rag",
+        "type": "rag",
+        "summary": f"知识库检索命中 {len(chunks)} 条片段。",
+        "chunks": chunks[:10],
+        "retrieved_count": len(chunks),
+    }
+    outputs.append(result)
+
     return {
         "specialist_result": {
             "type": "rag",
             "chunks": chunks,
             "retrieved_count": len(chunks),
-        }
+        },
+        "specialist_outputs": outputs,
     }

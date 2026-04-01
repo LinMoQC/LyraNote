@@ -28,6 +28,7 @@ class MultiAgentState(TypedDict, total=False):
     user_portrait: dict | None          # L4 用户画像（由 orchestrator 预加载）
     notebook_summary: dict | None       # 笔记本摘要
     scene_instruction: str | None       # 场景识别结果
+    active_scene: str                   # 当前场景标签
 
     # ── 运行时传递（不可序列化，不适合持久化） ──────────────────────────────
     notebook_id: str
@@ -38,9 +39,13 @@ class MultiAgentState(TypedDict, total=False):
 
     # ── 路由结果 ────────────────────────────────────────────────────────────
     route: str                          # orchestrator_node 填写
+    route_reason: str                   # orchestrator_node 填写
+    execution_path: str                 # react_agent 预先填入
 
     # ── 专家输出 ────────────────────────────────────────────────────────────
     specialist_result: dict | None      # 专家 Agent 的结构化输出
+    specialist_outputs: list[dict]      # 各 specialist 的结构化输出
+    synthesis_packet: dict | None       # 合成阶段使用的压缩上下文
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +97,7 @@ async def orchestrator_node(state: MultiAgentState) -> dict:
 
     query: str = state.get("query", "")
     portrait: dict | None = state.get("user_portrait")
+    active_scene: str = state.get("active_scene", "research")
 
     system = _ORCHESTRATOR_SYSTEM
     if portrait:
@@ -126,8 +132,62 @@ async def orchestrator_node(state: MultiAgentState) -> dict:
             "type": "thought",
             "content": "分析请求 → 启动**深度研究**模式",
         })
+        await adispatch_custom_event("sse", {
+            "type": "agent_trace",
+            "event": "route_selected",
+            "reason": "orchestrator_research",
+            "detail": f"scene={active_scene}",
+        })
+        return {"route": route, "route_reason": "orchestrator_research"}
 
-    return {"route": route}
+    await adispatch_custom_event("sse", {
+        "type": "agent_trace",
+        "event": "route_selected",
+        "reason": "orchestrator_direct",
+        "detail": f"scene={active_scene}",
+    })
+    return {"route": route, "route_reason": "orchestrator_direct"}
+
+
+def _build_synthesis_packet(state: MultiAgentState) -> dict:
+    outputs: list[dict] = state.get("specialist_outputs") or []
+    packet: dict[str, object] = {
+        "summaries": [],
+        "chunks": [],
+        "web_context": "",
+    }
+
+    summaries: list[dict] = []
+    chunks: list[dict] = []
+    seen_titles: dict[str, int] = {}
+    web_parts: list[str] = []
+
+    for output in outputs:
+        specialist = output.get("specialist", output.get("type", "unknown"))
+        summary = str(output.get("summary") or "").strip()
+        if summary:
+            summaries.append({"specialist": specialist, "summary": summary[:300]})
+
+        for chunk in output.get("chunks") or []:
+            title = str(chunk.get("source_title", "未知来源"))
+            if seen_titles.get(title, 0) >= 2:
+                continue
+            seen_titles[title] = seen_titles.get(title, 0) + 1
+            chunks.append(chunk)
+            if len(chunks) >= 10:
+                break
+        if len(chunks) >= 10:
+            break
+
+    for output in outputs:
+        web_context = str(output.get("web_context") or "").strip()
+        if web_context:
+            web_parts.append(web_context[:2000])
+
+    packet["summaries"] = summaries[:4]
+    packet["chunks"] = chunks[:10]
+    packet["web_context"] = "\n\n".join(web_parts)[:3000]
+    return packet
 
 
 # ---------------------------------------------------------------------------
@@ -149,10 +209,11 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     user_portrait = state.get("user_portrait")
     db = state.get("db")
     specialist: dict = state.get("specialist_result") or {}
+    synthesis_packet = state.get("synthesis_packet") or _build_synthesis_packet(state)
 
     spec_type = specialist.get("type", "research")
-    chunks: list[dict] = specialist.get("chunks") or []
-    web_context: str | None = specialist.get("web_context")
+    chunks: list[dict] = synthesis_packet.get("chunks") or specialist.get("chunks") or []
+    web_context: str | None = synthesis_packet.get("web_context") or specialist.get("web_context")
 
     is_direct = spec_type == "direct"
 
@@ -174,6 +235,13 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     citations: list[dict] = []
 
     if not is_direct:
+        specialist_summaries = synthesis_packet.get("summaries") or []
+        if specialist_summaries:
+            summary_text = "\n".join(
+                f"- {item['specialist']}: {item['summary']}"
+                for item in specialist_summaries
+            )
+            context_parts.append(f"=== 专家摘要 ===\n{summary_text}")
         if chunks:
             try:
                 ctx_text, citations = _build_context(chunks)
@@ -201,6 +269,12 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     # ── 流式输出 ────────────────────────────────────────────────────────────
     if not is_direct:
         await adispatch_custom_event("sse", {"type": "thought", "content": "整合研究资料，生成深度回答…"})
+        await adispatch_custom_event("sse", {
+            "type": "agent_trace",
+            "event": "synthesis",
+            "reason": "compressed_specialist_packet",
+            "detail": f"chunks={len(chunks)};web={bool(web_context)}",
+        })
     try:
         async for chunk in chat_stream(llm_messages):
             if chunk.get("type") in ("token", "reasoning"):

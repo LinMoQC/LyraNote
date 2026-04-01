@@ -49,6 +49,14 @@ class CompressContextInstruction:
 
 
 @dataclass
+class ClarifyInstruction:
+    """Ask a concise clarifying question before proceeding."""
+
+    reason: str = ""
+    type: str = "clarify"
+
+
+@dataclass
 class VerifyResultInstruction:
     """Insert a lightweight verification step before the final answer."""
 
@@ -79,6 +87,7 @@ Instruction = Union[
     CallRAGInstruction,
     StreamAnswerInstruction,
     CompressContextInstruction,
+    ClarifyInstruction,
     VerifyResultInstruction,
     RequestHumanApprovalInstruction,
     FinishInstruction,

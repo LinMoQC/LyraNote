@@ -33,6 +33,10 @@
 - [x] 为 `user_memories` 增加 `memory_kind`，区分 `profile / preference / project_state / reference`
 - [x] 调整 `app/agents/memory/{extraction,retrieval}.py`，让记忆抽取与召回使用 taxonomy
 - [x] 兼容 `/memory` 返回结构，在不打断现有 `memory_type` 分组的前提下暴露 `memory_kind`
+- [x] 新增 runtime policy layer，统一 scene-aware execution path / clarify / context budget
+- [x] 收紧 tool governance，加入重复调用防护、失败限流、MCP follow-up 提示与 trace
+- [x] 收紧 deep research multi-agent 角色，拆为 orchestrator → rag specialist → web specialist → synthesis
+- [x] 为 single-agent / multi-agent 增加 `agent_trace` 级别的可观测性事件
 
 ### 前端
 - [ ] 暂不改动 UI，仅保持兼容
@@ -44,6 +48,8 @@
 - [x] 跑纯状态机回归：`pytest apps/api/tests/test_agents_brain.py -v`
 - [x] 编写路由回归测试：`apps/api/tests/unit/test_react_agent_routing.py`
 - [x] 编写 memory taxonomy 单元测试：`apps/api/tests/unit/test_memory_taxonomy.py`
+- [x] 编写 runtime policy 单元测试：`apps/api/tests/unit/test_runtime_policy.py`
+- [x] 编写 multi-agent synthesis packet 单元测试：`apps/api/tests/unit/test_multi_agent_orchestrator.py`
 
 ---
 
@@ -55,14 +61,18 @@
 - `ReadSkillGuideSkill.execute()`：能按技能名返回对应 `SKILL.md` 正文
 - `build_system_prompt()`：默认只包含 guide manifest，不包含 Markdown skill 正文
 - `classify_agent_execution_route()`：附件 / tool hint / 可视化 / 深研究的路由判定
+- `classify_execution_path()`：scene-aware path / clarify / context budget
 - `infer_memory_kind()` / `_upsert_memory()`：记忆类型路由与默认 TTL
 - `build_memory_context()`：召回结果返回 `memory_kind`
+- `_build_synthesis_packet()`：多代理 specialist 输出压缩与去重
 
 **测试文件位置**：
 - `apps/api/tests/unit/test_skill_registry_guides.py`
 - `apps/api/tests/unit/test_compose_answer_extra_graph.py`
 - `apps/api/tests/unit/test_react_agent_routing.py`
 - `apps/api/tests/unit/test_memory_taxonomy.py`
+- `apps/api/tests/unit/test_runtime_policy.py`
+- `apps/api/tests/unit/test_multi_agent_orchestrator.py`
 
 ---
 
@@ -74,6 +84,8 @@
 - [ ] 相关已有单元测试无回归
 - [ ] 记忆抽取与召回支持 `memory_kind`
 - [ ] single-agent / multi-agent 路由判定可单测验证
+- [ ] runtime policy layer 可单测验证
+- [ ] deep research specialist 输出会先压缩再交给 synthesis
 
 ---
 
@@ -81,3 +93,4 @@
 
 - 2026-04-01: 第一阶段优先落 skills 渐进披露，而不是同时推进 verification / multi-agent，原因是它改动面更集中、能立刻降低 prompt 污染，并为后续 agent runtime 重构提供稳定基础。
 - 2026-04-01: memory taxonomy 先以 `memory_kind` 叠加到现有 `memory_type` 之上，优先升级 runtime 召回质量，不在同一轮打破前端 `/memory` 既有分组结构。
+- 2026-04-01: 第二阶段新增 runtime policy layer，不把 scene / routing / clarify / context budget / tool governance 分散在各处 prompt 中，而是让 single-agent 与 multi-agent 共用同一层策略。

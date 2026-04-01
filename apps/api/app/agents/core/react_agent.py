@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.core.attachment_text import extract_attachment_text
 from app.agents.core.brain import AgentBrain
 from app.agents.core.engine import AgentEngine
+from app.agents.core.policy import RuntimePolicyDecision, classify_execution_path
 from app.agents.core.state import AgentState
 from app.agents.core.tools import ToolContext
 from app.agents.writing.composer import build_system_prompt
@@ -46,6 +47,7 @@ class AgentExecutionRoute:
 
     mode: str
     reason: str
+    policy: RuntimePolicyDecision
 
 TOOL_HINT_PROMPTS: dict[str, str] = {
     "summarize": "用户点击了「摘要」功能，希望对当前笔记本内容生成一份结构化摘要。请根据需要检索相关内容，然后调用 summarize_sources 工具（artifact_type='summary'）完成任务。",
@@ -93,33 +95,47 @@ def _is_visualization_query(query: str) -> bool:
 def classify_agent_execution_route(
     *,
     query: str,
+    active_scene: str = "research",
     tool_hint: str | None = None,
     attachment_ids: list[str] | None = None,
 ) -> AgentExecutionRoute:
     """Choose the execution mode before touching any runtime-specific objects."""
+    policy = classify_execution_path(
+        query=query,
+        active_scene=active_scene,
+        tool_hint=tool_hint,
+        attachment_ids=attachment_ids,
+        is_visualization_query=_is_visualization_query(query),
+        is_deep_research=_is_deep_research(query),
+    )
     if attachment_ids:
         return AgentExecutionRoute(
             mode="single",
             reason="attachments_require_single_agent",
+            policy=policy,
         )
     if tool_hint:
         return AgentExecutionRoute(
             mode="single",
             reason="tool_hint_requires_single_agent",
+            policy=policy,
         )
     if _is_visualization_query(query):
         return AgentExecutionRoute(
             mode="single",
             reason="visualization_requires_single_agent",
+            policy=policy,
         )
     if _is_deep_research(query):
         return AgentExecutionRoute(
             mode="multi",
             reason="deep_research_prefers_multi_agent",
+            policy=policy,
         )
     return AgentExecutionRoute(
         mode="single",
         reason="default_single_agent",
+        policy=policy,
     )
 
 
@@ -132,6 +148,7 @@ async def run_agent(
     user_memories: list[dict] | None = None,
     notebook_summary: dict | None = None,
     scene_instruction: str | None = None,
+    active_scene: str = "research",
     global_search: bool = False,
     tool_hint: str | None = None,
     attachment_ids: list[str] | None = None,
@@ -149,13 +166,15 @@ async def run_agent(
     """
     route = classify_agent_execution_route(
         query=query,
+        active_scene=active_scene,
         tool_hint=tool_hint,
         attachment_ids=attachment_ids,
     )
     logger.info(
-        "Agent execution route selected: mode=%s reason=%s query=%r",
+        "Agent execution route selected: mode=%s reason=%s path=%s query=%r",
         route.mode,
         route.reason,
+        route.policy.execution_path,
         query[:80],
     )
 
@@ -174,6 +193,7 @@ async def run_agent(
                     user_memories=user_memories,
                     notebook_summary=notebook_summary,
                     scene_instruction=scene_instruction,
+                    active_scene=active_scene,
                     global_search=global_search,
                 ):
                     yield event
@@ -193,6 +213,7 @@ async def run_agent(
         user_memories=user_memories,
         notebook_summary=notebook_summary,
         scene_instruction=scene_instruction,
+        active_scene=active_scene,
         global_search=global_search,
         tool_hint=tool_hint,
         attachment_ids=attachment_ids,
@@ -225,6 +246,7 @@ async def _run_agent_multi(
     user_memories: list[dict] | None = None,
     notebook_summary: dict | None = None,
     scene_instruction: str | None = None,
+    active_scene: str = "research",
     global_search: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """Run the LangGraph multi-agent graph and stream SSE events."""
@@ -246,13 +268,25 @@ async def _run_agent_multi(
         "user_portrait": user_portrait,
         "notebook_summary": notebook_summary,
         "scene_instruction": scene_instruction,
+        "active_scene": active_scene,
         "notebook_id": notebook_id,
         "user_id": str(user_id),
         "db": db,
         "global_search": global_search,
         "tool_hint": None,
         "route": "",
+        "route_reason": "",
+        "execution_path": "deep_research",
         "specialist_result": None,
+        "specialist_outputs": [],
+        "synthesis_packet": None,
+    }
+
+    yield {
+        "type": "agent_trace",
+        "event": "route_selected",
+        "reason": "multi_agent_entry",
+        "detail": f"scene={active_scene};path=deep_research",
     }
 
     config = {"configurable": {"thread_id": str(user_id)}}
@@ -278,6 +312,7 @@ async def _run_agent_single(
     user_memories: list[dict] | None = None,
     notebook_summary: dict | None = None,
     scene_instruction: str | None = None,
+    active_scene: str = "research",
     global_search: bool = False,
     tool_hint: str | None = None,
     attachment_ids: list[str] | None = None,
@@ -377,13 +412,32 @@ async def _run_agent_single(
     else:
         messages.append({"role": "user", "content": query})
 
+    policy = classify_execution_path(
+        query=query,
+        active_scene=active_scene,
+        tool_hint=tool_hint,
+        attachment_ids=attachment_ids,
+        is_visualization_query=_is_visualization_query(query),
+        is_deep_research=False,
+    )
     state = AgentState(
         messages=messages,
         phase="init",
         max_steps=MAX_ITERATIONS,
         query=query,
         global_search=global_search,
+        active_scene=active_scene,
+        execution_path=policy.execution_path,
+        route_reason=policy.reason,
+        context_budget_chars=policy.context_budget_chars,
     )
+    state.add_policy_trace("route_selected", state.route_reason, state.execution_path)
+    yield {
+        "type": "agent_trace",
+        "event": "route_selected",
+        "reason": state.route_reason,
+        "detail": f"scene={active_scene};path={state.execution_path}",
+    }
     brain = AgentBrain(has_tools=bool(tool_schemas), max_steps=MAX_ITERATIONS)
     engine = AgentEngine(
         brain=brain,

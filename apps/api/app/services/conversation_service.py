@@ -281,6 +281,7 @@ class ConversationService:
             user_memories=user_memories,
             notebook_summary=notebook_summary,
             scene_instruction=scene_instruction,
+            active_scene=scene,
             global_search=True if conv.notebook_id is None else global_search,
             tool_hint=tool_hint,
             attachment_ids=attachment_ids,

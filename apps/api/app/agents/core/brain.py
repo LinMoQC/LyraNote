@@ -25,6 +25,7 @@ from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
+    ClarifyInstruction,
     CompressContextInstruction,
     FinishInstruction,
     Instruction,
@@ -50,9 +51,14 @@ CONTEXT_TOKEN_THRESHOLD = 8000
 _KNOWLEDGE_QUERY_MIN_CHARS = 8
 
 
-def _is_knowledge_query(query: str) -> bool:
+def _is_knowledge_query(query: str, scene: str = "research") -> bool:
     """Return True if the query looks like a substantive knowledge question."""
-    return len(query.strip()) >= _KNOWLEDGE_QUERY_MIN_CHARS
+    threshold = _KNOWLEDGE_QUERY_MIN_CHARS
+    if scene == "review":
+        threshold = 4
+    elif scene == "writing":
+        threshold = 10
+    return len(query.strip()) >= threshold
 
 
 class AgentBrain:
@@ -110,9 +116,11 @@ class AgentBrain:
             # If we already have retrieved content, stream directly.
             if state.tool_results:
                 return StreamAnswerInstruction()
+            if state.execution_path == "clarify":
+                return ClarifyInstruction(reason=state.route_reason)
             # For knowledge-seeking queries with no existing context, fall back to
             # RAG so the answer has grounding material.
-            if _is_knowledge_query(state.query):
+            if state.execution_path == "rag" or _is_knowledge_query(state.query, state.active_scene):
                 return CallRAGInstruction(query=state.query)
             return StreamAnswerInstruction()
 

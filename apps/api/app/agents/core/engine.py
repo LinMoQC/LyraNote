@@ -21,6 +21,7 @@ from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
+    ClarifyInstruction,
     CompressContextInstruction,
     FinishInstruction,
     Instruction,
@@ -46,6 +47,21 @@ def _verification_reason_for_tool(tool_name: str, result: str) -> str | None:
         return "本轮生成了结构化研究结果，请在回答前核对结论是否与工具输出一致。"
     if tool_name in {"search_notebook_knowledge", "web_search"} and "[片段" in result:
         return "本轮依赖检索结果，请在回答前核对引用编号、来源与结论是否一致。"
+    return None
+
+
+def _extract_followup_tool_hint(result: str) -> str | None:
+    import re
+
+    patterns = [
+        r"Now use [`']?([a-zA-Z0-9_]+)[`']?",
+        r"请使用[`']?([a-zA-Z0-9_]+)[`']?",
+        r"Use [`']?([a-zA-Z0-9_]+)[`']? next",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, result)
+        if match:
+            return match.group(1)
     return None
 
 
@@ -181,6 +197,9 @@ class AgentEngine:
         elif isinstance(instruction, CompressContextInstruction):
             async for evt in self._exec_compress_context(state):
                 yield evt
+        elif isinstance(instruction, ClarifyInstruction):
+            async for evt in self._exec_clarify(instruction, state):
+                yield evt
         elif isinstance(instruction, RequestHumanApprovalInstruction):
             async for evt in self._exec_request_approval(instruction, state):
                 yield evt
@@ -272,6 +291,14 @@ class AgentEngine:
                 label = self.thought_labels.get(tc["name"], f"⚙️ 调用 {tc['name']}")
                 yield {"type": "thought", "content": label}
                 yield {"type": "tool_call", "tool": tc["name"], "input": tc["arguments"]}
+            else:
+                state.add_policy_trace("tool_cache_hit", "duplicate_tool_call_blocked", tc["name"])
+                yield {
+                    "type": "agent_trace",
+                    "event": "tool_cache_hit",
+                    "reason": "duplicate_tool_call_blocked",
+                    "detail": tc["name"],
+                }
 
         # Resolve each tool call: use cached result if the same tool+args was
         # already executed in this session, otherwise execute normally.
@@ -281,13 +308,25 @@ class AgentEngine:
             if cache_key in state.tool_result_cache:
                 logger.debug("Tool '%s' already called with same args — returning cached result", tc["name"])
                 return state.tool_result_cache[cache_key]
+            if state.tool_failure_counts.get(tc["name"], 0) >= 2:
+                skip_result = f"[系统已阻止重复调用工具 {tc['name']}：此前已连续失败 2 次，请改用其他工具或直接回答]"
+                state.tool_result_cache[cache_key] = skip_result
+                state.add_policy_trace("tool_blocked", "tool_failure_attempt_limit", tc["name"])
+                return skip_result
             try:
+                state.tool_call_counts[tc["name"]] = state.tool_call_counts.get(tc["name"], 0) + 1
                 result = await execute_tool(tc, self.tool_ctx)
             except BaseException as exc:
                 from app.mcp.client import _exc_msg
                 msg = _exc_msg(exc)
                 logger.error("Tool '%s' raised error: %s", tc["name"], msg, exc_info=True)
                 result = f"[工具 {tc['name']} 调用失败: {msg}]"
+                state.tool_failure_counts[tc["name"]] = state.tool_failure_counts.get(tc["name"], 0) + 1
+            else:
+                if result.strip().startswith("[工具") and "调用失败" in result:
+                    state.tool_failure_counts[tc["name"]] = state.tool_failure_counts.get(tc["name"], 0) + 1
+                else:
+                    state.tool_failure_counts[tc["name"]] = 0
             state.tool_result_cache[cache_key] = result
             return result
 
@@ -382,6 +421,23 @@ class AgentEngine:
                 "tool_call_id": tc["id"],
                 "content": result,
             })
+            followup_tool = _extract_followup_tool_hint(result)
+            if followup_tool:
+                state.recommended_next_tool = followup_tool
+                state.add_policy_trace("mcp_followup", "tool_result_requested_followup", followup_tool)
+                state.messages.append({
+                    "role": "system",
+                    "content": (
+                        f"[系统提示] 上一步工具结果明确要求下一步优先使用 `{followup_tool}`。"
+                        "不要重复调用刚才的工具。"
+                    ),
+                })
+                yield {
+                    "type": "agent_trace",
+                    "event": "mcp_followup",
+                    "reason": "tool_result_requested_followup",
+                    "detail": followup_tool,
+                }
             if not state.needs_verification:
                 verify_reason = _verification_reason_for_tool(tc["name"], result)
                 if verify_reason:
@@ -408,6 +464,12 @@ class AgentEngine:
                 "role": "assistant",
                 "content": f"明白，我不会再重复调用 {names}，将根据已有结果继续下一步。",
             })
+            yield {
+                "type": "agent_trace",
+                "event": "tool_cache_guard",
+                "reason": "duplicate_tool_calls_removed",
+                "detail": ", ".join(sorted(pre_cached)),
+            }
 
     async def _exec_compress_context(
         self, state: AgentState
@@ -449,6 +511,12 @@ class AgentEngine:
             yield  # pragma: no cover
 
         yield {"type": "thought", "content": "📝 压缩上下文以节省 token…"}
+        yield {
+            "type": "agent_trace",
+            "event": "context_compression",
+            "reason": "token_threshold_exceeded",
+            "detail": str(state.estimate_tokens()),
+        }
 
         middle_text = "\n".join(
             f"[{m.get('role', '?')}] {str(m.get('content', ''))[:500]}"
@@ -604,12 +672,36 @@ class AgentEngine:
             checklist.insert(1, f"- 额外提醒：{instruction.reason}")
 
         yield {"type": "thought", "content": "✅ 正在核对工具结果与回答一致性…"}
+        yield {
+            "type": "agent_trace",
+            "event": "verification",
+            "reason": "verification_gate_triggered",
+            "detail": instruction.reason,
+        }
         state.messages.append({"role": "system", "content": "\n".join(checklist)})
         state.verification_done = True
         state.needs_verification = False
         state.phase = "tool_result"
         return
         yield  # pragma: no cover
+
+    async def _exec_clarify(
+        self, instruction: ClarifyInstruction, state: AgentState
+    ) -> AsyncGenerator[dict, None]:
+        from app.agents.core.policy import build_clarification_prompt
+
+        prompt = build_clarification_prompt(state.query, state.active_scene)
+        state.add_policy_trace("clarify", "query_is_too_ambiguous", instruction.reason or prompt)
+        yield {
+            "type": "agent_trace",
+            "event": "clarify",
+            "reason": "query_is_too_ambiguous",
+            "detail": instruction.reason or prompt,
+        }
+        yield {"type": "token", "content": prompt}
+        yield {"type": "citations", "citations": []}
+        yield {"type": "done"}
+        state.phase = "done"
 
     async def _exec_stream_answer(self, state: AgentState) -> AsyncGenerator[dict, None]:
         from app.providers.llm import chat_stream
@@ -623,7 +715,10 @@ class AgentEngine:
         ]
 
         if state.tool_results:
-            combined = _build_context(state.tool_results)
+            combined = _build_context(
+                state.tool_results,
+                max_total_chars=state.context_budget_chars,
+            )
             last_user = next(
                 (i for i in range(len(clean) - 1, -1, -1) if clean[i].get("role") == "user"),
                 -1,
