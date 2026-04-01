@@ -15,6 +15,8 @@ if TYPE_CHECKING:
 
 ArtifactType = Literal["summary", "faq", "study_guide", "briefing", "outline"]
 
+_IDENTITY_MEMORY_KEYS = {"preferred_ai_name", "user_role", "communication_tone"}
+
 _BASE_SYSTEM_PROMPT_TEMPLATE = """你是 {ai_name}，一位专属 AI 研究助手，帮助用户深入理解和研究笔记本中的资料。
 
 ## 工具使用规则
@@ -92,6 +94,59 @@ ARTIFACT_PROMPTS: dict[str, str] = {
         "使用 Markdown 多级列表格式，清晰展示层级关系。"
     ),
 }
+
+
+def _resolve_memory_kind(memory: dict) -> str:
+    from app.agents.memory.extraction import infer_memory_kind
+
+    explicit_kind = str(memory.get("memory_kind", "")).strip().lower()
+    if explicit_kind:
+        return explicit_kind
+
+    return infer_memory_kind(
+        str(memory.get("key", "")),
+        str(memory.get("memory_type", "fact")),
+        ttl_days=None,
+        source=str(memory.get("source", "conversation")),
+    )
+
+
+def _format_user_memory_sections(user_memories: list[dict]) -> list[str]:
+    grouped: dict[str, list[dict]] = {
+        "preference": [],
+        "profile": [],
+        "project_state": [],
+        "reference": [],
+    }
+
+    for memory in user_memories:
+        if memory.get("confidence", 0) < 0.3:
+            continue
+        key = str(memory.get("key", "")).strip()
+        value = str(memory.get("value", "")).strip()
+        if not key or not value or key in _IDENTITY_MEMORY_KEYS:
+            continue
+        grouped.setdefault(_resolve_memory_kind(memory), []).append(memory)
+
+    sections: list[str] = []
+
+    if grouped["preference"]:
+        lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in grouped["preference"])
+        sections.append(f"\n用户回答偏好与协作习惯：\n{lines}")
+
+    if grouped["profile"]:
+        lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in grouped["profile"])
+        sections.append(f"\n用户长期背景画像：\n{lines}")
+
+    if grouped["project_state"]:
+        lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in grouped["project_state"])
+        sections.append(f"\n用户当前阶段上下文：\n{lines}")
+
+    if grouped["reference"]:
+        lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in grouped["reference"])
+        sections.append(f"\n用户常用参考入口：\n{lines}")
+
+    return sections
 
 
 async def build_system_prompt(
@@ -264,12 +319,7 @@ async def build_system_prompt(
         )
 
     if user_memories:
-        high_conf = [m for m in user_memories if m.get("confidence", 0) >= 0.3]
-        if high_conf:
-            mem_lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in high_conf)
-            parts.append(
-                f"\n从对话中学到的用户偏好，请据此调整回答风格和侧重：\n{mem_lines}"
-            )
+        parts.extend(_format_user_memory_sections(user_memories))
 
     if notebook_summary and notebook_summary.get("summary_md"):
         themes = "、".join(notebook_summary.get("key_themes") or [])

@@ -31,6 +31,9 @@ class AgentState:
 
     force_finish: bool = False
     terminal_tool_called: bool = False  # Set by tools that produce self-contained UI (diagram, etc.)
+    needs_verification: bool = False
+    verification_done: bool = False
+    verification_reason: str = ""
 
     query: str = ""
     global_search: bool = False

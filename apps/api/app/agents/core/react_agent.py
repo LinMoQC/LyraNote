@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -38,6 +39,14 @@ logger = logging.getLogger(__name__)
 
 MAX_ITERATIONS = 5
 
+
+@dataclass(frozen=True)
+class AgentExecutionRoute:
+    """Pure routing result for choosing single-agent vs multi-agent."""
+
+    mode: str
+    reason: str
+
 TOOL_HINT_PROMPTS: dict[str, str] = {
     "summarize": "用户点击了「摘要」功能，希望对当前笔记本内容生成一份结构化摘要。请根据需要检索相关内容，然后调用 summarize_sources 工具（artifact_type='summary'）完成任务。",
     "insights": "用户点击了「洞察」功能，希望从笔记本内容中提炼关键洞察。请先检索核心内容，再提炼出 5-8 条关键洞察（核心发现、趋势、反直觉结论等），以结构化列表呈现，每条用加粗标题配说明。",
@@ -45,6 +54,73 @@ TOOL_HINT_PROMPTS: dict[str, str] = {
     "deep_read": "用户点击了「深度阅读」功能，希望对来源进行逐段深度分析。请调用 deep_read_sources 工具完成任务。",
     "compare": "用户点击了「对比分析」功能，希望对多个来源的观点进行结构化对比。请调用 compare_sources 工具完成任务。",
 }
+
+_VISUALIZATION_KEYWORDS = (
+    "思维导图",
+    "mindmap",
+    "mind map",
+    "流程图",
+    "diagram",
+    "知识图谱",
+    "关系图",
+)
+
+_RESEARCH_KEYWORDS = (
+    "深度研究",
+    "深度分析",
+    "综合分析",
+    "系统性分析",
+    "全面分析",
+    "对比分析",
+    "跨文档",
+    "综述",
+    "研究报告",
+    "系统梳理",
+    "全面梳理",
+    "deep research",
+    "comprehensive analysis",
+    "in-depth analysis",
+    "compare and contrast",
+    "systematic review",
+)
+
+
+def _is_visualization_query(query: str) -> bool:
+    q_lower = query.lower()
+    return any(kw in q_lower for kw in _VISUALIZATION_KEYWORDS)
+
+
+def classify_agent_execution_route(
+    *,
+    query: str,
+    tool_hint: str | None = None,
+    attachment_ids: list[str] | None = None,
+) -> AgentExecutionRoute:
+    """Choose the execution mode before touching any runtime-specific objects."""
+    if attachment_ids:
+        return AgentExecutionRoute(
+            mode="single",
+            reason="attachments_require_single_agent",
+        )
+    if tool_hint:
+        return AgentExecutionRoute(
+            mode="single",
+            reason="tool_hint_requires_single_agent",
+        )
+    if _is_visualization_query(query):
+        return AgentExecutionRoute(
+            mode="single",
+            reason="visualization_requires_single_agent",
+        )
+    if _is_deep_research(query):
+        return AgentExecutionRoute(
+            mode="multi",
+            reason="deep_research_prefers_multi_agent",
+        )
+    return AgentExecutionRoute(
+        mode="single",
+        reason="default_single_agent",
+    )
 
 
 async def run_agent(
@@ -71,31 +147,20 @@ async def run_agent(
       - Deep research queries → try multi-agent graph (research specialist), fall back to single-agent
       - Everything else → single-agent (default, handles RAG/web/chat/writing via ReAct tools)
     """
-    # Single-agent is the default. Multi-agent is only used for deep research.
-    use_single = bool(attachment_ids) or bool(tool_hint)
-
-    # Visualization / tool-heavy queries need the ReAct loop to actually execute tools.
-    # Multi-agent synthesis_node is text-only and cannot call skills like generate_mind_map.
-    if not use_single:
-        _VIZ_KEYWORDS = (
-            "思维导图",
-            "mindmap",
-            "mind map",
-            "流程图",
-            "diagram",
-            "知识图谱",
-            "关系图",
-        )
-        q_lower = query.lower()
-        if any(kw in q_lower for kw in _VIZ_KEYWORDS):
-            use_single = True
-            logger.info(
-                "Visualization request detected, routing to single-agent: %s",
-                query[:60],
-            )
+    route = classify_agent_execution_route(
+        query=query,
+        tool_hint=tool_hint,
+        attachment_ids=attachment_ids,
+    )
+    logger.info(
+        "Agent execution route selected: mode=%s reason=%s query=%r",
+        route.mode,
+        route.reason,
+        query[:80],
+    )
 
     # Deep research: the only case where multi-agent graph is beneficial
-    if not use_single and _is_deep_research(query):
+    if route.mode == "multi":
         try:
             from app.agents.graph.multi_agent_graph import MULTI_AGENT_GRAPH
 
@@ -142,24 +207,6 @@ def _is_deep_research(query: str) -> bool:
     Uses keyword matching as a fast, zero-latency heuristic.
     The multi-agent orchestrator will further refine the routing.
     """
-    _RESEARCH_KEYWORDS = (
-        "深度研究",
-        "深度分析",
-        "综合分析",
-        "系统性分析",
-        "全面分析",
-        "对比分析",
-        "跨文档",
-        "综述",
-        "研究报告",
-        "系统梳理",
-        "全面梳理",
-        "deep research",
-        "comprehensive analysis",
-        "in-depth analysis",
-        "compare and contrast",
-        "systematic review",
-    )
     q = query.lower()
     return any(kw in q for kw in _RESEARCH_KEYWORDS)
 

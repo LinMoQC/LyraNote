@@ -26,6 +26,7 @@ from app.agents.core.instructions import (
     Instruction,
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
+    VerifyResultInstruction,
 )
 from app.agents.core.state import AgentState
 from app.agents.core.tools import ToolContext, execute_tool
@@ -35,6 +36,17 @@ logger = logging.getLogger(__name__)
 
 _MCP_HTML_START = "__MCP_HTML_RESOURCE__"
 _MCP_HTML_END = "__/MCP_HTML_RESOURCE__"
+
+
+def _verification_reason_for_tool(tool_name: str, result: str) -> str | None:
+    """Return a lightweight verification reminder for tool-heavy answer paths."""
+    if "__" in tool_name:
+        return "本轮使用了 MCP 工具，请在回答前确认工具结果与后续结论一致。"
+    if tool_name in {"summarize_sources", "compare_sources", "deep_read_sources"}:
+        return "本轮生成了结构化研究结果，请在回答前核对结论是否与工具输出一致。"
+    if tool_name in {"search_notebook_knowledge", "web_search"} and "[片段" in result:
+        return "本轮依赖检索结果，请在回答前核对引用编号、来源与结论是否一致。"
+    return None
 
 
 def _split_mcp_html(result: str) -> tuple[str, str | None]:
@@ -171,6 +183,9 @@ class AgentEngine:
                 yield evt
         elif isinstance(instruction, RequestHumanApprovalInstruction):
             async for evt in self._exec_request_approval(instruction, state):
+                yield evt
+        elif isinstance(instruction, VerifyResultInstruction):
+            async for evt in self._exec_verify_result(instruction, state):
                 yield evt
         elif isinstance(instruction, StreamAnswerInstruction):
             async for evt in self._exec_stream_answer(state):
@@ -367,6 +382,11 @@ class AgentEngine:
                 "tool_call_id": tc["id"],
                 "content": result,
             })
+            if not state.needs_verification:
+                verify_reason = _verification_reason_for_tool(tc["name"], result)
+                if verify_reason:
+                    state.needs_verification = True
+                    state.verification_reason = verify_reason
 
         state.pending_tool_calls = []
         state.phase = "tool_result"
@@ -556,6 +576,8 @@ class AgentEngine:
             ]
             tool_results = [c["content"] for c in chunks]
             self.tool_ctx.collected_citations = state.citations
+            state.needs_verification = True
+            state.verification_reason = "本轮依赖检索资料，请在回答前核对引用编号、资料内容与最终结论是否一致。"
         else:
             tool_results = []
 
@@ -565,6 +587,27 @@ class AgentEngine:
 
         state.tool_results = tool_results
         state.phase = "rag_done"
+        return
+        yield  # pragma: no cover
+
+    async def _exec_verify_result(
+        self, instruction: VerifyResultInstruction, state: AgentState
+    ) -> AsyncGenerator[dict, None]:
+        """Insert a lightweight verification reminder into the conversation."""
+        checklist = [
+            "在给出最终回答前，请先自检：",
+            "- 若引用了资料，检查每个关键结论是否都有对应来源支撑；",
+            "- 若工具已经生成了结构化结果，不要忽略工具输出后另起一套结论；",
+            "- 若依据不足，要明确说明信息缺口，不要假装已经验证完成。",
+        ]
+        if instruction.reason:
+            checklist.insert(1, f"- 额外提醒：{instruction.reason}")
+
+        yield {"type": "thought", "content": "✅ 正在核对工具结果与回答一致性…"}
+        state.messages.append({"role": "system", "content": "\n".join(checklist)})
+        state.verification_done = True
+        state.needs_verification = False
+        state.phase = "tool_result"
         return
         yield  # pragma: no cover
 

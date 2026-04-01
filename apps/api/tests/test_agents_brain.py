@@ -22,6 +22,7 @@ from app.agents.core.instructions import (
     FinishInstruction,
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
+    VerifyResultInstruction,
 )
 from app.agents.core.state import AgentState
 
@@ -209,6 +210,30 @@ class TestAgentBrainToolResultPhase:
     def test_custom_max_steps_respected(self):
         brain = AgentBrain(max_steps=10)
         state = make_state(phase="tool_result", step_count=9)
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+    def test_needs_verification_returns_verify_instruction(self):
+        brain = AgentBrain(max_steps=10)
+        state = make_state(
+            phase="tool_result",
+            step_count=1,
+            needs_verification=True,
+            verification_done=False,
+            verification_reason="check citations",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, VerifyResultInstruction)
+        assert result.reason == "check citations"
+
+    def test_verification_done_returns_call_llm(self):
+        brain = AgentBrain(max_steps=10)
+        state = make_state(
+            phase="tool_result",
+            step_count=1,
+            needs_verification=False,
+            verification_done=True,
+        )
         result = brain.decide(state)
         assert isinstance(result, CallLLMInstruction)
 

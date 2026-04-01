@@ -112,3 +112,38 @@ async def test_build_system_prompt_uses_guide_manifest_instead_of_body(
     assert "Guide Skill" not in prompt  # display name is not part of the manifest
     assert "Use the special workflow." not in prompt
     assert "先调用 `read_skill_guide` 读取正文" in prompt
+
+
+@pytest.mark.asyncio
+async def test_build_system_prompt_groups_user_memories_by_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("app.agents.memory.get_memory_doc_content", lambda: "")
+
+    async def _empty_diary(limit: int = 3) -> str:
+        return ""
+
+    monkeypatch.setattr("app.agents.memory.get_recent_diary_notes", _empty_diary)
+
+    prompt = await build_system_prompt(
+        user_memories=[
+            {"key": "preferred_ai_name", "value": "Lyra", "confidence": 0.9, "memory_type": "preference", "memory_kind": "preference"},
+            {"key": "writing_style", "value": "简洁", "confidence": 0.9, "memory_type": "preference", "memory_kind": "preference"},
+            {"key": "professional_background", "value": "AI infra engineer", "confidence": 0.8, "memory_type": "fact", "memory_kind": "profile"},
+            {"key": "current_research_topic", "value": "Agent runtime", "confidence": 0.8, "memory_type": "fact", "memory_kind": "project_state"},
+            {"key": "project_docs_url", "value": "https://example.com/spec", "confidence": 0.8, "memory_type": "fact", "memory_kind": "reference"},
+        ],
+        notebook_summary=None,
+        db=None,
+        active_skills=[],
+    )
+
+    assert "用户回答偏好与协作习惯" in prompt
+    assert "用户长期背景画像" in prompt
+    assert "用户当前阶段上下文" in prompt
+    assert "用户常用参考入口" in prompt
+    assert "writing_style: 简洁" in prompt
+    assert "professional_background: AI infra engineer" in prompt
+    assert "current_research_topic: Agent runtime" in prompt
+    assert "project_docs_url: https://example.com/spec" in prompt
+    assert "preferred_ai_name" not in prompt

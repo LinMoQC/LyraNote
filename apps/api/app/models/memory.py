@@ -21,6 +21,8 @@ class UserMemory(Base):
     confidence: Mapped[float] = mapped_column(Float, default=0.5)
     # preference（偏好）| fact（事实）| skill（技能画像）
     memory_type: Mapped[str] = mapped_column(String(20), default="preference", nullable=False)
+    # preference | profile | project_state | reference
+    memory_kind: Mapped[str] = mapped_column(String(32), default="preference", nullable=False)
     access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_accessed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

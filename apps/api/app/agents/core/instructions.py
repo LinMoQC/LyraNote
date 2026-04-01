@@ -49,6 +49,14 @@ class CompressContextInstruction:
 
 
 @dataclass
+class VerifyResultInstruction:
+    """Insert a lightweight verification step before the final answer."""
+
+    reason: str = ""
+    type: str = "verify_result"
+
+
+@dataclass
 class RequestHumanApprovalInstruction:
     """Pause the loop and request human approval for high-risk tool calls."""
 
@@ -71,6 +79,7 @@ Instruction = Union[
     CallRAGInstruction,
     StreamAnswerInstruction,
     CompressContextInstruction,
+    VerifyResultInstruction,
     RequestHumanApprovalInstruction,
     FinishInstruction,
 ]

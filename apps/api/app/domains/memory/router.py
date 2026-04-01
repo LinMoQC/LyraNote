@@ -15,6 +15,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 from sqlalchemy import select
 
+from app.agents.memory.extraction import infer_memory_kind
 from app.dependencies import CurrentUser, DbDep
 from app.exceptions import BadRequestError, NotFoundError
 from app.models import AgentEvaluation, AgentReflection, UserMemory
@@ -32,6 +33,18 @@ from .schemas import (
 )
 
 router = APIRouter(tags=["memory"])
+
+
+def _resolve_memory_kind(memory: UserMemory) -> str:
+    kind = (memory.memory_kind or "").strip().lower()
+    if kind:
+        return kind
+    return infer_memory_kind(
+        memory.key,
+        memory.memory_type or "fact",
+        ttl_days=None,
+        source=memory.source or "conversation",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -109,6 +122,7 @@ async def list_memories(db: DbDep, current_user: CurrentUser) -> ApiResponse[Mem
             value=m.value,
             confidence=round(m.confidence or 0.5, 2),
             memory_type=mem_type,
+            memory_kind=_resolve_memory_kind(m),
             access_count=m.access_count or 0,
             last_accessed_at=m.last_accessed_at.isoformat() if m.last_accessed_at else None,
             expires_at=m.expires_at.isoformat() if m.expires_at else None,
@@ -190,6 +204,7 @@ async def update_memory(
         value=memory.value,
         confidence=memory.confidence,
         memory_type=memory.memory_type or "preference",
+        memory_kind=_resolve_memory_kind(memory),
         access_count=memory.access_count or 0,
         last_accessed_at=memory.last_accessed_at.isoformat() if memory.last_accessed_at else None,
         expires_at=memory.expires_at.isoformat() if memory.expires_at else None,

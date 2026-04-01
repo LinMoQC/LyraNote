@@ -30,6 +30,7 @@ from app.agents.core.instructions import (
     Instruction,
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
+    VerifyResultInstruction,
 )
 from app.agents.core.state import AgentState
 
@@ -121,6 +122,8 @@ class AgentBrain:
                 return StreamAnswerInstruction()
             if state.terminal_tool_called:
                 return StreamAnswerInstruction()
+            if state.needs_verification and not state.verification_done:
+                return VerifyResultInstruction(reason=state.verification_reason)
             # Never compress when MCP tools have been called: MCP responses (e.g.
             # read_me) are often large but are critical context for the next step
             # (e.g. create_view).  Compressing them would strip the instructions

@@ -587,14 +587,16 @@ async def _synthesize_report(
         "- 直接从报告正文内容开始，第一行必须是 ## 章节标题或报告主体文字\n\n"
         f"{_GENUI_PROTOCOL_REPORT}"
     )
-    # Only inject factual background memories (occupation, research preferences),
-    # exclude identity/persona memories (preferred_ai_name, user_role, communication_tone)
+    # Only inject research-relevant memories. Exclude identity/persona memories,
     # which cause the report to adopt a letter/greeting format.
     _PERSONA_KEYS = {"preferred_ai_name", "user_role", "communication_tone", "ai_name"}
     if user_memories:
         factual_memories = [
             m for m in user_memories
-            if str(m.get("key", "")).strip() not in _PERSONA_KEYS
+            if (
+                str(m.get("key", "")).strip() not in _PERSONA_KEYS
+                and str(m.get("memory_kind", "")).strip().lower() in {"preference", "project_state", "reference"}
+            )
         ]
         if factual_memories:
             mem_lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in factual_memories)
