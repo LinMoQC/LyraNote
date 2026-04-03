@@ -9,12 +9,14 @@ Design principle (Agentic):
   The LLM is the sole decision-maker on whether to call tools.
   All registered tools (including search_notebook_knowledge) are passed
   to the LLM as callable options.  If the LLM chooses not to call any tool
-  after seeing the full tool list, that decision is trusted and the answer
-  is streamed directly.
+  after seeing the full tool list, that decision is usually trusted and the
+  answer is streamed directly.
 
-  The only exception is the fast-path when has_tools=False: with no tools
-  available there is no point running a tool-planning LLM call, so we go
-  straight to RAG to give the answer context.
+  Exceptions:
+    - has_tools=False fast-path: with no tools available there is no point
+      running a tool-planning LLM call, so we go straight to RAG.
+    - knowledge-seeking queries with no tool results: fall back to passive
+      RAG so the answer is still grounded in notebook context.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import uuid
 
 from app.agents.core.instructions import (
     CallLLMInstruction,
+    ClarifyInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
     CompressContextInstruction,
@@ -53,6 +56,12 @@ CONTEXT_TOKEN_THRESHOLD = 8000
 # Diminishing-returns detection (P6): abort the loop if the model generates
 # fewer than _LOW_OUTPUT_TOKEN_THRESHOLD tokens for this many turns in a row.
 _DIMINISHING_RETURNS_MAX_TURNS = 3
+_KNOWLEDGE_QUERY_MIN_CHARS = 8
+
+
+def _is_knowledge_query(query: str) -> bool:
+    """Treat substantive prompts as knowledge-seeking and worth a RAG fallback."""
+    return len(query.strip()) >= _KNOWLEDGE_QUERY_MIN_CHARS
 
 
 class AgentBrain:
@@ -106,7 +115,12 @@ class AgentBrain:
 
                 state.pending_tool_calls = fresh_calls
                 return CallToolsInstruction(tool_calls=fresh_calls)
-            # LLM chose not to call any tool — trust that decision and stream.
+            if state.execution_path == "clarify":
+                return ClarifyInstruction(reason=state.route_reason)
+            if state.tool_results:
+                return StreamAnswerInstruction()
+            if _is_knowledge_query(state.query):
+                return CallRAGInstruction(query=state.query)
             return StreamAnswerInstruction()
 
         if phase == "tool_result":
@@ -122,7 +136,7 @@ class AgentBrain:
             # (e.g. create_view).  Compressing them would strip the instructions
             # that tell the LLM what to do next, causing the loop to stall.
             mcp_was_called = any("__" in key for key in state.tool_result_cache)
-            if not mcp_was_called:
+            if not mcp_was_called and not state.context_compressed:
                 token_est = state.estimate_tokens()
                 # Layer 2 (snipCompact): cheap, no LLM call — fires first.
                 if (

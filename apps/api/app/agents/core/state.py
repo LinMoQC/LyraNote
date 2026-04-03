@@ -47,6 +47,8 @@ class AgentState:
     query: str = ""
     global_search: bool = False
     active_scene: str = "research"
+    execution_path: str = "direct_answer"
+    route_reason: str = ""
     context_compressed: bool = False
     context_budget_chars: int = 6000
 

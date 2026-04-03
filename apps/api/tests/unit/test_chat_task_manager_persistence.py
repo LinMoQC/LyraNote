@@ -16,6 +16,9 @@ async def test_snapshot_list_reassignment_persists_all_agent_steps_and_ui_elemen
         username="agent-steps-user",
         email="agent-steps@example.com",
     )
+    db_session.add(user)
+    await db_session.commit()
+
     conversation = Conversation(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -29,7 +32,7 @@ async def test_snapshot_list_reassignment_persists_all_agent_steps_and_ui_elemen
         content="streaming",
         status="streaming",
     )
-    db_session.add_all([user, conversation, message])
+    db_session.add_all([conversation, message])
     await db_session.commit()
 
     agent_steps = [

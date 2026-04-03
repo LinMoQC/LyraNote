@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models import (
     Base,
+    Conversation,
+    MessageGeneration,
     ObservabilityLLMCall,
     ObservabilityRun,
     ObservabilitySpan,
@@ -55,6 +57,27 @@ async def test_monitoring_endpoints_return_overview_trace_detail_and_workers(
     conversation_id = uuid.uuid4()
     generation_id = uuid.uuid4()
     now = datetime.now(UTC) - timedelta(seconds=3)
+
+    conversation = Conversation(
+        id=conversation_id,
+        user_id=user.id,
+        title="Monitoring trace test",
+        source="chat",
+    )
+    db_session.add(conversation)
+    await db_session.commit()
+
+    generation = MessageGeneration(
+        id=generation_id,
+        conversation_id=conversation_id,
+        user_message_id=uuid.uuid4(),
+        assistant_message_id=uuid.uuid4(),
+        user_id=user.id,
+        status="completed",
+        model="gpt-4o-mini",
+    )
+    db_session.add(generation)
+    await db_session.commit()
 
     run = await create_observability_run(
         db_session,
