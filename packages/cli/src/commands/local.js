@@ -5,13 +5,27 @@ import path from 'path';
 import chalk from 'chalk';
 import { section, log, warn, info, printAccessInfo, waitTcp, tcpReady } from '../utils/ui.js';
 import { checkCommand, checkPort, prompt, exec, execQ } from '../utils/proc.js';
-import { ROOT_DIR, API_DIR, WEB_DIR } from '../utils/paths.js';
+import { ROOT_DIR, API_DIR, WEB_DIR, MONITORING_DIR } from '../utils/paths.js';
 
 const VENV = path.join(API_DIR, '.venv');
-const APP_CONTAINER_NAMES = ['lyranote-api-1', 'lyranote-worker-1', 'lyranote-beat-1', 'lyranote-web-1'];
+const APP_CONTAINER_NAMES = ['lyranote-api-1', 'lyranote-worker-1', 'lyranote-beat-1', 'lyranote-web-1', 'lyranote-monitoring-1'];
+const MONITORING_PORT = 3100;
+const MONITORING_ORIGIN = `http://localhost:${MONITORING_PORT}`;
 
 function shQuote(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function mergeOrigins(existing, nextOrigin) {
+  const origins = String(existing || '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+
+  if (!origins.includes(nextOrigin)) {
+    origins.push(nextOrigin);
+  }
+  return origins.join(',');
 }
 
 function listPidsByPattern(pattern) {
@@ -69,8 +83,8 @@ async function cleanupStaleProcesses() {
 
   if (runningContainers.length) {
     warn(`检测到残留应用容器：${runningContainers.join(', ')}`);
-    try { exec('docker compose stop api worker beat web', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' }); } catch { /* ignore */ }
-    try { exec('docker compose -f docker-compose.prod.yml stop api worker beat web', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' }); } catch { /* ignore */ }
+    try { exec('docker compose stop api worker beat web monitoring', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' }); } catch { /* ignore */ }
+    try { exec('docker compose -f docker-compose.prod.yml stop api worker beat web monitoring', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' }); } catch { /* ignore */ }
     log('已停止残留应用层容器（保留数据层容器）');
   } else {
     info('未检测到残留应用层容器');
@@ -82,6 +96,7 @@ async function cleanupStaleProcesses() {
     { label: 'API', pids: listPidsByPattern(`${uvicorn} app.main:app`) },
     { label: 'Celery Worker', pids: listPidsByPattern(`${celery} -A app.workers.tasks.celery_app worker`) },
     { label: 'Celery Beat', pids: listPidsByPattern(`${celery} -A app.workers.tasks.celery_app beat`) },
+    { label: 'Monitoring', pids: listPidsByPattern('next dev --port 3100') },
   ];
 
   let cleaned = false;
@@ -99,6 +114,7 @@ async function cleanupStaleProcesses() {
 
   await cleanupWorkspacePort(8000, 'FastAPI');
   await cleanupWorkspacePort(3000, 'Next.js');
+  await cleanupWorkspacePort(MONITORING_PORT, 'Monitoring');
 
   if (!cleaned) {
     info('未检测到残留 API / Worker / Beat 进程');
@@ -183,16 +199,33 @@ export async function startLocal() {
   // ── 前端依赖 ──
   section('前端依赖');
   const s2 = ora('pnpm install...').start();
-  exec('pnpm install --silent', { shell: true, cwd: WEB_DIR, stdio: 'ignore' });
+  exec('pnpm install --silent', { shell: true, cwd: ROOT_DIR, stdio: 'ignore' });
   s2.succeed('前端依赖已就绪');
 
   // ── 启动 TUI + 进程 ──
   section('启动应用进程');
   await checkPort(8000, 'FastAPI');
   await checkPort(3000, 'Next.js');
+  await checkPort(MONITORING_PORT, 'Monitoring');
 
   const uvicorn = path.join(VENV, 'bin', 'uvicorn');
   const celery  = path.join(VENV, 'bin', 'celery');
+  const apiEnvPath = path.join(API_DIR, '.env');
+  const apiEnvContent = fs.readFileSync(apiEnvPath, 'utf8');
+  const envFromFile = Object.fromEntries(
+    apiEnvContent
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#') && line.includes('='))
+      .map((line) => {
+        const index = line.indexOf('=');
+        return [line.slice(0, index).trim(), line.slice(index + 1).trim()];
+      })
+  );
+  const apiCorsOrigins = mergeOrigins(
+    process.env.CORS_ORIGINS || envFromFile.CORS_ORIGINS || 'http://localhost:3000',
+    MONITORING_ORIGIN
+  );
 
   printAccessInfo();
 
@@ -203,6 +236,9 @@ export async function startLocal() {
       command: uvicorn,
       args: ['app.main:app', '--host', '0.0.0.0', '--port', '8000', '--reload'],
       cwd: API_DIR,
+      env: {
+        CORS_ORIGINS: apiCorsOrigins,
+      },
     },
     {
       name: 'worker',
@@ -224,6 +260,17 @@ export async function startLocal() {
       command: 'pnpm',
       args: ['dev'],
       cwd: WEB_DIR,
+    },
+    {
+      name: 'monitoring',
+      label: 'Monitoring',
+      command: 'pnpm',
+      args: ['dev', '--port', String(MONITORING_PORT)],
+      cwd: MONITORING_DIR,
+      env: {
+        NEXT_PUBLIC_API_BASE_URL: 'http://localhost:8000/api/v1',
+        MONITORING_BASE_PATH: '/ops',
+      },
     },
   ]);
 }

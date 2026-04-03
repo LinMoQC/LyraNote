@@ -16,6 +16,7 @@ import json
 import logging
 import operator
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Annotated, TypedDict
 from uuid import UUID
@@ -28,6 +29,16 @@ from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.core.genui_protocol import GENUI_PROTOCOL_REPORT as _GENUI_PROTOCOL_REPORT
+from app.services.monitoring_service import (
+    build_text_snapshot,
+    estimate_message_tokens,
+    estimate_tokens,
+    record_completed_llm_call,
+    record_completed_span,
+    record_completed_tool_call,
+    traced_span,
+    utcnow,
+)
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -339,7 +350,14 @@ async def generate_clarifying_questions(query: str, client: AsyncOpenAI, model: 
     ]
 
 
-async def _plan(query: str, client: AsyncOpenAI, model: str, queries_per_dim: int = 2, clarification_context: list[dict] | None = None) -> dict:
+async def _plan(
+    query: str,
+    client: AsyncOpenAI,
+    model: str,
+    queries_per_dim: int = 2,
+    clarification_context: list[dict] | None = None,
+    db: AsyncSession | None = None,
+) -> dict:
     """
     Generate a structured research plan with a 4-dimension search matrix.
     Returns: {research_goal, evaluation_criteria, search_matrix, title}
@@ -362,43 +380,62 @@ async def _plan(query: str, client: AsyncOpenAI, model: str, queries_per_dim: in
         )
         example_arr = json.dumps([f"查询{i+1}" for i in range(n)], ensure_ascii=False)
 
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是一位资深研究规划师，擅长将模糊问题拆解为精准、深度的研究子问题。\n\n"
+                "## 核心要求\n"
+                "1. **深度拆解**：不要简单重复用户的问题，要从不同角度深入挖掘\n"
+                "2. **具体化**：每个查询必须是精确的、可搜索的、包含明确方向的问题\n"
+                "3. **多层次**：涵盖基础原理→应用实践→前沿进展→对比评价等不同深度\n\n"
+                "## 每个维度的查询要求\n"
+                + dim_desc
+                + "## 输出格式\n"
+                "只返回一个JSON对象，不含任何其他文字：\n"
+                '{"title": "研究报告标题（学术风格，10-25字，不要直接复述用户问题，而是提炼出研究主题的本质，例如用户问\'什么是ReAct\'应生成\'ReAct框架：推理与行动的协同机制\'）",'
+                '"research_goal": "一句话描述研究目标（需包含具体研究范围和预期产出）",'
+                '"evaluation_criteria": ["标准1", "标准2", "标准3"],'
+                '"search_matrix": {'
+                f'"concept": {example_arr},'
+                f'"latest": {example_arr},'
+                f'"evidence": {example_arr},'
+                f'"controversy": {example_arr}'
+                "}}"
+            ),
+        },
+        {"role": "user", "content": f"研究主题：{query}" + (
+            "\n\n用户研究偏好（请根据以下偏好调整研究侧重、深度和报告风格）：\n"
+            + "\n".join(f"- {item['question']}：{item['answer']}" for item in clarification_context if item.get("answer"))
+            if clarification_context else ""
+        )},
+    ]
+    started_at = utcnow()
+    started = time.monotonic()
     resp = await client.chat.completions.create(
         model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "你是一位资深研究规划师，擅长将模糊问题拆解为精准、深度的研究子问题。\n\n"
-                    "## 核心要求\n"
-                    "1. **深度拆解**：不要简单重复用户的问题，要从不同角度深入挖掘\n"
-                    "2. **具体化**：每个查询必须是精确的、可搜索的、包含明确方向的问题\n"
-                    "3. **多层次**：涵盖基础原理→应用实践→前沿进展→对比评价等不同深度\n\n"
-                    "## 每个维度的查询要求\n"
-                    + dim_desc
-                    + "## 输出格式\n"
-                    "只返回一个JSON对象，不含任何其他文字：\n"
-                    '{"title": "研究报告标题（学术风格，10-25字，不要直接复述用户问题，而是提炼出研究主题的本质，例如用户问\'什么是ReAct\'应生成\'ReAct框架：推理与行动的协同机制\'）",'
-                    '"research_goal": "一句话描述研究目标（需包含具体研究范围和预期产出）",'
-                    '"evaluation_criteria": ["标准1", "标准2", "标准3"],'
-                    '"search_matrix": {'
-                    f'"concept": {example_arr},'
-                    f'"latest": {example_arr},'
-                    f'"evidence": {example_arr},'
-                    f'"controversy": {example_arr}'
-                    "}}"
-                ),
-            },
-            {"role": "user", "content": f"研究主题：{query}" + (
-                "\n\n用户研究偏好（请根据以下偏好调整研究侧重、深度和报告风格）：\n"
-                + "\n".join(f"- {item['question']}：{item['answer']}" for item in clarification_context if item.get("answer"))
-                if clarification_context else ""
-            )},
-        ],
+        messages=messages,
         temperature=0.4,
         max_tokens=800 if n <= 2 else 1200,
         response_format={"type": "json_object"},
     )
+    finished_at = utcnow()
     raw = _strip_fences((resp.choices[0].message.content or "").strip())
+    if db is not None:
+        await record_completed_llm_call(
+            db,
+            call_type="plan",
+            prompt=messages,
+            response=raw,
+            model=model,
+            finish_reason=getattr(resp.choices[0], "finish_reason", None),
+            usage=resp,
+            metadata={"clarification_count": len(clarification_context or [])},
+            input_tokens=estimate_message_tokens(messages),
+            started_at=started_at,
+            finished_at=finished_at,
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
     try:
         result = json.loads(raw)
         matrix = result.get("search_matrix", {})
@@ -468,6 +505,8 @@ async def _research_one(
     raw_context = ""
 
     # 1. Internal RAG
+    rag_started_at = utcnow()
+    rag_started = time.monotonic()
     try:
         if notebook_id:
             chunks = await retrieve_chunks(query, notebook_id, db, top_k=5)
@@ -477,6 +516,21 @@ async def _research_one(
             )
     except Exception:
         chunks = []
+    rag_finished_at = utcnow()
+    await record_completed_tool_call(
+        db,
+        tool_name="research.internal_rag",
+        tool_args={"query": query, "dimension": dimension, "top_k": 5, "notebook_id": notebook_id},
+        tool_result={"hit_count": len(chunks)},
+        result_count=len(chunks),
+        metadata={
+            "query_snapshot": build_text_snapshot(query),
+            "dimension": dimension,
+        },
+        started_at=rag_started_at,
+        finished_at=rag_finished_at,
+        duration_ms=int((time.monotonic() - rag_started) * 1000),
+    )
 
     if chunks:
         best_score = max(c.get("score", 0.0) for c in chunks)
@@ -496,6 +550,8 @@ async def _research_one(
 
     # 2. Web search — always for latest/controversy; fallback for others
     if (not raw_context or dimension in WEB_FIRST_DIMS) and tavily_api_key:
+        web_started_at = utcnow()
+        web_started = time.monotonic()
         try:
             web_results = await web_search_sync(query, tavily_api_key, max_results=max_web_results)
             if web_results:
@@ -513,32 +569,82 @@ async def _research_one(
                     }
                     for r in web_results[:3]
                 ]
+            web_status = "success"
+            web_error_message = None
         except Exception:
-            pass
+            web_results = []
+            web_status = "error"
+            web_error_message = "web_search_failed"
+        await record_completed_tool_call(
+            db,
+            tool_name="research.web_search",
+            tool_args={"query": query, "dimension": dimension, "max_results": max_web_results},
+            tool_result={"result_count": len(web_results), "titles": [item.get("title", "") for item in web_results[:5]]},
+            status=web_status,
+            result_count=len(web_results),
+            error_message=web_error_message,
+            metadata={"dimension": dimension},
+            started_at=web_started_at,
+            finished_at=utcnow(),
+            duration_ms=int((time.monotonic() - web_started) * 1000),
+        )
 
     if not raw_context:
         return Learning(sub_question=query, content="未找到相关信息", dimension=dimension)
 
     # 3. Extract learning with dimension-specific prompt
     system_prompt = _DIMENSION_PROMPTS.get(dimension, _DIMENSION_PROMPTS["concept"])
+    extraction_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"查询：{query}\n\n资料：\n{raw_context[:3500]}"},
+    ]
+    llm_started_at = utcnow()
+    llm_started = time.monotonic()
     try:
         resp = await client.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"查询：{query}\n\n资料：\n{raw_context[:3500]}"},
-            ],
+            messages=extraction_messages,
             temperature=0.3,
             max_tokens=400,
             response_format={"type": "json_object"},
         )
+        llm_finished_at = utcnow()
         raw = _strip_fences((resp.choices[0].message.content or "").strip())
         _extract_log.debug("_research_one raw LLM output for %r: %r", query, raw[:300])
         content, counterpoint = _extract_finding(raw, max_chars=learning_max_chars)
+        await record_completed_llm_call(
+            db,
+            call_type="search_extract",
+            prompt=extraction_messages,
+            response=raw,
+            model=model,
+            finish_reason=getattr(resp.choices[0], "finish_reason", None),
+            usage=resp,
+            metadata={"dimension": dimension},
+            input_tokens=estimate_message_tokens(extraction_messages),
+            started_at=llm_started_at,
+            finished_at=llm_finished_at,
+            duration_ms=int((time.monotonic() - llm_started) * 1000),
+        )
     except Exception as exc:
         _extract_log.warning("LLM extraction call failed for %r: %s", query, exc)
         content = raw_context[:learning_max_chars]
         counterpoint = ""
+        await record_completed_llm_call(
+            db,
+            call_type="search_extract",
+            prompt=extraction_messages,
+            response={"error": str(exc)},
+            model=model,
+            status="error",
+            error_message=str(exc),
+            metadata={"dimension": dimension},
+            input_tokens=estimate_message_tokens(extraction_messages),
+            output_tokens=0,
+            started_at=llm_started_at,
+            finished_at=utcnow(),
+            duration_ms=int((time.monotonic() - llm_started) * 1000),
+        )
 
     return Learning(
         sub_question=query,
@@ -559,6 +665,7 @@ async def _synthesize_report(
     user_memories: list[dict] | None = None,
     report_words: str = "2000-4000",
     report_max_tokens: int = 8192,
+    db: AsyncSession | None = None,
 ):
     """Stream the structured research report token by token."""
     criteria_str = "、".join(evaluation_criteria) if evaluation_criteria else "数据时效性、来源权威性"
@@ -587,14 +694,16 @@ async def _synthesize_report(
         "- 直接从报告正文内容开始，第一行必须是 ## 章节标题或报告主体文字\n\n"
         f"{_GENUI_PROTOCOL_REPORT}"
     )
-    # Only inject factual background memories (occupation, research preferences),
-    # exclude identity/persona memories (preferred_ai_name, user_role, communication_tone)
+    # Only inject research-relevant memories. Exclude identity/persona memories,
     # which cause the report to adopt a letter/greeting format.
     _PERSONA_KEYS = {"preferred_ai_name", "user_role", "communication_tone", "ai_name"}
     if user_memories:
         factual_memories = [
             m for m in user_memories
-            if str(m.get("key", "")).strip() not in _PERSONA_KEYS
+            if (
+                str(m.get("key", "")).strip() not in _PERSONA_KEYS
+                and str(m.get("memory_kind", "")).strip().lower() in {"preference", "project_state", "reference"}
+            )
         ]
         if factual_memories:
             mem_lines = "\n".join(f"  - {m['key']}: {m['value']}" for m in factual_memories)
@@ -609,6 +718,8 @@ async def _synthesize_report(
     for _round in range(1 + MAX_CONTINUATIONS):
         accumulated = ""
         finish_reason = None
+        round_started_at = utcnow()
+        round_started = time.monotonic()
 
         stream = await client.chat.completions.create(
             model=model,
@@ -626,6 +737,22 @@ async def _synthesize_report(
                 if chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
 
+        if db is not None:
+            await record_completed_llm_call(
+                db,
+                call_type="synthesis",
+                prompt=messages,
+                response={"content": accumulated},
+                model=model,
+                finish_reason=finish_reason,
+                metadata={"round": _round + 1, "learning_count": len(learnings)},
+                input_tokens=estimate_message_tokens(messages),
+                output_tokens=estimate_tokens(accumulated),
+                started_at=round_started_at,
+                finished_at=utcnow(),
+                duration_ms=int((time.monotonic() - round_started) * 1000),
+            )
+
         if finish_reason != "length":
             break
 
@@ -639,6 +766,7 @@ async def _generate_deliverable(
     learnings: list[dict],
     client: AsyncOpenAI,
     model: str,
+    db: AsyncSession | None = None,
 ) -> dict:
     """
     Generate the delivery card data in one LLM call:
@@ -646,31 +774,49 @@ async def _generate_deliverable(
     """
     all_citations_count = sum(len(l.get("citations", [])) for l in learnings)
 
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "根据研究报告，生成结构化交付数据。只返回JSON，格式：\n"
+                '{"title": "报告标题（10-20字）",'
+                '"summary": "执行摘要（150-200字，概括核心结论，面向决策者）",'
+                '"next_questions": ["追问1（≤15字）", "追问2", "追问3"],'
+                '"citation_table": ['
+                '{"conclusion": "核心结论（≤30字）", "grade": "strong|medium|weak", "source": "来源名称"}'
+                "]}"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"研究问题：{query}\n\n研究报告：\n{full_report[:6000]}",
+        },
+    ]
+    started_at = utcnow()
+    started = time.monotonic()
     resp = await client.chat.completions.create(
         model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "根据研究报告，生成结构化交付数据。只返回JSON，格式：\n"
-                    '{"title": "报告标题（10-20字）",'
-                    '"summary": "执行摘要（150-200字，概括核心结论，面向决策者）",'
-                    '"next_questions": ["追问1（≤15字）", "追问2", "追问3"],'
-                    '"citation_table": ['
-                    '{"conclusion": "核心结论（≤30字）", "grade": "strong|medium|weak", "source": "来源名称"}'
-                    "]}"
-                ),
-            },
-            {
-                "role": "user",
-                "content": f"研究问题：{query}\n\n研究报告：\n{full_report[:6000]}",
-            },
-        ],
+        messages=messages,
         temperature=0.3,
         max_tokens=700,
         response_format={"type": "json_object"},
     )
     raw = _strip_fences((resp.choices[0].message.content or "").strip())
+    if db is not None:
+        await record_completed_llm_call(
+            db,
+            call_type="deliverable",
+            prompt=messages,
+            response=raw,
+            model=model,
+            finish_reason=getattr(resp.choices[0], "finish_reason", None),
+            usage=resp,
+            metadata={"learning_count": len(learnings)},
+            input_tokens=estimate_message_tokens(messages),
+            started_at=started_at,
+            finished_at=utcnow(),
+            duration_ms=int((time.monotonic() - started) * 1000),
+        )
     try:
         result = json.loads(raw)
         result["citation_count"] = all_citations_count
@@ -711,11 +857,17 @@ def create_research_graph(
     async def plan_node(state: ResearchState) -> dict:
         cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         await adispatch_custom_event("plan", {"status": "planning"})
-        plan_result = await _plan(
-            state["query"], client, state["model"],
-            queries_per_dim=cfg.queries_per_dim,
-            clarification_context=state.get("clarification_context"),
-        )
+        async with traced_span(
+            db,
+            "research.plan",
+            metadata={"query_snapshot": build_text_snapshot(state["query"])},
+        ):
+            plan_result = await _plan(
+                state["query"], client, state["model"],
+                queries_per_dim=cfg.queries_per_dim,
+                clarification_context=state.get("clarification_context"),
+                db=db,
+            )
         all_queries = [q for qs in plan_result["search_matrix"].values() for q in qs]
         report_title = plan_result.get("title") or state["query"][:25]
         await adispatch_custom_event("plan", {
@@ -738,18 +890,23 @@ def create_research_graph(
         query: str = state["query"]
         dimension: str = state["dimension"]
         await adispatch_custom_event("searching", {"query": query, "dimension": dimension})
-        learning = await _research_one(
-            query=query,
-            dimension=dimension,
-            notebook_id=state["notebook_id"],
-            user_id=state["user_id"],
-            db=db,
-            client=client,
-            tavily_api_key=tavily_api_key,
-            model=state["model"],
-            max_web_results=cfg.web_results,
-            learning_max_chars=cfg.learning_max_chars,
-        )
+        async with traced_span(
+            db,
+            "research.search",
+            metadata={"query_snapshot": build_text_snapshot(query), "dimension": dimension},
+        ):
+            learning = await _research_one(
+                query=query,
+                dimension=dimension,
+                notebook_id=state["notebook_id"],
+                user_id=state["user_id"],
+                db=db,
+                client=client,
+                tavily_api_key=tavily_api_key,
+                model=state["model"],
+                max_web_results=cfg.web_results,
+                learning_max_chars=cfg.learning_max_chars,
+            )
         await adispatch_custom_event("learning", {
             "question": query,
             "content": learning.content,
@@ -764,18 +921,24 @@ def create_research_graph(
         cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         await adispatch_custom_event("writing", {})
         full_report = ""
-        async for token in _synthesize_report(
-            state["query"],
-            state["learnings"],
-            client,
-            state["model"],
-            evaluation_criteria=state.get("evaluation_criteria"),
-            user_memories=state.get("user_memories"),
-            report_words=cfg.report_words,
-            report_max_tokens=cfg.report_max_tokens,
+        async with traced_span(
+            db,
+            "research.synthesis",
+            metadata={"learning_count": len(state["learnings"])},
         ):
-            await adispatch_custom_event("token", {"token": token})
-            full_report += token
+            async for token in _synthesize_report(
+                state["query"],
+                state["learnings"],
+                client,
+                state["model"],
+                evaluation_criteria=state.get("evaluation_criteria"),
+                user_memories=state.get("user_memories"),
+                report_words=cfg.report_words,
+                report_max_tokens=cfg.report_max_tokens,
+                db=db,
+            ):
+                await adispatch_custom_event("token", {"token": token})
+                full_report += token
         return {"full_report": full_report}
 
     async def deliverable_node(state: ResearchState) -> dict:
@@ -788,6 +951,7 @@ def create_research_graph(
             state["learnings"],
             client,
             state["model"],
+            db=db,
         )
         # Use plan-generated title as primary; deliverable title as fallback
         report_title = state.get("report_title") or d.get("title") or state["query"][:25]

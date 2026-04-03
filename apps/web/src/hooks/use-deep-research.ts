@@ -6,7 +6,7 @@ import { useDeepResearchStore } from "@/store/use-deep-research-store";
 import { submitMessageFeedback } from "@/services/feedback-service";
 import { saveNote } from "@/services/note-service";
 import { getMessages } from "@/services/conversation-service";
-import { getClarifyingQuestions } from "@/services/ai-service";
+import { getClarifyingQuestions, saveDeepResearchSources } from "@/services/ai-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { DrProgress } from "@/components/deep-research/deep-research-progress";
 import type { ClarifyQuestion } from "@/components/deep-research/dr-types";
@@ -243,6 +243,24 @@ export function useDeepResearch({
     }
   }, [t, tc]);
 
+  const handleSaveSources = useCallback(async () => {
+    const state = getDrState();
+    if (!state.taskId) throw new Error("No deep research task");
+
+    try {
+      const result = await saveDeepResearchSources(state.taskId, state.notebookId);
+      notifySuccess(
+        t("savedSources", {
+          created: result.created_count,
+          skipped: result.skipped_count,
+        }),
+      );
+    } catch (e) {
+      notifyError(tc("saveFailed"));
+      throw e;
+    }
+  }, [t, tc]);
+
   const handleDrRate = useCallback(async (rating: "like" | "dislike") => {
     const msgId = deliverableMessageIdRef.current;
     if (!msgId) return;
@@ -262,8 +280,10 @@ export function useDeepResearch({
     drProgress,
     drPersistedRef,
     deliverableMessageIdRef,
+    taskId: drStore.taskId,
     handleDeepResearch,
     handleSaveAsNote,
+    handleSaveSources,
     handleDrRate,
     setDrProgress,
     clarifyingState,

@@ -60,24 +60,68 @@ export function ChoiceCards({ choices, onSelect }: ChoiceCardsProps) {
 }
 
 const CHOICES_REGEX = /```choices\n([\s\S]*?)\n```/;
+const FLEXIBLE_CHOICES_REGEX = /```choices[^\n]*\n([\s\S]*?)\n```/i;
+const INCOMPLETE_CHOICES_REGEX = /```choices[^\n]*\n[\s\S]*$/i;
+
+function normalizeChoicesPayload(raw: string): string {
+  return raw.trim().replace(/,\s*([}\]])/g, "$1");
+}
+
+function isChoiceArray(value: unknown): value is Choice[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.every((item) =>
+      typeof item === "object"
+      && item !== null
+      && "label" in item
+      && "value" in item
+      && typeof item.label === "string"
+      && typeof item.value === "string"
+    );
+}
+
+function tryParseChoices(raw: string): Choice[] | null {
+  const candidates = [raw, normalizeChoicesPayload(raw)];
+  const trimmed = raw.trim();
+  const start = trimmed.indexOf("[");
+  const end = trimmed.lastIndexOf("]");
+
+  if (start !== -1 && end > start) {
+    const sliced = trimmed.slice(start, end + 1);
+    candidates.push(sliced, normalizeChoicesPayload(sliced));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (isChoiceArray(parsed)) return parsed;
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
 
 export function parseChoicesBlock(content: string): {
-  textBefore: string;
+  textContent: string;
   choices: Choice[] | null;
 } {
-  const match = CHOICES_REGEX.exec(content);
-  if (!match) return { textBefore: content, choices: null };
-
-  const textBefore = content.slice(0, match.index).trimEnd();
-  try {
-    const parsed = JSON.parse(match[1]);
-    if (!Array.isArray(parsed) || parsed.length === 0) return { textBefore: content, choices: null };
-    const valid = parsed.every((c: unknown) =>
-      typeof c === "object" && c !== null && "label" in c && "value" in c,
-    );
-    if (!valid) return { textBefore: content, choices: null };
-    return { textBefore, choices: parsed as Choice[] };
-  } catch {
-    return { textBefore: content, choices: null };
+  const match = FLEXIBLE_CHOICES_REGEX.exec(content) ?? CHOICES_REGEX.exec(content);
+  if (match) {
+    const before = content.slice(0, match.index).trimEnd();
+    const after = content.slice(match.index + match[0].length).trimStart();
+    const textContent = [before, after].filter(Boolean).join("\n\n");
+    return { textContent, choices: tryParseChoices(match[1]) };
   }
+
+  const incompleteMatch = INCOMPLETE_CHOICES_REGEX.exec(content);
+  if (incompleteMatch) {
+    return {
+      textContent: content.slice(0, incompleteMatch.index).trimEnd(),
+      choices: null,
+    };
+  }
+
+  return { textContent: content, choices: null };
 }

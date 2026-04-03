@@ -17,6 +17,8 @@ class SummarizeSkill(SkillBase):
             "当用户要求生成结构化输出时调用。"
         ),
         category="knowledge",
+        concurrency_safe=True,
+        max_result_chars=5000,
         thought_label="📝 正在生成摘要",
         config_schema={
             "type": "object",

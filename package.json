@@ -8,10 +8,12 @@
   "scripts": {
     "prepare": "husky",
     "dev": "turbo run dev --filter=@lyranote/web",
+    "dev:monitoring": "turbo run dev --filter=@lyranote/monitoring",
     "dev:all": "turbo run dev --filter=./apps/*",
     "build": "turbo run build",
     "test": "turbo run test",
     "test:web": "turbo run test --filter=@lyranote/web",
+    "test:monitoring": "turbo run test --filter=@lyranote/monitoring",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "docs:dev": "turbo run dev --filter=@lyranote/docs",

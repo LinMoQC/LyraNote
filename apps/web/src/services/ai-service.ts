@@ -9,7 +9,13 @@ import { AI, CONVERSATIONS, INSIGHTS, SOURCES } from "@/lib/api-routes";
 import { t } from "@/lib/i18n";
 import { mapArtifact } from "@/lib/api-mappers";
 import { authHeaderFromCookie, getErrorMessage, isAbortError } from "@/lib/request-error";
-import { CreateConversationResponseSchema } from "@/schemas/chat-api";
+import {
+  CreateConversationResponseSchema,
+  MessageGenerationCreateResponseSchema,
+  MessageGenerationStatusSchema,
+  type MessageGenerationCreateResponseDto,
+  type MessageGenerationStatusDto,
+} from "@/schemas/chat-api";
 import type { Artifact, CitationData, Message } from "@/types";
 
 // ─── Conversation history (stub — messages are managed client-side) ──────────
@@ -54,6 +60,7 @@ export async function getInlineSuggestion(context: string): Promise<string> {
 /** 流式 Agent 事件（SSE 推送的各类事件） */
 export interface AgentEvent {
   type: "token" | "reasoning" | "citations" | "done" | "thought" | "tool_call" | "tool_result" | "mind_map" | "diagram" | "mcp_result" | "note_created" | "speed" | "human_approve_required" | "error" | "ui_element" | "content_replace"
+  event_index?: number
   content?: string
   tool?: string
   input?: Record<string, unknown>
@@ -68,6 +75,8 @@ export interface AgentEvent {
   tps?: number
   tokens?: number
   tool_names?: string[]
+  /** True for system-emitted thoughts (verify, context_compress, synthesis) — mapped to icon+label by frontend */
+  is_system?: boolean
   /** Present on human_approve_required — the UUID to pass to the approve endpoint */
   approval_id?: string
   /** Present on human_approve_required — full list of pending MCP tool calls */
@@ -79,6 +88,157 @@ export interface AttachmentMeta {
   name: string
   type: string
   file_id: string
+}
+
+export interface MessageGenerationHandle {
+  generation_id: string
+  conversation_id: string
+  user_message_id: string
+  assistant_message_id: string
+}
+
+async function consumeGenerationStream(
+  response: Response,
+  onToken: (token: string) => void,
+  onDone: (citations?: CitationData[]) => void,
+  onAgentEvent?: (event: AgentEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let richCitations: CitationData[] = [];
+
+  while (true) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const json = line.slice(6).trim();
+      if (!json || json === "[DONE]") continue;
+
+      try {
+        const event = JSON.parse(json) as AgentEvent;
+        if (event.type === "token" && event.content) {
+          onToken(event.content);
+        } else if (event.type === "reasoning" && event.content && onAgentEvent) {
+          onAgentEvent(event);
+        } else if (event.type === "citations" && event.citations) {
+          richCitations = (event.citations as unknown as Array<Record<string, unknown>>).map((c, i) => ({
+            source_id: (c.source_id as string) ?? "",
+            chunk_id: (c.chunk_id as string) ?? `chunk-${i}`,
+            source_title: (c.source_title as string) ?? t("common.sourceLabel", "Source {index}").replace("{index}", String(i + 1)),
+            excerpt: (c.excerpt as string) ?? (c.content as string) ?? "",
+            score: c.score as number | undefined,
+          }));
+          onAgentEvent?.({ type: "citations", citations: richCitations, event_index: event.event_index });
+        } else if (
+          (
+            event.type === "speed"
+            || event.type === "human_approve_required"
+            || event.type === "thought"
+            || event.type === "tool_call"
+            || event.type === "tool_result"
+            || event.type === "mind_map"
+            || event.type === "diagram"
+            || event.type === "mcp_result"
+            || event.type === "ui_element"
+            || event.type === "note_created"
+            || event.type === "content_replace"
+            || event.type === "done"
+          ) &&
+          onAgentEvent
+        ) {
+          onAgentEvent(event);
+        } else if (event.type === "error" && event.content) {
+          onToken(event.content);
+          onAgentEvent?.(event);
+        }
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+      }
+    }
+  }
+
+  onDone(richCitations.length ? richCitations : undefined);
+}
+
+export async function startMessageGeneration(
+  conversationId: string,
+  prompt: string,
+  {
+    globalSearch,
+    toolHint,
+    attachmentIds,
+    attachmentsMeta,
+    thinkingEnabled,
+  }: {
+    globalSearch?: boolean
+    toolHint?: string
+    attachmentIds?: string[]
+    attachmentsMeta?: AttachmentMeta[]
+    thinkingEnabled?: boolean
+  } = {},
+  signal?: AbortSignal,
+): Promise<MessageGenerationCreateResponseDto> {
+  const raw = await http.fetchJson<MessageGenerationCreateResponseDto>(
+    CONVERSATIONS.startGeneration(conversationId),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        content: prompt,
+        global_search: globalSearch ?? false,
+        ...(toolHint ? { tool_hint: toolHint } : {}),
+        ...(attachmentIds?.length ? { attachment_ids: attachmentIds } : {}),
+        ...(attachmentsMeta?.length ? { attachments_meta: attachmentsMeta } : {}),
+        ...(thinkingEnabled !== undefined ? { thinking_enabled: thinkingEnabled } : {}),
+      }),
+      signal,
+    },
+  );
+  return MessageGenerationCreateResponseSchema.parse(raw);
+}
+
+export async function getMessageGenerationStatus(
+  generationId: string,
+  signal?: AbortSignal,
+): Promise<MessageGenerationStatusDto> {
+  const raw = await http.fetchJson<MessageGenerationStatusDto>(
+    CONVERSATIONS.generationStatus(generationId),
+    {
+      method: "GET",
+      signal,
+    },
+  );
+  return MessageGenerationStatusSchema.parse(raw);
+}
+
+export async function subscribeMessageGeneration(
+  generationId: string,
+  onToken: (token: string) => void,
+  onDone: (citations?: CitationData[]) => void,
+  onAgentEvent?: (event: AgentEvent) => void,
+  signal?: AbortSignal,
+  fromIndex?: number,
+): Promise<void> {
+  const response = await fetch(http.url(CONVERSATIONS.generationEvents(generationId, fromIndex)), {
+    method: "GET",
+    credentials: "include",
+    headers: {
+      ...authHeaderFromCookie(),
+    },
+    signal,
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Generation events request failed: ${response.status}`);
+  }
+  await consumeGenerationStream(response, onToken, onDone, onAgentEvent, signal);
 }
 
 /**
@@ -115,6 +275,8 @@ export async function sendMessageStream(
   thinkingEnabled?: boolean,
   /** When true, the conversation is tagged as "copilot" and excluded from the chat page list. */
   isCopilot?: boolean,
+  onConversationReady?: (conversationId: string) => void,
+  onGenerationReady?: (generation: MessageGenerationHandle) => void,
 ): Promise<string> {
   let convId = conversationId
 
@@ -134,81 +296,29 @@ export async function sendMessageStream(
     });
     const conv = CreateConversationResponseSchema.parse(convRaw);
     convId = conv.id
+    onConversationReady?.(convId)
   }
 
-  // Stream the message
-  const streamRes = await http.stream(
-    CONVERSATIONS.stream(convId),
+  const generation = await startMessageGeneration(
+    convId,
+    prompt,
     {
-      content: prompt,
-      global_search: globalSearch ?? false,
-      ...(toolHint ? { tool_hint: toolHint } : {}),
-      ...(attachmentIds?.length ? { attachment_ids: attachmentIds } : {}),
-      ...(attachmentsMeta?.length ? { attachments_meta: attachmentsMeta } : {}),
-      ...(thinkingEnabled !== undefined ? { thinking_enabled: thinkingEnabled } : {}),
+      globalSearch,
+      toolHint,
+      attachmentIds,
+      attachmentsMeta,
+      thinkingEnabled,
     },
-    { signal },
+    signal,
   );
-
-  const reader = streamRes.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let richCitations: CitationData[] = [];
-
-  while (true) {
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      const json = line.slice(6).trim();
-      if (!json) continue;
-
-      try {
-        const event = JSON.parse(json) as AgentEvent
-        if (event.type === "token" && event.content) {
-          onToken(event.content)
-        } else if (event.type === "reasoning" && event.content && onAgentEvent) {
-          onAgentEvent(event)
-        } else if (event.type === "citations" && event.citations) {
-          richCitations = (event.citations as unknown as Array<Record<string, unknown>>).map((c, i) => ({
-            source_id: (c.source_id as string) ?? "",
-            chunk_id: (c.chunk_id as string) ?? `chunk-${i}`,
-            source_title: (c.source_title as string) ?? t("common.sourceLabel", "Source {index}").replace("{index}", String(i + 1)),
-            excerpt: (c.excerpt as string) ?? (c.content as string) ?? "",
-            score: c.score as number | undefined,
-          }))
-          onAgentEvent?.({ type: "citations", citations: richCitations })
-        } else if (event.type === "speed" && onAgentEvent) {
-          onAgentEvent(event)
-        } else if (event.type === "human_approve_required" && onAgentEvent) {
-          onAgentEvent(event)
-        } else if (
-          (event.type === "thought" || event.type === "tool_call" || event.type === "tool_result"
-            || event.type === "mind_map" || event.type === "diagram"
-            || event.type === "mcp_result" || event.type === "ui_element"
-            || event.type === "note_created") &&
-          onAgentEvent
-        ) {
-          onAgentEvent(event)
-        } else if (event.type === "error" && event.content) {
-          onToken(event.content)
-        } else if (event.type === "done" && onAgentEvent) {
-          onAgentEvent(event)
-        }
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        // ignore malformed SSE lines
-      }
-    }
-  }
-
-  onDone(richCitations.length ? richCitations : undefined);
+  onGenerationReady?.(generation);
+  await subscribeMessageGeneration(
+    generation.generation_id,
+    onToken,
+    onDone,
+    onAgentEvent,
+    signal,
+  );
   return convId
 }
 
@@ -416,6 +526,13 @@ export interface DeepResearchEvent {
   data: Record<string, unknown>
 }
 
+export interface DeepResearchWebSource {
+  title: string
+  url: string
+  excerpt?: string
+  query?: string
+}
+
 /** 深度研究任务状态 */
 export interface DeepResearchTaskStatus {
   task_id: string
@@ -426,6 +543,7 @@ export interface DeepResearchTaskStatus {
   report: string | null
   deliverable: Record<string, unknown> | null
   timeline: Record<string, unknown> | null
+  web_sources: DeepResearchWebSource[] | null
   error_message: string | null
   created_at: string | null
   completed_at: string | null
@@ -512,6 +630,15 @@ export async function subscribeDeepResearch(
  */
 export async function getDeepResearchStatus(taskId: string): Promise<DeepResearchTaskStatus> {
   return http.get<DeepResearchTaskStatus>(AI.deepResearchStatus(taskId))
+}
+
+export async function saveDeepResearchSources(
+  taskId: string,
+  targetNotebookId?: string,
+): Promise<{ created_count: number; skipped_count: number; target_notebook_id: string }> {
+  return http.post(AI.deepResearchSaveSources(taskId), {
+    target_notebook_id: targetNotebookId ?? null,
+  })
 }
 
 /**

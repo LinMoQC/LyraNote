@@ -2,10 +2,10 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.models._json import json_type
 
 
 class PublicHomeState(Base):
@@ -15,8 +15,8 @@ class PublicHomeState(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    draft_profile_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    approved_profile_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    draft_profile_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
+    approved_profile_json: Mapped[dict | None] = mapped_column(json_type, nullable=True)
     draft_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

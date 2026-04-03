@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models._base import uuid_pk, now_col
+from app.models._json import json_type
 
 
 class KnowledgeEntity(Base):
@@ -77,6 +77,6 @@ class ProactiveInsight(Base):
     insight_type: Mapped[str] = mapped_column(String(50), nullable=False)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     content: Mapped[str | None] = mapped_column(Text)
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", json_type)
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = now_col()

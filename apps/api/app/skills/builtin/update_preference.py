@@ -18,6 +18,7 @@ class UpdatePreferenceSkill(SkillBase):
             "只在用户明确指示偏好时调用，不要主动猜测。"
         ),
         category="memory",
+        interrupt_behavior="block",
         always=True,
         thought_label="💾 正在保存偏好",
     )
@@ -73,7 +74,16 @@ class UpdatePreferenceSkill(SkillBase):
 
         memory_type = "preference" if key in PREFERENCE_KEYS else "fact"
 
-        await _upsert_memory(ctx.db, ctx.user_id, key, value, confidence, memory_type, ttl_days=None)
+        await _upsert_memory(
+            ctx.db,
+            ctx.user_id,
+            key,
+            value,
+            confidence,
+            memory_type,
+            ttl_days=None,
+            memory_kind="preference" if memory_type == "preference" else None,
+        )
         await ctx.db.flush()
 
         return f"已记录你的偏好：{key} = {value}"

@@ -19,7 +19,9 @@ export const ConversationRecordSchema = z.object({
 export const MessageRecordSchema = z.object({
   id: z.string().uuid(),
   conversation_id: z.string().uuid(),
+  generation_id: z.string().uuid().nullable().optional(),
   role: z.enum(CHAT_ROLES),
+  status: z.enum(["streaming", "completed", "error"]).default("completed"),
   content: z.string(),
   reasoning: z.string().nullable().optional(),
   citations: z.array(z.unknown()).nullable(),
@@ -54,7 +56,30 @@ export const CreateConversationResponseSchema = z.object({
   id: z.string().uuid(),
 });
 
+export const MessageGenerationCreateResponseSchema = z.object({
+  generation_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+  user_message_id: z.string().uuid(),
+  assistant_message_id: z.string().uuid(),
+});
+
+export const MessageGenerationStatusSchema = z.object({
+  generation_id: z.string().uuid(),
+  conversation_id: z.string().uuid(),
+  user_message_id: z.string().uuid(),
+  assistant_message_id: z.string().uuid(),
+  status: z.enum(["running", "done", "error", "cancelled"]),
+  model: z.string().nullable().optional(),
+  error_message: z.string().nullable().optional(),
+  last_event_index: z.number().int(),
+  assistant_message: MessageRecordSchema.nullable().optional(),
+  created_at: z.string(),
+  completed_at: z.string().nullable().optional(),
+});
+
 /** 对话记录 DTO 类型（从 Schema 推导） */
 export type ConversationRecordDto = z.infer<typeof ConversationRecordSchema>;
 /** 消息记录 DTO 类型（从 Schema 推导） */
 export type MessageRecordDto = z.infer<typeof MessageRecordSchema>;
+export type MessageGenerationCreateResponseDto = z.infer<typeof MessageGenerationCreateResponseSchema>;
+export type MessageGenerationStatusDto = z.infer<typeof MessageGenerationStatusSchema>;

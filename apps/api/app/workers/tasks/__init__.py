@@ -34,6 +34,9 @@ from app.workers.tasks.scheduler import (  # noqa: F401
     check_scheduled_tasks,
     execute_scheduled_task,
 )
+from app.workers.tasks.monitoring import (  # noqa: F401
+    cleanup_observability,
+)
 from app.workers.tasks.suggestions import (  # noqa: F401
     precompute_ai_suggestions,
 )

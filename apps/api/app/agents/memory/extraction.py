@@ -46,6 +46,55 @@ PREFERENCE_KEYS = {
     "communication_tone",
 }
 
+MEMORY_KINDS = {"profile", "preference", "project_state", "reference"}
+
+_PROFILE_KEY_HINTS = (
+    "profile",
+    "background",
+    "identity",
+    "occupation",
+    "profession",
+    "role",
+    "expertise",
+    "experience",
+    "bio",
+)
+
+_PROJECT_STATE_KEY_HINTS = (
+    "active",
+    "current",
+    "recent",
+    "ongoing",
+    "working",
+    "today",
+    "this_",
+    "next",
+    "project",
+    "research",
+    "focus",
+    "goal",
+    "task",
+    "plan",
+    "topic",
+)
+
+_REFERENCE_KEY_HINTS = (
+    "url",
+    "uri",
+    "link",
+    "reference",
+    "resource",
+    "dataset",
+    "paper",
+    "doc",
+    "documentation",
+    "repo",
+    "repository",
+    "source",
+    "notion",
+    "drive",
+)
+
 MEMORY_EXTRACTION_PROMPT = """
 分析以下对话，提取关于用户的持久信息。
 
@@ -61,12 +110,19 @@ MEMORY_EXTRACTION_PROMPT = """
 
 2. **facts**（当前状态事实，key 可以自由命名，但要简短有意义）：
    - 如：current_research_topic、known_misconception、active_project、familiar_framework 等
-   - 每条 fact 可携带 ttl_days（有效天数，默认 30），反映该信息的时效性
+   - 每条 fact 必须标注 memory_kind：
+     - profile：较稳定的用户背景、长期身份、知识结构线索
+     - project_state：当前阶段任务、研究重心、最近上下文，默认 ttl_days=21
+     - reference：外部资料入口、资源位置、以后去哪里找什么，通常不需要 ttl_days
+   - 每条 fact 可携带 ttl_days（有效天数）；project_state 默认 21 天，其余通常留空
 
 规则：
 - 只提取置信度 > 0.5 的信息，不要猜测
 - 不要重复已知信息，只提取新出现的信号
 - facts 中不要放稳定偏好类信息（那属于 preferences）
+- 不要保存本轮临时任务、待办步骤、对话摘要
+- 不要保存能直接从当前笔记内容推导出的普通事实
+- reference 应写成“去哪里找什么”的入口描述，不要大段复制原文
 
 以 JSON 格式返回：
 {{
@@ -74,7 +130,7 @@ MEMORY_EXTRACTION_PROMPT = """
     {{"key": "...", "value": "...", "confidence": 0.0-1.0}}
   ],
   "facts": [
-    {{"key": "...", "value": "...", "confidence": 0.0-1.0, "ttl_days": 30}}
+    {{"key": "...", "value": "...", "memory_kind": "project_state", "confidence": 0.0-1.0, "ttl_days": 21}}
   ]
 }}
 
@@ -98,13 +154,59 @@ class _MemoryPreference(BaseModel):
 class _MemoryFact(BaseModel):
     key: str
     value: str
+    memory_kind: str = "project_state"
     confidence: Annotated[float, Field(ge=0.0, le=1.0)] = 0.5
-    ttl_days: int = 30
+    ttl_days: int | None = None
 
 
 class _MemoryExtractionResult(BaseModel):
     preferences: list[_MemoryPreference] = []
     facts: list[_MemoryFact] = []
+
+
+def normalize_memory_kind(memory_kind: str | None) -> str | None:
+    if not memory_kind:
+        return None
+    normalized = memory_kind.strip().lower()
+    return normalized if normalized in MEMORY_KINDS else None
+
+
+def infer_memory_kind(
+    key: str,
+    memory_type: str,
+    ttl_days: int | None = None,
+    source: str = "conversation",
+) -> str:
+    normalized_type = (memory_type or "").strip().lower()
+    normalized_key = (key or "").strip().lower()
+
+    if normalized_type == "preference":
+        return "preference"
+
+    if source == "file" and normalized_key.startswith("diary_"):
+        return "project_state"
+
+    if any(token in normalized_key for token in _REFERENCE_KEY_HINTS):
+        return "reference"
+
+    if ttl_days is not None and ttl_days <= 45:
+        return "project_state"
+
+    if any(token in normalized_key for token in _PROJECT_STATE_KEY_HINTS):
+        return "project_state"
+
+    if any(token in normalized_key for token in _PROFILE_KEY_HINTS):
+        return "profile"
+
+    return "profile"
+
+
+def default_ttl_days_for_kind(memory_kind: str, ttl_days: int | None) -> int | None:
+    if ttl_days is not None:
+        return ttl_days
+    if memory_kind == "project_state":
+        return 21
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +268,7 @@ async def extract_memories(conversation_id: UUID, user_id: UUID, db: AsyncSessio
         await _upsert_memory(
             db, user_id, key, value, item.confidence, "preference",
             ttl_days=None,
+            memory_kind="preference",
             source="conversation",
             evidence=message_ids,
         )
@@ -179,6 +282,7 @@ async def extract_memories(conversation_id: UUID, user_id: UUID, db: AsyncSessio
         await _upsert_memory(
             db, user_id, key, value, item.confidence, "fact",
             ttl_days=item.ttl_days,
+            memory_kind=normalize_memory_kind(item.memory_kind),
             source="conversation",
             evidence=message_ids,
         )
@@ -200,6 +304,7 @@ async def _upsert_memory(
     confidence: float,
     memory_type: str,
     ttl_days: int | None,
+    memory_kind: str | None = None,
     source: str = "conversation",
     evidence: str | None = None,
 ) -> None:
@@ -209,6 +314,14 @@ async def _upsert_memory(
     """
     from app.config import settings
     from app.providers.embedding import embed_query
+
+    normalized_kind = normalize_memory_kind(memory_kind) or infer_memory_kind(
+        key,
+        memory_type,
+        ttl_days=ttl_days,
+        source=source,
+    )
+    ttl_days = default_ttl_days_for_kind(normalized_kind, ttl_days)
 
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(days=ttl_days)) if ttl_days else None
@@ -252,6 +365,7 @@ async def _upsert_memory(
             file_record.value = value
             file_record.confidence = confidence
             file_record.memory_type = memory_type
+            file_record.memory_kind = normalized_kind
             file_record.expires_at = expires_at
             file_record.updated_at = now
             file_record.embedding = embedding
@@ -265,6 +379,7 @@ async def _upsert_memory(
                 value=value,
                 confidence=confidence,
                 memory_type=memory_type,
+                memory_kind=normalized_kind,
                 access_count=0,
                 expires_at=expires_at,
                 updated_at=now,
@@ -299,6 +414,7 @@ async def _upsert_memory(
         existing.value = value
         existing.confidence = confidence
         existing.memory_type = memory_type
+        existing.memory_kind = normalized_kind
         existing.expires_at = expires_at
         existing.updated_at = now
         existing.embedding = embedding
@@ -311,6 +427,7 @@ async def _upsert_memory(
             value=value,
             confidence=confidence,
             memory_type=memory_type,
+            memory_kind=normalized_kind,
             access_count=0,
             expires_at=expires_at,
             updated_at=now,

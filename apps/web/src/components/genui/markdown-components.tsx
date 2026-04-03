@@ -192,6 +192,7 @@ export function buildMarkdownComponents(opts: MarkdownComponentsOpts) {
 
       // Existing
       if (lang === "language-mermaid") return <MermaidBlock code={text} isStreaming={isMermaidStreaming} />
+      if (lang === "language-choices") return null;
 
       return <RenderCodeBlock code={text} language={className} />
     },

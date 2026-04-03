@@ -20,6 +20,7 @@ export type Notebook = {
   description: string;
   updatedAt: string;
   sourceCount: number;
+  noteCount: number;
   artifactCount: number;
   wordCount: number;
   summary?: string;
@@ -184,6 +185,7 @@ export interface AgentStep {
   content?: string
   tool?: string
   input?: Record<string, unknown>
+  is_system?: boolean
 }
 
 /** 思维导图节点 */

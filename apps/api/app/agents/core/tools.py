@@ -35,6 +35,7 @@ class ToolContext:
     created_note_title: str | None = None     # Set by create_note_draft skill
     created_notebook_id: str | None = None    # Set by create_note_draft when it creates a new notebook
     ui_elements: list[dict] = field(default_factory=list)  # Flushed to SSE after each tool_result
+    persist_web_sources: bool = False  # True only when explicitly collecting knowledge (e.g. manual import)
     # MCPSkill instances keyed by their namespaced function name, populated by react_agent
     mcp_skill_map: dict = field(default_factory=dict)
 
@@ -63,6 +64,36 @@ def TOOL_SCHEMAS() -> list[dict]:  # noqa: N802
     if _CACHED_SCHEMAS is None:
         _CACHED_SCHEMAS = _get_fallback_schemas()
     return _CACHED_SCHEMAS
+
+
+# MCP tool name suffixes that are considered read-only (tool name = server__method).
+# Built-in skills now self-declare via SkillMeta.concurrency_safe; this fallback
+# only applies to MCP tools whose schemas arrive at runtime.
+_MCP_READ_ONLY_PREFIXES: tuple[str, ...] = (
+    "read", "list", "get", "fetch", "search", "load",
+)
+
+
+def is_read_only_tool(tool_name: str) -> bool:
+    """Return True when a tool call is safe to run concurrently with others.
+
+    Resolution order (matches Claude Code's isConcurrencySafe() approach):
+      1. skill_registry.resolve() — authoritative, from SkillMeta.concurrency_safe
+      2. MCP heuristic — prefix matching on server__method names
+    """
+    # 1. Registry lookup: built-in and user skills declare their own safety
+    try:
+        from app.skills.registry import skill_registry
+        skill = skill_registry.resolve(tool_name)
+        if skill is not None:
+            return skill.is_concurrency_safe()
+    except Exception:
+        pass
+    # 2. MCP tools: heuristic based on method name suffix
+    if "__" in tool_name:
+        suffix = tool_name.rsplit("__", 1)[-1]
+        return any(suffix.startswith(p) for p in _MCP_READ_ONLY_PREFIXES)
+    return False
 
 
 async def execute_tool(tool_call: dict, ctx: ToolContext) -> str:

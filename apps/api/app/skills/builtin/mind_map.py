@@ -21,6 +21,7 @@ class MindMapSkill(SkillBase):
             "当用户要求梳理知识结构、生成思维导图、或整理核心概念关系时调用。"
         ),
         category="knowledge",
+        interrupt_behavior="block",
         thought_label="🗺️ 正在生成思维导图",
         config_schema={
             "type": "object",

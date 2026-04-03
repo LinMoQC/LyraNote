@@ -123,6 +123,13 @@ export const CONVERSATIONS = {
   saveMessage: (conversationId: string) => `/conversations/${conversationId}/messages/save`,
   /** POST - 流式消息 (SSE) */
   stream: (conversationId: string) => `/conversations/${conversationId}/messages/stream`,
+  /** POST - 启动可恢复的消息生成 */
+  startGeneration: (conversationId: string) => `/conversations/${conversationId}/messages/generations`,
+  /** GET - 消息生成状态 */
+  generationStatus: (generationId: string) => `/messages/generations/${generationId}`,
+  /** GET - 消息生成事件流 (SSE) */
+  generationEvents: (generationId: string, from?: number) =>
+    `/messages/generations/${generationId}/events${from !== undefined ? `?from=${from}` : ""}`,
   /** POST - 解决 MCP 工具人工审批 */
   approveTool: (approvalId: string) => `/agent/approve/${approvalId}`,
 } as const;
@@ -149,6 +156,8 @@ export const AI = {
   /** GET - 深度研究事件流 (SSE) */
   deepResearchEvents: (taskId: string, from?: number) =>
     `/ai/deep-research/${taskId}/events${from ? `?from=${from}` : ""}`,
+  /** POST - 保存深度研究网络来源到知识库 */
+  deepResearchSaveSources: (taskId: string) => `/ai/deep-research/${taskId}/save-sources`,
   /** GET - 笔记本的生成物列表 */
   artifacts: (notebookId: string) => `/notebooks/${notebookId}/artifacts`,
   /** POST - 触发生成内容物 */

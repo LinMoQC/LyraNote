@@ -18,6 +18,32 @@ from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
+from app.trace import get_trace_id
+
+
+def _record_trace_fields(record: logging.LogRecord) -> dict[str, object]:
+    trace_id = getattr(record, "trace_id", None) or get_trace_id()
+    payload: dict[str, object] = {}
+    if trace_id:
+        payload["trace_id"] = trace_id
+
+    for attr in (
+        "event",
+        "duration_ms",
+        "conversation_id",
+        "generation_id",
+        "task_id",
+        "task_run_id",
+        "status",
+        "error",
+        "path",
+        "method",
+    ):
+        value = getattr(record, attr, None)
+        if value is not None:
+            payload[attr] = value
+    return payload
+
 
 class ColorFormatter(logging.Formatter):
     """Formatter that adds ANSI colors based on log level."""
@@ -50,6 +76,10 @@ class ColorFormatter(logging.Formatter):
             name = name[4:]
 
         msg = record.getMessage()
+        trace_fields = _record_trace_fields(record)
+        trace_suffix = ""
+        if trace_fields.get("trace_id"):
+            trace_suffix = f" {self.DIM}[trace={trace_fields['trace_id']}]{self.RESET}"
 
         if record.exc_info and not record.exc_text:
             record.exc_text = self.formatException(record.exc_info)
@@ -59,6 +89,7 @@ class ColorFormatter(logging.Formatter):
             f"{self.DIM}{ts}{self.RESET} "
             f"{color}{symbol}{self.RESET} "
             f"{color}{msg}{self.RESET}"
+            f"{trace_suffix}"
             f"{self.DIM}  ({name}){self.RESET}"
             f"{exc}"
         )
@@ -87,12 +118,14 @@ class PlainFormatter(logging.Formatter):
             name = name[4:]
 
         msg = self._ANSI_RE.sub("", record.getMessage())
+        trace_fields = _record_trace_fields(record)
+        trace_text = f" trace={trace_fields['trace_id']}" if trace_fields.get("trace_id") else ""
 
         if record.exc_info and not record.exc_text:
             record.exc_text = self.formatException(record.exc_info)
         exc = f"\n{record.exc_text}" if record.exc_text else ""
 
-        return f"{ts} {symbol} {level} {msg}  ({name}){exc}"
+        return f"{ts} {symbol} {level} {msg}{trace_text}  ({name}){exc}"
 
 
 class JsonFormatter(logging.Formatter):
@@ -109,6 +142,7 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        payload.update(_record_trace_fields(record))
         if record.exc_info and not record.exc_text:
             record.exc_text = self.formatException(record.exc_info)
         if record.exc_text:

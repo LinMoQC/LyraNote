@@ -43,9 +43,32 @@ class StreamAnswerInstruction:
 
 @dataclass
 class CompressContextInstruction:
-    """Compress old messages into a summary to save context window space."""
+    """Compress old messages to save context window space.
 
+    mode="snip"     — fast path: drop the oldest N middle messages, no LLM call.
+                      Fires at a lower token threshold (snipCompact layer).
+    mode="summarize"— slow path: LLM-based summarization of middle messages.
+                      Fires only after snip passes are exhausted (reactiveCompact layer).
+    """
+
+    mode: str = "summarize"  # "snip" | "summarize"
     type: str = "compress_context"
+
+
+@dataclass
+class ClarifyInstruction:
+    """Ask a concise clarifying question before proceeding."""
+
+    reason: str = ""
+    type: str = "clarify"
+
+
+@dataclass
+class VerifyResultInstruction:
+    """Insert a lightweight verification step before the final answer."""
+
+    reason: str = ""
+    type: str = "verify_result"
 
 
 @dataclass
@@ -71,6 +94,8 @@ Instruction = Union[
     CallRAGInstruction,
     StreamAnswerInstruction,
     CompressContextInstruction,
+    ClarifyInstruction,
+    VerifyResultInstruction,
     RequestHumanApprovalInstruction,
     FinishInstruction,
 ]

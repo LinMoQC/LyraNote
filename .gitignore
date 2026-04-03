@@ -32,6 +32,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# build caches / generated outputs
+.turbo/
+**/.turbo/
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/api/celerybeat-schedule.db
+
 # env files (can opt-in for committing if needed)
 .env*
 !.env*.example

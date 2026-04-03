@@ -9,7 +9,15 @@ from pydantic import BaseModel
 from app.dependencies import CurrentUser, DbDep
 from app.schemas.response import ApiResponse, success
 from app.services.conversation_service import ConversationService
-from .schemas import ConversationCreate, ConversationOut, MessageCreate, MessageOut, MessageSave
+from .schemas import (
+    ConversationCreate,
+    ConversationOut,
+    MessageCreate,
+    MessageGenerationCreateOut,
+    MessageGenerationStatusOut,
+    MessageOut,
+    MessageSave,
+)
 
 router = APIRouter(tags=["conversations"])
 
@@ -133,6 +141,57 @@ async def stream_message(
             attachments_meta=[a.model_dump() for a in body.attachments_meta] if body.attachments_meta else None,
             thinking_enabled=body.thinking_enabled,
         ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/generations",
+    response_model=ApiResponse[MessageGenerationCreateOut],
+    status_code=status.HTTP_201_CREATED,
+)
+async def start_message_generation(
+    conversation_id: UUID,
+    body: MessageCreate,
+    db: DbDep,
+    current_user: CurrentUser,
+):
+    svc = ConversationService(db, current_user.id)
+    return success(await svc.start_message_generation(
+        conversation_id,
+        body.content,
+        global_search=body.global_search,
+        tool_hint=body.tool_hint,
+        attachment_ids=body.attachment_ids,
+        attachments_meta=[a.model_dump() for a in body.attachments_meta] if body.attachments_meta else None,
+        thinking_enabled=body.thinking_enabled,
+    ))
+
+
+@router.get(
+    "/messages/generations/{generation_id}",
+    response_model=ApiResponse[MessageGenerationStatusOut],
+)
+async def get_message_generation(
+    generation_id: UUID,
+    db: DbDep,
+    current_user: CurrentUser,
+):
+    svc = ConversationService(db, current_user.id)
+    return success(await svc.get_message_generation_status(generation_id))
+
+
+@router.get("/messages/generations/{generation_id}/events")
+async def subscribe_message_generation(
+    generation_id: UUID,
+    db: DbDep,
+    current_user: CurrentUser,
+    from_index: int = Query(0, alias="from", ge=0),
+):
+    svc = ConversationService(db, current_user.id)
+    return StreamingResponse(
+        svc.subscribe_message_generation(generation_id, from_index=from_index),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

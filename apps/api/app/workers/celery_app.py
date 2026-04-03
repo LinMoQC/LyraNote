@@ -44,10 +44,42 @@ celery_app.conf.update(
             "task": "precompute_ai_suggestions",
             "schedule": 600.0,  # every 10 minutes
         },
+        "cleanup-observability-daily": {
+            "task": "cleanup_observability",
+            "schedule": crontab(hour=4, minute=0),
+        },
     },
 )
 
-from celery.signals import after_setup_logger, worker_process_init  # noqa: E402
+from celery.signals import after_setup_logger, beat_init, worker_process_init  # noqa: E402
+
+_heartbeat_threads: dict[str, object] = {}
+
+
+def _start_heartbeat_thread(component: str) -> None:
+    if not settings.monitoring_enabled or component in _heartbeat_threads:
+        return
+
+    import threading
+    import time
+
+    from app.services.monitoring_service import touch_worker_heartbeat
+    from app.workers._helpers import _run_async
+
+    def _runner() -> None:
+        interval = max(5, settings.monitoring_heartbeat_interval_seconds)
+        while True:
+            try:
+                _run_async(touch_worker_heartbeat(component))
+            except Exception:
+                import logging
+
+                logging.getLogger(__name__).exception("Failed to update %s heartbeat", component)
+            time.sleep(interval)
+
+    thread = threading.Thread(target=_runner, name=f"heartbeat-{component}", daemon=True)
+    thread.start()
+    _heartbeat_threads[component] = thread
 
 
 @after_setup_logger.connect
@@ -64,3 +96,14 @@ def _on_worker_init(**_kwargs):
     from app.workers._helpers import _load_db_settings_sync
     setup_logging(debug=settings.debug)
     _load_db_settings_sync()
+    _start_heartbeat_thread("worker")
+
+
+@beat_init.connect
+def _on_beat_init(**_kwargs):
+    from app.logging_config import setup_logging
+    from app.workers._helpers import _load_db_settings_sync
+
+    setup_logging(debug=settings.debug)
+    _load_db_settings_sync()
+    _start_heartbeat_thread("beat")

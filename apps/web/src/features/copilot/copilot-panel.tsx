@@ -327,6 +327,7 @@ export function CopilotPanel({
           undefined, // attachmentsMeta
           undefined, // thinkingEnabled
           true,      // isCopilot
+          undefined, // onConversationReady
         );
         // Persist the conversation ID so subsequent messages stay in the same conversation
         if (newConvId && newConvId !== copilotConvId) {
@@ -619,7 +620,7 @@ export function CopilotPanel({
                     <AgentSteps
                       steps={stepsToShow}
                       isStreaming={isLastAssistant && streaming}
-                      defaultOpen={isLastAssistant && streaming}
+                      defaultOpen={false}
                     />
                   ) : null}
                   {isLastAssistant && streaming && pendingApproval && (

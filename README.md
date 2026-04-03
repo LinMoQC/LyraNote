@@ -161,6 +161,11 @@ cd LyraNote
 
 The CLI automatically: detects/starts database containers → creates a Python venv → installs dependencies → runs DB migrations → starts FastAPI, Celery Worker, Celery Beat, and Next.js Dev Server in parallel.
 
+Once local mode is up:
+- **Frontend**: `http://localhost:3000`
+- **Monitoring**: `http://localhost:3100/ops/login`
+- **Backend API**: `http://localhost:8000`
+
 Press `Ctrl+C` to stop local processes; database containers are unaffected.
 
 ---

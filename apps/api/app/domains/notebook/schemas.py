@@ -23,6 +23,7 @@ class NotebookOut(BaseModel):
     description: str | None
     status: str
     source_count: int
+    note_count: int = 0
     word_count: int = 0
     summary_md: str | None = None
     is_new: bool = False  # True only on the create response — triggers the import dialog

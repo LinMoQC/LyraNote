@@ -17,6 +17,8 @@ class CompareSourcesSkill(SkillBase):
             "当用户要求对比、比较不同来源或文献时调用。"
         ),
         category="knowledge",
+        concurrency_safe=True,
+        max_result_chars=8000,
         thought_label="⚖️ 正在对比来源",
     )
 

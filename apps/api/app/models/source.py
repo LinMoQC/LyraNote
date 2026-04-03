@@ -3,12 +3,13 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.config import settings
 from app.models._base import uuid_pk, now_col
+from app.models._json import json_type
 
 
 class Source(Base):
@@ -47,7 +48,7 @@ class Chunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, default=0)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(settings.embedding_dimensions))
     token_count: Mapped[int | None] = mapped_column(Integer)
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB)
+    metadata_: Mapped[dict | None] = mapped_column("metadata", json_type)
     created_at: Mapped[datetime] = now_col()
     # "source" (default, from imported sources) | "note" (from user notes)
     source_type: Mapped[str] = mapped_column(String(20), default="source", nullable=False)

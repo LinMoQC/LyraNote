@@ -25,9 +25,44 @@ async def web_agent_node(state: dict) -> dict:
     notebook_id: str = state["notebook_id"]
     user_id: str = state["user_id"]
     db = state["db"]
+    outputs = list(state.get("specialist_outputs") or [])
+    prior_rag = next(
+        (item for item in reversed(outputs) if item.get("specialist") == "rag"),
+        None,
+    )
+    rag_count = int(prior_rag.get("retrieved_count", 0)) if prior_rag else 0
+    global_search: bool = state.get("global_search", False)
+    should_search_web = global_search or rag_count < 4
+
+    await adispatch_custom_event("sse", {
+        "type": "agent_trace",
+        "event": "specialist_selected",
+        "reason": "web_specialist",
+        "detail": f"rag_count={rag_count};global_search={global_search}",
+    })
 
     web_context: str | None = None
     search_results: list[dict] = []
+
+    if not should_search_web:
+        outputs.append(
+            {
+                "specialist": "web",
+                "type": "web",
+                "summary": "本地知识检索已足够，本轮跳过联网补充。",
+                "web_context": "",
+                "chunks": [],
+            }
+        )
+        return {
+            "specialist_result": {
+                "type": "web",
+                "web_context": None,
+                "search_results": [],
+                "chunks": [],
+            },
+            "specialist_outputs": outputs,
+        }
 
     await adispatch_custom_event("sse", {
         "type": "tool_call",
@@ -56,11 +91,22 @@ async def web_agent_node(state: dict) -> dict:
         logger.warning("WebAgent search failed", exc_info=True)
         web_context = None
 
+    outputs.append(
+        {
+            "specialist": "web",
+            "type": "web",
+            "summary": "已补充互联网搜索结果。" if web_context else "联网补充未返回有效结果。",
+            "web_context": web_context or "",
+            "chunks": [],
+        }
+    )
+
     return {
         "specialist_result": {
             "type": "web",
             "web_context": web_context,
             "search_results": search_results,
             "chunks": [],  # web 场景无本地文档块
-        }
+        },
+        "specialist_outputs": outputs,
     }

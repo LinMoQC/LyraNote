@@ -29,6 +29,7 @@ export interface MemoryEntry {
   value: string
   confidence: number
   memory_type: "preference" | "fact" | "skill"
+  memory_kind: "profile" | "preference" | "project_state" | "reference"
   access_count: number
   last_accessed_at: string | null
   expires_at: string | null

@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.models._base import uuid_pk, now_col
+from app.models._json import json_type
 
 
 class Note(Base):
@@ -16,7 +16,7 @@ class Note(Base):
     notebook_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("notebooks.id", ondelete="CASCADE"))
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     title: Mapped[str | None] = mapped_column(String(500))
-    content_json: Mapped[dict | None] = mapped_column(JSONB)   # Tiptap JSON
+    content_json: Mapped[dict | None] = mapped_column(json_type)   # Tiptap JSON
     content_text: Mapped[str | None] = mapped_column(Text)     # plain text for embedding
     word_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = now_col()

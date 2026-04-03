@@ -48,9 +48,11 @@ import type { Notebook } from "@/types";
 import type { LocalMessage } from "./chat-types";
 import { CONVERSATIONS_PAGE_SIZE, MESSAGES_PAGE_SIZE } from "./chat-types";
 import {
-  isLocalAssistantDraft,
+  findLatestStreamingAssistantMessage,
+  isLocalDraftMessage,
   isServerMessageId,
   mapRecord,
+  mergeServerAndLocalMessages,
   sameConversationIds,
   sortMessagesByTime,
 } from "./chat-helpers";
@@ -321,17 +323,22 @@ export function useChatPage() {
       const cached = loadConversationMessages(conv.id).map((m) => ({
         ...m,
         timestamp: new Date(m.timestamp),
-      })).filter(isLocalAssistantDraft) as LocalMessage[];
-      const merged = [...mappedFromServer];
-      const seen = new Set(mappedFromServer.map((item) => item.id));
-      if (cached.length > 0) {
-        const maxServerMs = merged.reduce((max, m) => Math.max(max, m.timestamp.getTime()), 0);
-        cached.forEach((item, i) => {
-          if (!seen.has(item.id)) merged.push({ ...item, timestamp: new Date(maxServerMs + (i + 1) * 100) });
-        });
+      })).filter(isLocalDraftMessage) as LocalMessage[];
+      const { messages: merged, unresolvedDrafts } = mergeServerAndLocalMessages(mappedFromServer, cached);
+      setMessages(merged);
+      const streamingAssistant = findLatestStreamingAssistantMessage(mappedFromServer);
+      if (streamingAssistant?.generationId) {
+        void chat.recoverGeneration(conv.id, streamingAssistant.id, streamingAssistant.generationId);
       }
-      setMessages(sortMessagesByTime(merged));
-      if (cached.length === 0) clearConversationMessages(conv.id);
+      if (unresolvedDrafts.length === 0) clearConversationMessages(conv.id);
+      else {
+        saveConversationMessages(conv.id, unresolvedDrafts.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp.toISOString(),
+        })));
+      }
     } catch (error) {
       notifyError(getErrorMessage(error, t("loadConvFailed")));
       setActiveConvId(null);
@@ -368,13 +375,6 @@ export function useChatPage() {
           localStorage.removeItem(DR_MESSAGES_KEY);
           return;
         }
-        // Only restore deep-research drafts; avoid reviving normal chat bubbles
-        // when conversation list has been cleared.
-        const hasDeepResearchPayload = parsed.some((m) => Boolean(m.deepResearch));
-        if (!hasDeepResearchPayload) {
-          localStorage.removeItem(DR_MESSAGES_KEY);
-          return;
-        }
         setMessages(parsed.map((m) => ({ ...m, timestamp: new Date(m.timestamp) })));
       }
     } catch { /* ignore */ }
@@ -399,13 +399,13 @@ export function useChatPage() {
   }, [messages, activeConvId, isDeepResearch, dr.clarifyingState, dr.isFetchingClarifications]);
 
   useEffect(() => {
-    if (!activeConvId || isDeepResearch) return;
+    if (!activeConvId) return;
     if (!streaming) {
       clearConversationMessages(activeConvId);
       return;
     }
     const drafts = messages
-      .filter(isLocalAssistantDraft)
+      .filter(isLocalDraftMessage)
       .map((message) => ({
         id: message.id,
         role: message.role,
@@ -417,7 +417,7 @@ export function useChatPage() {
       return;
     }
     saveConversationMessages(activeConvId, drafts);
-  }, [activeConvId, isDeepResearch, messages, streaming]);
+  }, [activeConvId, messages, streaming]);
 
   // ── Restore active conversation on refresh ───────────────────────────────
   useEffect(() => {

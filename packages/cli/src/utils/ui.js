@@ -29,6 +29,7 @@ export function printAccessInfo() {
   console.log('  ' + chalk.bold.green('🎉 启动成功！'));
   console.log();
   console.log('  ' + chalk.bold('前端应用   ') + chalk.cyan('http://localhost:3000'));
+  console.log('  ' + chalk.bold('监控面板   ') + chalk.cyan('http://localhost:3100/ops/login'));
   console.log('  ' + chalk.bold('API 服务   ') + chalk.cyan('http://localhost:8000'));
   console.log('  ' + chalk.bold('API 文档   ') + chalk.cyan('http://localhost:8000/docs'));
   console.log('  ' + chalk.bold('MinIO 控制台') + ' ' + chalk.cyan('http://localhost:9001') + '  ' + chalk.dim('(lyranote / lyranote123)'));

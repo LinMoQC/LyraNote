@@ -99,6 +99,102 @@ class LiteLLMProvider(BaseLLMProvider):
             if content:
                 yield {"type": "token", "content": content}
 
+    async def chat_stream_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model: str | None = None,
+        temperature: float = 0.7,
+        thinking_enabled: bool | None = None,
+    ):
+        kwargs = self._call_kwargs(model, temperature, None)
+        kwargs["stream"] = True
+        kwargs.update(litellm_reasoning_kwargs(model or self._default_model, thinking_enabled))
+
+        tool_list: list[dict] = []
+        for t in tools:
+            if "function" in t:
+                if t["function"].get("name"):
+                    tool_list.append(t)
+            elif t.get("name"):
+                tool_list.append({"type": "function", "function": t})
+        if tool_list:
+            kwargs["tools"] = tool_list
+            kwargs["tool_choice"] = "auto"
+
+        accumulated: dict[int, dict] = {}
+        content_parts: list[str] = []
+        api_usage: dict | None = None
+
+        try:
+            stream = await litellm.acompletion(messages=messages, **kwargs)
+        except (KeyError, TypeError) as exc:
+            logger.warning("chat_stream_with_tools failed (%s: %s); retrying without tools", type(exc).__name__, exc)
+            kwargs.pop("tools", None)
+            kwargs.pop("tool_choice", None)
+            stream = await litellm.acompletion(messages=messages, **kwargs)
+
+        async for chunk in stream:
+            if not chunk.choices:
+                usage = getattr(chunk, "usage", None)
+                if usage is not None:
+                    api_usage = {
+                        "input_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+                        "output_tokens": getattr(usage, "completion_tokens", 0) or 0,
+                    }
+                continue
+            delta = chunk.choices[0].delta
+
+            reasoning = getattr(delta, "reasoning_content", None)
+            if reasoning:
+                yield {"type": "reasoning", "content": reasoning}
+
+            content = getattr(delta, "content", None)
+            if content:
+                content_parts.append(content)
+                yield {"type": "token", "content": content}
+
+            if getattr(delta, "tool_calls", None):
+                for tc_delta in delta.tool_calls:
+                    idx = tc_delta.index
+                    if idx not in accumulated:
+                        accumulated[idx] = {"id": "", "name": "", "arguments": ""}
+                    if tc_delta.id:
+                        accumulated[idx]["id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            accumulated[idx]["name"] += tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            accumulated[idx]["arguments"] += tc_delta.function.arguments
+
+        if api_usage is not None:
+            yield {"type": "usage", **api_usage}
+
+        if accumulated:
+            calls = []
+            message_tool_calls = []
+            for idx in sorted(accumulated):
+                tc = accumulated[idx]
+                calls.append({
+                    "id": tc["id"],
+                    "name": tc["name"],
+                    "arguments": json.loads(tc["arguments"] or "{}"),
+                })
+                message_tool_calls.append({
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {"name": tc["name"], "arguments": tc["arguments"]},
+                })
+            yield {
+                "type": "tool_calls",
+                "calls": calls,
+                "raw_assistant": {
+                    "role": "assistant",
+                    "content": "".join(content_parts) or None,
+                    "tool_calls": message_tool_calls,
+                },
+            }
+
     async def chat_with_tools(
         self,
         messages: list[dict],

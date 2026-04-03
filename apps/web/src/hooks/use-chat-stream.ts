@@ -3,7 +3,15 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
-import { sendMessageStream, type AttachmentMeta } from "@/services/ai-service";
+import {
+  getMessageGenerationStatus,
+  sendMessageStream,
+  subscribeMessageGeneration,
+  type AgentEvent,
+  type AttachmentMeta,
+  type MessageGenerationHandle,
+} from "@/services/ai-service";
+import { getMessages } from "@/services/conversation-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
@@ -12,6 +20,8 @@ import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
 import type { DiagramData, MindMapData, MCPResultData } from "@/types";
 import type { LocalMessage, MessageAttachment } from "@/features/chat/chat-types";
 import type { DrProgress } from "@/components/deep-research/deep-research-progress";
+import { mapRecord, sortMessagesByTime } from "@/features/chat/chat-helpers";
+import { MESSAGES_PAGE_SIZE } from "@/features/chat/chat-types";
 
 interface UseChatStreamOpts {
   activeConvId: string | null;
@@ -59,11 +69,14 @@ export function useChatStream({
   } = useAgentStreamEvents();
   const assistantContentRef = useRef("");
   const reasoningContentRef = useRef("");
+  const pendingRefreshConvIdRef = useRef<string | null>(null);
   const toolHintRef = useRef<string | null>(null);
   const attachmentIdsRef = useRef<string[]>([]);
   const attachmentPreviewsRef = useRef<MessageAttachment[]>([]);
   const attachmentMetaRef = useRef<AttachmentMeta[]>([]);
   const assistantIdRef = useRef("");
+  const activeGenerationIdRef = useRef<string | null>(null);
+  const generationEventIndexRef = useRef(-1);
 
   // Token render queue — drains at TOKEN_INTERVAL_MS regardless of how fast
   // tokens arrive from the API (handles providers that batch-send all tokens at once).
@@ -71,7 +84,7 @@ export function useChatStream({
   const tokenQueueRef = useRef<string[]>([])
   const tokenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   // Callback executed once the queue empties naturally (after stream ends).
-  const onDrainCompleteRef = useRef<(() => void) | null>(null)
+  const onDrainCompleteRef = useRef<{ callback: () => void; keepTimerRunning: boolean } | null>(null)
 
   const startTokenDrain = useCallback(() => {
     if (tokenTimerRef.current) return
@@ -86,12 +99,14 @@ export function useChatStream({
         return
       }
       // Queue is empty — check for a pending drain-complete callback
-      const cb = onDrainCompleteRef.current
-      if (cb) {
+      const pending = onDrainCompleteRef.current
+      if (pending) {
         onDrainCompleteRef.current = null
-        clearInterval(tokenTimerRef.current!)
-        tokenTimerRef.current = null
-        cb()
+        if (!pending.keepTimerRunning) {
+          clearInterval(tokenTimerRef.current!)
+          tokenTimerRef.current = null
+        }
+        pending.callback()
       }
     }, TOKEN_INTERVAL_MS)
   }, [setMessages])
@@ -101,9 +116,12 @@ export function useChatStream({
    * If the queue is already empty, the callback runs on the next tick.
    * Used for the citations / finalize path so typing completes before UI updates.
    */
-  const scheduleAfterDrain = useCallback((callback: () => void) => {
+  const scheduleAfterDrain = useCallback((
+    callback: () => void,
+    { keepTimerRunning = false }: { keepTimerRunning?: boolean } = {},
+  ) => {
     if (tokenQueueRef.current.length === 0) {
-      if (tokenTimerRef.current) {
+      if (tokenTimerRef.current && !keepTimerRunning) {
         clearInterval(tokenTimerRef.current)
         tokenTimerRef.current = null
       }
@@ -111,7 +129,7 @@ export function useChatStream({
       return
     }
     // Tokens still pending — let the interval drain them, then call back
-    onDrainCompleteRef.current = callback
+    onDrainCompleteRef.current = { callback, keepTimerRunning }
   }, [])
 
   /**
@@ -138,6 +156,167 @@ export function useChatStream({
   useEffect(() => () => {
     if (tokenTimerRef.current) clearInterval(tokenTimerRef.current)
   }, [])
+
+  const resetGenerationTracking = useCallback(() => {
+    activeGenerationIdRef.current = null;
+    generationEventIndexRef.current = -1;
+  }, []);
+
+  const applyGenerationReady = useCallback((generation: MessageGenerationHandle) => {
+    const previousAssistantId = assistantIdRef.current;
+    activeGenerationIdRef.current = generation.generation_id;
+    generationEventIndexRef.current = -1;
+    assistantIdRef.current = generation.assistant_message_id;
+    setMessages((prev) => prev.map((message) => (
+      message.id === previousAssistantId
+        ? {
+            ...message,
+            id: generation.assistant_message_id,
+            status: "streaming",
+            generationId: generation.generation_id,
+          }
+        : message
+    )));
+  }, [setMessages]);
+
+  const finalizeStream = useCallback((citations?: import("@/types").CitationData[]) => {
+    scheduleAfterDrain(async () => {
+      const curId = assistantIdRef.current;
+      const savedSteps = buildSavedSteps();
+      setMessages((prev) =>
+        prev.map((m) => m.id === curId
+          ? {
+              ...m,
+              status: "completed",
+              citations: citations?.length ? citations : m.citations,
+              agentSteps: savedSteps.length ? savedSteps : undefined,
+            }
+          : m)
+      );
+      streamLifecycle.finalize();
+      setStreaming(false);
+      streamLifecycle.finish();
+      resetGenerationTracking();
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+
+      // Refresh from server AFTER streaming ends — prevents full content
+      // appearing all at once by overwriting the drain queue mid-flight.
+      const convId = pendingRefreshConvIdRef.current;
+      pendingRefreshConvIdRef.current = null;
+      if (convId) {
+        try {
+          const rows = await getMessages(convId, { offset: 0, limit: MESSAGES_PAGE_SIZE });
+          setMessages(sortMessagesByTime(rows.map(mapRecord)));
+        } catch {
+          // best-effort normalization only
+        }
+      }
+    });
+  }, [buildSavedSteps, queryClient, resetGenerationTracking, scheduleAfterDrain, setMessages, setStreaming, streamLifecycle]);
+
+  const applyAgentEvent = useCallback((event: AgentEvent) => {
+    if (typeof event.event_index === "number") {
+      generationEventIndexRef.current = Math.max(generationEventIndexRef.current, event.event_index);
+    }
+
+    if (event.type === "done" && event.message_id) {
+      const curId = assistantIdRef.current;
+      assistantIdRef.current = event.message_id;
+      setMessages((prev) =>
+        prev.map((m) => m.id === curId
+          ? { ...m, id: event.message_id!, status: "completed" }
+          : m)
+      );
+      return;
+    }
+    if (event.type === "speed" && event.ttft_ms !== undefined) {
+      const curId = assistantIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === curId
+            ? {
+                ...m,
+                speed: { ttft_ms: event.ttft_ms!, tps: event.tps ?? 0, tokens: event.tokens ?? 0 },
+              }
+            : m
+        )
+      );
+      return;
+    }
+    if (event.type === "reasoning" && event.content) {
+      reasoningContentRef.current += event.content;
+      const curId = assistantIdRef.current;
+      const snap = reasoningContentRef.current;
+      setMessages((prev) =>
+        prev.map((m) => m.id === curId ? { ...m, reasoning: snap } : m)
+      );
+      return;
+    }
+    if (event.type === "note_created") {
+      queryClient.invalidateQueries({ queryKey: ["note"] });
+      queryClient.invalidateQueries({ queryKey: ["notes"] });
+      queryClient.invalidateQueries({ queryKey: ["notebooks"] });
+      const noteTitle = event.note_title ?? t("aiDraft");
+      notifySuccess(t("noteCreated", { title: noteTitle }));
+      if (event.notebook_id) {
+        const notebookId = event.notebook_id as string;
+        setTimeout(() => router.push(`/app/notebooks/${notebookId}`), 1500);
+      }
+      return;
+    }
+    if (event.type === "ui_element" && event.element_type) {
+      const curId = assistantIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === curId
+            ? { ...m, uiElements: [...(m.uiElements ?? []), { element_type: event.element_type!, data: event.data ?? {} }] }
+            : m
+        )
+      );
+      return;
+    }
+    if (event.type === "mind_map" && event.data) {
+      const curId = assistantIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === curId ? { ...m, mindMap: event.data as unknown as MindMapData } : m
+        )
+      );
+      return;
+    }
+    if (event.type === "diagram" && event.data) {
+      const curId = assistantIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === curId ? { ...m, diagram: event.data as unknown as DiagramData } : m
+        )
+      );
+      return;
+    }
+    if (event.type === "mcp_result" && event.data) {
+      const curId = assistantIdRef.current;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === curId ? { ...m, mcpResult: event.data as unknown as MCPResultData } : m
+        )
+      );
+      return;
+    }
+    if (event.type === "content_replace" && typeof event.content === "string") {
+      const replacedContent = event.content;
+      const curId = assistantIdRef.current;
+      scheduleAfterDrain(() => {
+        tokenQueueRef.current = [];
+        assistantContentRef.current = replacedContent;
+        setMessages((prev) =>
+          prev.map((m) => m.id === curId ? { ...m, content: replacedContent } : m)
+        );
+        startTokenDrain();
+      }, { keepTimerRunning: true });
+      return;
+    }
+    handleAgentEvent(event);
+  }, [handleAgentEvent, queryClient, router, scheduleAfterDrain, setMessages, startTokenDrain, t]);
 
   const handleSend = useCallback(async (overrideText?: string, skipUserBubble?: boolean) => {
     const text = (overrideText ?? input).trim();
@@ -173,6 +352,7 @@ export function useChatStream({
     const abortController = new AbortController();
     streamAbortRef.current = abortController;
     resetAgentState();
+    resetGenerationTracking();
     assistantContentRef.current = "";
     reasoningContentRef.current = "";
     tokenQueueRef.current = [];
@@ -184,117 +364,10 @@ export function useChatStream({
         (token) => {
           tokenQueueRef.current.push(token)
         },
-        (citations) => {
-          // Wait for the token queue to drain naturally before finalizing,
-          // so the typing effect plays out completely even with pseudo-streaming.
-          scheduleAfterDrain(() => {
-            const curId = assistantIdRef.current;
-            const savedSteps = buildSavedSteps();
-            setMessages((prev) =>
-              prev.map((m) => m.id === curId
-                ? { ...m, citations: citations?.length ? citations : m.citations, agentSteps: savedSteps.length ? savedSteps : undefined }
-                : m)
-            );
-            streamLifecycle.finalize();
-            setStreaming(false);
-            queryClient.invalidateQueries({ queryKey: ["conversations"] });
-          });
-        },
+        finalizeStream,
         undefined,
         undefined,  // notebookId — global chat is notebook-free
-        (event) => {
-          if (event.type === "done" && event.message_id) {
-            const curId = assistantIdRef.current;
-            assistantIdRef.current = event.message_id;
-            setMessages((prev) =>
-              prev.map((m) => m.id === curId ? { ...m, id: event.message_id! } : m)
-            );
-            return;
-          }
-          if (event.type === "speed" && event.ttft_ms !== undefined) {
-            const curId = assistantIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === curId
-                  ? { ...m, speed: { ttft_ms: event.ttft_ms!, tps: event.tps ?? 0, tokens: event.tokens ?? 0 } }
-                  : m
-              )
-            );
-            return;
-          }
-          if (event.type === "reasoning" && event.content) {
-            reasoningContentRef.current += event.content;
-            const curId = assistantIdRef.current;
-            const snap = reasoningContentRef.current;
-            setMessages((prev) =>
-              prev.map((m) => m.id === curId ? { ...m, reasoning: snap } : m)
-            );
-            return;
-          }
-          if (event.type === "note_created") {
-            queryClient.invalidateQueries({ queryKey: ["note"] });
-            queryClient.invalidateQueries({ queryKey: ["notes"] });
-            queryClient.invalidateQueries({ queryKey: ["notebooks"] });
-            const noteTitle = event.note_title ?? t("aiDraft");
-            notifySuccess(t("noteCreated", { title: noteTitle }));
-            // In global chat context, the agent creates a new notebook — navigate there
-            if (event.notebook_id) {
-              const notebookId = event.notebook_id as string;
-              setTimeout(() => router.push(`/app/notebooks/${notebookId}`), 1500);
-            }
-            return;
-          }
-          if (event.type === "ui_element" && event.element_type) {
-            const curId = assistantIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === curId
-                  ? { ...m, uiElements: [...(m.uiElements ?? []), { element_type: event.element_type!, data: event.data ?? {} }] }
-                  : m
-              )
-            );
-            return;
-          }
-          if (event.type === "mind_map" && event.data) {
-            const curId = assistantIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === curId ? { ...m, mindMap: event.data as unknown as MindMapData } : m
-              )
-            );
-          }
-          if (event.type === "diagram" && event.data) {
-            const curId = assistantIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === curId ? { ...m, diagram: event.data as unknown as DiagramData } : m
-              )
-            );
-          }
-          if (event.type === "mcp_result" && event.data) {
-            const curId = assistantIdRef.current;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === curId ? { ...m, mcpResult: event.data as unknown as MCPResultData } : m
-              )
-            );
-          }
-          if (event.type === "content_replace" && typeof event.content === "string") {
-            const replacedContent = event.content;
-            const curId = assistantIdRef.current;
-            // Wait for pending tokens to drain before replacing, so the typing
-            // animation completes before the JSON block disappears.
-            scheduleAfterDrain(() => {
-              tokenQueueRef.current = [];
-              assistantContentRef.current = replacedContent;
-              setMessages((prev) =>
-                prev.map((m) => m.id === curId ? { ...m, content: replacedContent } : m)
-              );
-            });
-          }
-          // Common: human_approve_required + append to agentSteps
-          handleAgentEvent(event);
-        },
+        applyAgentEvent,
         activeConvId ?? undefined,
         true,
         abortController.signal,
@@ -302,6 +375,14 @@ export function useChatStream({
         attachmentIdsRef.current.length > 0 ? attachmentIdsRef.current : undefined,
         attachmentMetaRef.current.length > 0 ? attachmentMetaRef.current : undefined,
         isThinkingModel ? thinkingEnabled : undefined,
+        undefined,
+        (conversationId) => {
+          if (!activeConvId) {
+            setActiveConvId(conversationId);
+            saveActiveConversation(conversationId);
+          }
+        },
+        applyGenerationReady,
       );
       toolHintRef.current = null;
       attachmentIdsRef.current = [];
@@ -311,7 +392,8 @@ export function useChatStream({
         setActiveConvId(usedConvId);
         saveActiveConversation(usedConvId);
       }
-      streamLifecycle.finish();
+      // Register convId for post-drain server refresh (handled inside finalizeStream).
+      pendingRefreshConvIdRef.current = usedConvId;
     } catch (error) {
       stopTokenDrain();
       if (isAbortError(error)) return;
@@ -319,13 +401,15 @@ export function useChatStream({
       streamLifecycle.fail(message);
       notifyError(message);
       setStreaming(false);
-      setMessages((prev) =>
-        prev.map((m) => m.id === assistantId ? { ...m, content: message } : m)
-      );
+      if (!activeGenerationIdRef.current) {
+        setMessages((prev) =>
+          prev.map((m) => m.id === assistantId ? { ...m, content: message, status: "error" } : m)
+        );
+      }
     } finally {
       streamAbortRef.current = null;
     }
-  }, [input, streaming, activeConvId, queryClient, router, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, isThinkingModel, thinkingEnabled, t, startTokenDrain, stopTokenDrain, scheduleAfterDrain, buildSavedSteps, handleAgentEvent, resetAgentState]);
+  }, [input, streaming, activeConvId, isDeepResearch, handleDeepResearch, streamLifecycle, streamAbortRef, setMessages, setInput, setStreaming, setActiveConvId, setDrProgress, isThinkingModel, thinkingEnabled, t, startTokenDrain, stopTokenDrain, resetAgentState, resetGenerationTracking, finalizeStream, applyAgentEvent, applyGenerationReady]);
 
   const handleRegenerate = useCallback(async (messages: LocalMessage[]) => {
     if (streaming) return;
@@ -354,6 +438,85 @@ export function useChatStream({
     });
   }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain, setMessages]);
 
+  const recoverGeneration = useCallback(async (
+    conversationId: string,
+    assistantMessageId: string,
+    generationId: string,
+  ) => {
+    if (streaming && activeGenerationIdRef.current === generationId) return;
+
+    streamAbortRef.current?.abort();
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+    assistantIdRef.current = assistantMessageId;
+    activeGenerationIdRef.current = generationId;
+    assistantContentRef.current = "";
+    reasoningContentRef.current = "";
+    tokenQueueRef.current = [];
+    startTokenDrain();
+
+    try {
+      const status = await getMessageGenerationStatus(generationId, abortController.signal);
+      generationEventIndexRef.current = status.last_event_index;
+      if (status.assistant_message) {
+        assistantContentRef.current = status.assistant_message.content;
+        reasoningContentRef.current = status.assistant_message.reasoning ?? "";
+        setMessages((prev) => prev.map((message) => (
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                id: status.assistant_message!.id,
+                status: status.assistant_message!.status,
+                generationId,
+                content: status.assistant_message!.content,
+                reasoning: status.assistant_message!.reasoning ?? undefined,
+                citations: (status.assistant_message!.citations as LocalMessage["citations"]) ?? message.citations,
+                agentSteps: (status.assistant_message!.agent_steps as LocalMessage["agentSteps"]) ?? message.agentSteps,
+                speed: status.assistant_message!.speed ?? message.speed,
+                uiElements: (status.assistant_message!.ui_elements as LocalMessage["uiElements"]) ?? message.uiElements,
+                mindMap: (status.assistant_message!.mind_map as LocalMessage["mindMap"]) ?? message.mindMap,
+                diagram: (status.assistant_message!.diagram as LocalMessage["diagram"]) ?? message.diagram,
+                mcpResult: (status.assistant_message!.mcp_result as LocalMessage["mcpResult"]) ?? message.mcpResult,
+              }
+            : message
+        )));
+      }
+
+      if (status.status !== "running") {
+        const rows = await getMessages(conversationId, { offset: 0, limit: MESSAGES_PAGE_SIZE });
+        setMessages(sortMessagesByTime(rows.map(mapRecord)));
+        setStreaming(false);
+        streamLifecycle.finish();
+        resetGenerationTracking();
+        return;
+      }
+
+      setStreaming(true);
+      streamLifecycle.start();
+      await subscribeMessageGeneration(
+        generationId,
+        (token) => {
+          tokenQueueRef.current.push(token);
+        },
+        finalizeStream,
+        applyAgentEvent,
+        abortController.signal,
+        status.last_event_index + 1,
+      );
+
+      const rows = await getMessages(conversationId, { offset: 0, limit: MESSAGES_PAGE_SIZE });
+      setMessages(sortMessagesByTime(rows.map(mapRecord)));
+      streamLifecycle.finish();
+    } catch (error) {
+      stopTokenDrain();
+      if (isAbortError(error)) return;
+      notifyError(getErrorMessage(error, t("streamFailed")));
+      setStreaming(false);
+    } finally {
+      streamAbortRef.current = null;
+    }
+  }, [streaming, streamAbortRef, startTokenDrain, setMessages, setStreaming, streamLifecycle, resetGenerationTracking, finalizeStream, applyAgentEvent, stopTokenDrain, t]);
+
   return {
     agentSteps,
     pendingApproval,
@@ -361,6 +524,7 @@ export function useChatStream({
     handleSend,
     handleRegenerate,
     handleCancelStreaming,
+    recoverGeneration,
     resetAgentState,
     toolHintRef,
     attachmentIdsRef,

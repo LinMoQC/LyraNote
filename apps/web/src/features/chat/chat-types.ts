@@ -18,6 +18,8 @@ export interface StreamingMetrics {
 export interface LocalMessage {
   id: string
   role: ChatRole
+  status?: "streaming" | "completed" | "error"
+  generationId?: string
   content: string
   reasoning?: string
   timestamp: Date

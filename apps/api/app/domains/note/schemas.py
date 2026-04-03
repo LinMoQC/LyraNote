@@ -8,12 +8,14 @@ class NoteCreate(BaseModel):
     title: str | None = "Untitled"
     content_json: dict | None = None
     content_text: str | None = None
+    word_count: int | None = None
 
 
 class NoteUpdate(BaseModel):
     title: str | None = None
     content_json: dict | None = None
     content_text: str | None = None
+    word_count: int | None = None
 
 
 class NoteOut(BaseModel):

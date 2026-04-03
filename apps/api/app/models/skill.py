@@ -2,11 +2,11 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 from app.models._base import uuid_pk, now_col
+from app.models._json import json_type
 
 
 class SkillInstall(Base):
@@ -29,11 +29,11 @@ class SkillInstall(Base):
     # If True, this skill is always loaded regardless of is_enabled
     always: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # JSON list of required env var names, e.g. ["TAVILY_API_KEY"]
-    requires_env: Mapped[list | None] = mapped_column(JSONB)
+    requires_env: Mapped[list | None] = mapped_column(json_type)
     # JSON Schema for configurable parameters
-    config_schema: Mapped[dict | None] = mapped_column(JSONB)
+    config_schema: Mapped[dict | None] = mapped_column(json_type)
     # Current config values (merged with user-level overrides at runtime)
-    config: Mapped[dict | None] = mapped_column(JSONB)
+    config: Mapped[dict | None] = mapped_column(json_type)
     installed_at: Mapped[datetime] = now_col()
 
 
@@ -51,4 +51,4 @@ class UserSkillConfig(Base):
     # None means "inherit from global" — only set when user has explicitly changed it
     is_enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # User-level config overrides (merged on top of global config at runtime)
-    config: Mapped[dict | None] = mapped_column(JSONB)
+    config: Mapped[dict | None] = mapped_column(json_type)

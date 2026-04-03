@@ -36,11 +36,30 @@ class SkillMeta:
     display_name: str
     description: str
     category: str                                        # knowledge | web | writing | memory | productivity
+    when_to_use: str | None = None                       # short trigger guidance for prompt-time matching
     version: str = "1.0.0"
     requires_env: list[str] = field(default_factory=list)  # env vars that must be set for this skill to load
     always: bool = False                                 # if True, skip is_enabled DB filter (core skills)
     config_schema: dict | None = None                    # JSON Schema for user-configurable parameters
     thought_label: str = "⚙️ 处理中"                     # shown in SSE "thought" events
+
+    # ── Execution characteristics (inspired by Claude Code's Tool interface) ──
+
+    # True → safe to run concurrently with other concurrency_safe tools.
+    # Read-only tools (search, fetch, compare) set this True.
+    # Write/side-effect tools (create_note, update_memory) must leave it False.
+    # Replaces the static _READ_ONLY_TOOLS frozenset in tools.py.
+    concurrency_safe: bool = False
+
+    # Maximum chars to keep in the message-history copy of a tool result
+    # (microCompact layer).  Full result is still stored in state.tool_results
+    # for _build_context.  Set to 0 to disable truncation for this tool.
+    max_result_chars: int = 3000
+
+    # "cancel" → abort on user interrupt (Ctrl-C / new message while running)
+    # "block"  → run to completion, queue the interruption for after
+    # Write/side-effect tools should use "block" to avoid partial state.
+    interrupt_behavior: str = "cancel"  # "cancel" | "block"
 
 
 class SkillBase(ABC):
@@ -70,6 +89,16 @@ class SkillBase(ABC):
     async def execute(self, args: dict, ctx: "ToolContext") -> str:
         """Execute the skill and return a string result for the LLM to continue reasoning."""
         ...
+
+    def is_concurrency_safe(self) -> bool:
+        """Return True if this tool is safe to run concurrently with other concurrency-safe tools.
+
+        Read-only tools (search, fetch) return True.
+        Tools with side effects (write, create, update) must return False.
+        Default delegates to meta.concurrency_safe; subclasses may override for
+        input-dependent safety (e.g. a tool that is read-only only for certain args).
+        """
+        return self.meta.concurrency_safe
 
     def passes_gating(self) -> bool:
         """
@@ -144,6 +173,7 @@ class MarkdownSkill(SkillBase):
             display_name=fm.get("display_name") or name.replace("-", " ").title(),
             description=fm.get("description") or "",
             category=fm.get("category") or "knowledge",
+            when_to_use=fm.get("when_to_use") or fm.get("whenToUse"),
             version=str(fm.get("version") or "1.0.0"),
             requires_env=list(fm.get("requires_env") or []),
             always=bool(fm.get("always", False)),

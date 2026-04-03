@@ -36,11 +36,13 @@ celery -A app.workers.tasks beat --loglevel=info          # Celery beat (schedul
 ```
 
 **E2E tests** require Postgres and must run migrations first:
+
 ```bash
 export DATABASE_URL=postgresql+asyncpg://lyranote:lyranote@127.0.0.1:5432/lyranote_test
 alembic upgrade head
 pytest tests/e2e -v --tb=short
 ```
+
 E2E runs automatically in CI on PR merge — no need to run locally daily.
 
 ### Frontend (`apps/web`)
@@ -113,6 +115,7 @@ store/ (Zustand)            ← UI state only; server data goes in TanStack Quer
 ## Enforced Rules (violations fail CI)
 
 ### Backend
+
 - **Router stays thin**: `domains/` routers must NOT execute DB queries directly — call `services/`
 - **Provider isolation**: `openai`/`anthropic`/`litellm`/`boto3` imports only allowed inside `providers/`
 - **Unified response envelope**: all responses use `from app.schemas.response import success, fail`
@@ -120,6 +123,7 @@ store/ (Zustand)            ← UI state only; server data goes in TanStack Quer
 - **Business errors**: raise `AppError` from `exceptions.py`; let unexpected errors bubble to global 500 handler
 
 ### Frontend
+
 - **Services isolation**: `features/` and `components/` must NOT call `axios` or `fetch` directly — use `services/`
 - **No AI SDKs on frontend**: never `import openai` or any AI SDK in web app
 - **No hardcoded API URLs**: all requests go through `lib/axios.ts` baseURL
@@ -129,6 +133,7 @@ store/ (Zustand)            ← UI state only; server data goes in TanStack Quer
 ## Coding Conventions
 
 ### Python
+
 - Type annotations required on all function parameters and return values
 - `async/await` for all IO; never `time.sleep` (use `asyncio.sleep`)
 - Early return / guard clauses; avoid deep nesting
@@ -136,6 +141,7 @@ store/ (Zustand)            ← UI state only; server data goes in TanStack Quer
 - Single file max ~500 lines; split to submodules beyond that
 
 ### TypeScript / React
+
 - `function` keyword for components and pure functions (not `const = () =>`)
 - `interface` over `type` (except unions); no `enum` (use `const` objects instead)
 - No semicolons (Prettier enforced)
@@ -147,6 +153,7 @@ store/ (Zustand)            ← UI state only; server data goes in TanStack Quer
 ## Test Structure
 
 ### Backend
+
 ```
 apps/api/tests/
 ├── unit/         # No DB, no HTTP — pure logic, fast
@@ -155,6 +162,7 @@ apps/api/tests/
 ```
 
 ### Frontend
+
 ```
 apps/web/tests/
 ├── unit/features/<domain>/       # Component & hook tests
@@ -175,15 +183,17 @@ Tests must ship in the same PR as feature code. No PR without passing tests.
 
 ## Key Reference Docs
 
-| What | Where |
-|------|-------|
-| Architecture constraints | `docs/ARCHITECTURE.md` |
-| Backend conventions | `docs/BACKEND.md` |
-| Frontend conventions | `docs/FRONTEND.md` |
-| Testing standards | `docs/QUALITY.md` |
-| Active execution plans | `docs/exec-plans/active/` |
-| Known tech debt | `docs/exec-plans/tech-debt-tracker.md` |
-| Feature design docs | `docs/design-docs/index.md` |
+
+| What                     | Where                                  |
+| ------------------------ | -------------------------------------- |
+| Architecture constraints | `docs/ARCHITECTURE.md`                 |
+| Backend conventions      | `docs/BACKEND.md`                      |
+| Frontend conventions     | `docs/FRONTEND.md`                     |
+| Testing standards        | `docs/QUALITY.md`                      |
+| Active execution plans   | `docs/exec-plans/active/`              |
+| Known tech debt          | `docs/exec-plans/tech-debt-tracker.md` |
+| Feature design docs      | `docs/design-docs/index.md`            |
+
 
 ## LyraNote-Specific Patterns
 
@@ -193,3 +203,4 @@ Tests must ship in the same PR as feature code. No PR without passing tests.
 - **Response envelope**: `{"code": 0, "data": ..., "message": "ok"}` from `success()` / `fail()`
 - **Agent calls**: routed through `AgentEngine` in `agents/core/engine.py`, called from service layer
 - **Background jobs**: Celery tasks in `workers/tasks.py` via Redis broker
+

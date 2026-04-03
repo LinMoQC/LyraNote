@@ -8,6 +8,7 @@ import {
   subscribeDeepResearch,
   getDeepResearchStatus,
   type DeepResearchEvent,
+  type DeepResearchWebSource,
 } from "@/services/ai-service";
 
 interface DeepResearchState {
@@ -18,6 +19,7 @@ interface DeepResearchState {
   mode: "quick" | "deep";
   progress: DrProgress | null;
   reportTokens: string;
+  webSources: DeepResearchWebSource[];
   isActive: boolean;
   /** Accumulated event index for reconnect */
   eventIndex: number;
@@ -32,6 +34,7 @@ interface DeepResearchActions {
     report: string | null;
     deliverable: Record<string, unknown> | null;
     timeline: Record<string, unknown> | null;
+    web_sources?: DeepResearchWebSource[] | null;
   }): void;
   requestFocus(): void;
   abort(): void;
@@ -203,6 +206,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
       mode: "quick",
       progress: null,
       reportTokens: "",
+      webSources: [],
       isActive: false,
       eventIndex: 0,
       focusRequested: false,
@@ -216,6 +220,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
           mode,
           progress: makeInitialProgress(mode),
           reportTokens: "",
+          webSources: [],
           isActive: true,
           eventIndex: 0,
           taskId: null,
@@ -254,6 +259,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
             isActive: false,
             progress: null,
             reportTokens: "",
+            webSources: [],
           });
           return;
         }
@@ -288,6 +294,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
         set({
           isActive: false,
           reportTokens: status.report ?? "",
+          webSources: status.web_sources ?? [],
           progress: {
             status: "done",
             mode: get().mode,
@@ -316,6 +323,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
           isActive: false,
           progress: null,
           reportTokens: "",
+          webSources: [],
         });
       },
 
@@ -329,6 +337,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
           notebookId: undefined,
           progress: null,
           reportTokens: "",
+          webSources: [],
           isActive: false,
           eventIndex: 0,
         });

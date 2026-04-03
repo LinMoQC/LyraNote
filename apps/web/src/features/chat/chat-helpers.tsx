@@ -61,6 +61,8 @@ export function mapRecord(m: MessageRecord): LocalMessage {
   const base: LocalMessage = {
     id: m.id,
     role: m.role,
+    status: m.status,
+    generationId: m.generation_id ?? undefined,
     content: m.content,
     reasoning: m.reasoning ?? undefined,
     timestamp: new Date(m.created_at),
@@ -102,6 +104,49 @@ export function isLocalAssistantDraft(message: Pick<LocalMessage, "id" | "role">
     message.role === "assistant" &&
     (message.id.startsWith("local-asst-") || message.id.startsWith("local-dr-"))
   );
+}
+
+export function isLocalDraftMessage(message: Pick<LocalMessage, "id">) {
+  return !isServerMessageId(message.id);
+}
+
+export function findLatestStreamingAssistantMessage(messages: LocalMessage[]) {
+  return [...messages]
+    .reverse()
+    .find((message) => (
+      message.role === "assistant"
+      && message.status === "streaming"
+      && Boolean(message.generationId)
+    ));
+}
+
+export function mergeServerAndLocalMessages(
+  serverMessages: LocalMessage[],
+  localDrafts: LocalMessage[],
+) {
+  const merged = [...serverMessages];
+  const unresolvedDrafts: LocalMessage[] = [];
+  const seenIds = new Set(serverMessages.map((message) => message.id));
+
+  for (const draft of localDrafts) {
+    if (seenIds.has(draft.id)) continue;
+
+    const representedByServer = serverMessages.some((message) => (
+      message.role === draft.role
+      && message.content === draft.content
+      && Math.abs(message.timestamp.getTime() - draft.timestamp.getTime()) <= 5 * 60 * 1000
+    ));
+
+    if (representedByServer) continue;
+
+    merged.push(draft);
+    unresolvedDrafts.push(draft);
+  }
+
+  return {
+    messages: sortMessagesByTime(merged),
+    unresolvedDrafts,
+  };
 }
 
 /**

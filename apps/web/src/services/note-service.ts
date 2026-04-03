@@ -5,6 +5,7 @@
  */
 import { http } from "@/lib/http-client"
 import { NOTES } from "@/lib/api-routes"
+import { computeWordCount, extractTextFromTiptap } from "@/utils/word-count"
 
 /** 笔记记录结构 */
 export interface NoteRecord {
@@ -52,6 +53,7 @@ export async function createNote(notebookId: string, title: string): Promise<Not
     title,
     content_json: { type: "doc", content: [{ type: "paragraph" }] },
     content_text: "",
+    word_count: 0,
   })
   return mapNote(data)
 }
@@ -85,18 +87,14 @@ export async function saveNote({
   title: string
   contentJson: Record<string, unknown>
 }): Promise<NoteRecord> {
+  const content_text = extractTextFromTiptap(contentJson)
+  const word_count = computeWordCount(content_text)
+  const payload = { title, content_json: contentJson, content_text, word_count }
+
   if (noteId) {
-    const data = await http.patch<Record<string, unknown>>(NOTES.detail(noteId), {
-      title,
-      content_json: contentJson,
-      content_text: "",
-    })
+    const data = await http.patch<Record<string, unknown>>(NOTES.detail(noteId), payload)
     return mapNote(data)
   }
-  const data = await http.post<Record<string, unknown>>(NOTES.list(notebookId), {
-    title,
-    content_json: contentJson,
-    content_text: "",
-  })
+  const data = await http.post<Record<string, unknown>>(NOTES.list(notebookId), payload)
   return mapNote(data)
 }

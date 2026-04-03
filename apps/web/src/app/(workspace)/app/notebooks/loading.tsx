@@ -21,24 +21,22 @@ export default function NotebooksLoading() {
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="flex min-h-[180px] flex-col gap-3 rounded-[24px] border border-border/40 bg-card p-5 animate-pulse sm:aspect-square sm:min-h-0 sm:rounded-2xl"
+            className="flex min-h-[180px] max-h-[280px] flex-col rounded-[24px] border border-border/40 bg-card p-4 animate-pulse sm:min-h-0 sm:h-[200px] sm:max-h-[200px] sm:rounded-2xl"
             style={{ animationDelay: `${i * 50}ms` }}
           >
-            {/* Icon + menu */}
-            <div className="flex items-start justify-between">
-              <div className="h-9 w-9 rounded-xl bg-muted/50" />
-              <div className="h-6 w-6 rounded-md bg-muted/30" />
-            </div>
-            {/* Title */}
-            <div className="space-y-1.5">
-              <div className="h-4 w-3/5 rounded bg-muted/50" />
-              <div className="h-3 w-4/5 rounded bg-muted/40" />
-              <div className="h-3 w-2/5 rounded bg-muted/30" />
+            {/* Icon */}
+            <div className="h-10 w-10 rounded-xl bg-muted/50" />
+            {/* Title + summary */}
+            <div className="mt-3 space-y-2">
+              <div className="h-4 w-2/5 rounded bg-muted/50" />
+              <div className="h-3 w-4/5 rounded bg-muted/35" />
+              <div className="h-3 w-3/5 rounded bg-muted/25" />
             </div>
             {/* Footer */}
-            <div className="mt-auto flex items-center gap-3">
-              <div className="h-3 w-12 rounded bg-muted/30" />
-              <div className="h-3 w-16 rounded bg-muted/30" />
+            <div className="mt-auto flex items-center gap-2.5 border-t border-border/20 pt-2.5">
+              <div className="h-3 w-14 rounded bg-muted/30" />
+              <div className="h-3 w-14 rounded bg-muted/30" />
+              <div className="ml-auto h-3 w-10 rounded bg-muted/30" />
             </div>
           </div>
         ))}

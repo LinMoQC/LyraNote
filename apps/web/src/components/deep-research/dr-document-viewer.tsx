@@ -79,6 +79,7 @@ export function DrDocumentViewer({
   progress,
   onClose,
   onSaveNote,
+  onSaveSources,
   onFollowUp,
   onRate,
   onCopy,
@@ -88,6 +89,7 @@ export function DrDocumentViewer({
   progress: DrProgress;
   onClose: () => void;
   onSaveNote?: (report?: string, title?: string) => void;
+  onSaveSources?: () => void;
   onFollowUp?: (q: string) => void;
   onRate?: (rating: "like" | "dislike") => void;
   onCopy?: (text: string) => void;
@@ -262,6 +264,16 @@ export function DrDocumentViewer({
                   <Save size={12} />
                   {saving ? tc("saving") : saved ? t("savedAsNote") : t("saveAsNote")}
                 </button>
+                {onSaveSources && (
+                  <button
+                    type="button"
+                    onClick={onSaveSources}
+                    className="flex items-center gap-1.5 rounded-lg bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground/60 transition-all hover:bg-muted/60 hover:text-foreground/70"
+                  >
+                    <Globe size={12} />
+                    {t("saveSources")}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={onClose}

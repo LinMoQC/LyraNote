@@ -13,9 +13,10 @@ import math
 from datetime import datetime, timezone
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.memory.extraction import infer_memory_kind
 from app.models import UserMemory
 
 logger = logging.getLogger(__name__)
@@ -28,27 +29,43 @@ logger = logging.getLogger(__name__)
 def _apply_temporal_decay(
     score: float,
     updated_at: datetime | None,
-    memory_type: str,
-    half_life_days: float = 30.0,
+    memory_kind: str,
+    half_life_days: float = 21.0,
 ) -> float:
     """
     Apply exponential temporal decay to a memory relevance score.
-    L2 preference memories are evergreen; L3 fact memories decay.
+    Preference/profile/reference memories are evergreen; project_state decays.
     """
-    if memory_type == "preference" or updated_at is None:
+    if memory_kind != "project_state" or updated_at is None:
         return score
     age_days = max(0, (datetime.now(timezone.utc) - updated_at).days)
     lambda_ = math.log(2) / half_life_days
     return score * math.exp(-lambda_ * age_days)
 
 
-def _scene_weight(memory_type: str, scene: str) -> float:
-    """Return a multiplier based on scene–memory_type affinity."""
-    if scene == "research" and memory_type == "fact":
+def _scene_weight(memory_kind: str, scene: str) -> float:
+    """Return a multiplier based on scene–memory_kind affinity."""
+    if scene == "research" and memory_kind in {"project_state", "reference"}:
         return 1.3
-    if scene == "writing" and memory_type == "preference":
+    if scene == "writing" and memory_kind in {"preference", "profile"}:
         return 1.3
+    if scene == "learning" and memory_kind in {"reference", "profile"}:
+        return 1.2
+    if scene == "review" and memory_kind in {"project_state", "reference"}:
+        return 1.15
     return 1.0
+
+
+def _resolved_memory_kind(memory: UserMemory) -> str:
+    kind = (getattr(memory, "memory_kind", "") or "").strip().lower()
+    if kind:
+        return kind
+    return infer_memory_kind(
+        memory.key,
+        memory.memory_type or "fact",
+        ttl_days=None,
+        source=memory.source or "conversation",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +148,13 @@ async def build_memory_context(
     pref_result = await db.execute(
         select(UserMemory).where(
             *base_filter,
-            UserMemory.memory_type == "preference",
+            or_(
+                UserMemory.memory_kind == "preference",
+                and_(
+                    UserMemory.memory_kind.is_(None),
+                    UserMemory.memory_type == "preference",
+                ),
+            ),
         )
         .order_by(UserMemory.confidence.desc())
     )
@@ -145,7 +168,10 @@ async def build_memory_context(
             select(UserMemory)
             .where(
                 *base_filter,
-                UserMemory.memory_type != "preference",
+                or_(
+                    UserMemory.memory_kind.is_(None),
+                    UserMemory.memory_kind != "preference",
+                ),
                 UserMemory.embedding.is_not(None),
             )
             .order_by(UserMemory.embedding.cosine_distance(query_vec))
@@ -158,7 +184,10 @@ async def build_memory_context(
         fallback_result = await db.execute(
             select(UserMemory).where(
                 *base_filter,
-                UserMemory.memory_type != "preference",
+                or_(
+                    UserMemory.memory_kind.is_(None),
+                    UserMemory.memory_kind != "preference",
+                ),
             )
             .order_by(UserMemory.updated_at.desc())
             .limit(actual_top_k)
@@ -166,9 +195,10 @@ async def build_memory_context(
         fact_candidates = fallback_result.scalars().all()
 
     def _rerank_score(mem: UserMemory, rank: int) -> float:
+        memory_kind = _resolved_memory_kind(mem)
         base = 1.0 / (rank + 1)
-        decayed = _apply_temporal_decay(base, mem.updated_at, mem.memory_type or "fact")
-        scene_mult = _scene_weight(mem.memory_type or "fact", scene)
+        decayed = _apply_temporal_decay(base, mem.updated_at, memory_kind)
+        scene_mult = _scene_weight(memory_kind, scene)
         count_boost = 1.0 + 0.1 * math.log(max(1, (mem.access_count or 0) + 1))
         return decayed * scene_mult * count_boost
 
@@ -198,6 +228,7 @@ async def build_memory_context(
             "value": m.value,
             "confidence": m.confidence,
             "memory_type": m.memory_type,
+            "memory_kind": _resolved_memory_kind(m),
             "source": m.source,
         }
         for m in selected
@@ -233,6 +264,7 @@ async def get_user_memories(
             "value": m.value,
             "confidence": m.confidence,
             "memory_type": m.memory_type,
+            "memory_kind": _resolved_memory_kind(m),
             "source": m.source,
         }
         for m in result.scalars().all()

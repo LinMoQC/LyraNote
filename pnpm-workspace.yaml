@@ -1,5 +1,6 @@
 packages:
   - 'apps/web'
+  - 'apps/monitoring'
   - 'apps/docs'
   - 'apps/desktop'
   - 'apps/mobile'

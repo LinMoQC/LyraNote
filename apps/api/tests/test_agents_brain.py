@@ -18,10 +18,12 @@ from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
+    ClarifyInstruction,
     CompressContextInstruction,
     FinishInstruction,
     RequestHumanApprovalInstruction,
     StreamAnswerInstruction,
+    VerifyResultInstruction,
 )
 from app.agents.core.state import AgentState
 
@@ -138,6 +140,20 @@ class TestAgentBrainLLMResultPhase:
         result = brain.decide(state)
         assert isinstance(result, StreamAnswerInstruction)
 
+    def test_ambiguous_query_returns_clarify_instruction(self):
+        brain = AgentBrain()
+        state = make_state(
+            phase="llm_result",
+            pending_tool_calls=[],
+            tool_results=[],
+            query="继续",
+            execution_path="clarify",
+            route_reason="query_is_too_ambiguous",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, ClarifyInstruction)
+        assert result.reason == "query_is_too_ambiguous"
+
     def test_tools_requiring_approval_triggers_approval_instruction(self):
         """If TOOLS_REQUIRING_APPROVAL is non-empty, tool calls matching it get approval."""
         brain = AgentBrain()
@@ -209,6 +225,30 @@ class TestAgentBrainToolResultPhase:
     def test_custom_max_steps_respected(self):
         brain = AgentBrain(max_steps=10)
         state = make_state(phase="tool_result", step_count=9)
+        result = brain.decide(state)
+        assert isinstance(result, CallLLMInstruction)
+
+    def test_needs_verification_returns_verify_instruction(self):
+        brain = AgentBrain(max_steps=10)
+        state = make_state(
+            phase="tool_result",
+            step_count=1,
+            needs_verification=True,
+            verification_done=False,
+            verification_reason="check citations",
+        )
+        result = brain.decide(state)
+        assert isinstance(result, VerifyResultInstruction)
+        assert result.reason == "check citations"
+
+    def test_verification_done_returns_call_llm(self):
+        brain = AgentBrain(max_steps=10)
+        state = make_state(
+            phase="tool_result",
+            step_count=1,
+            needs_verification=False,
+            verification_done=True,
+        )
         result = brain.decide(state)
         assert isinstance(result, CallLLMInstruction)
 

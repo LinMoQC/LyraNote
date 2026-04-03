@@ -138,6 +138,7 @@ class DiagramSkill(SkillBase):
         ),
         category="knowledge",
         thought_label="📐 正在生成架构图",
+        interrupt_behavior="block",
     )
 
     def _build_schema(self, config: dict) -> dict:

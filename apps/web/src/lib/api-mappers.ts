@@ -20,6 +20,7 @@ export function mapNotebook(raw: Raw): Notebook {
     description: (raw.description as string) ?? "",
     updatedAt: (raw.updated_at as string) ?? new Date().toISOString(),
     sourceCount: (raw.source_count as number) ?? 0,
+    noteCount: (raw.note_count as number) ?? 0,
     artifactCount: 0,
     wordCount: (raw.word_count as number) ?? 0,
     summary: (raw.summary_md as string) || undefined,

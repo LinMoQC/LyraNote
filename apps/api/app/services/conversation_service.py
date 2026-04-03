@@ -16,11 +16,12 @@ import random
 from collections.abc import AsyncGenerator
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.exceptions import NotFoundError
-from app.models import Conversation, Message, Notebook
+from app.models import Conversation, Message, MessageGeneration, Notebook
+from app.trace import get_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,36 @@ def _extract_genui_from_content(content: str) -> tuple[str, dict | None]:
         cleaned = (content[: m.start()].rstrip() + "\n" + content[m.end() :].lstrip()).strip()
         return cleaned, {"tool": "excalidraw__create_view", "data": data}
     return content, None
+
+
+async def _load_user_memories_safely(
+    db: AsyncSession,
+    user_id: UUID,
+    *,
+    current_query: str | None = None,
+    scene: str = "research",
+) -> list[dict]:
+    """
+    Load user memories behind a savepoint so schema drift or query failures
+    don't abort the outer conversation transaction.
+    """
+    from app.agents.memory import build_memory_context, get_user_memories
+
+    try:
+        async with db.begin_nested():
+            if current_query is not None:
+                return await build_memory_context(
+                    user_id,
+                    current_query,
+                    db,
+                    top_k=5,
+                    scene=scene,
+                )
+            return await get_user_memories(user_id, db)
+    except Exception as exc:
+        mode = "build_memory_context" if current_query is not None else "get_user_memories"
+        logger.warning("%s failed: %s", mode, exc)
+        return []
 
 
 class ConversationService:
@@ -170,9 +201,9 @@ class ConversationService:
         from app.agents.rag.graph_retrieval import graph_augmented_context
         from app.agents.rag.retrieval import retrieve_chunks
         from app.agents.writing.composer import compose_answer
-        from app.agents.memory import get_user_memories, get_notebook_summary
+        from app.agents.memory import get_notebook_summary
 
-        user_memories = await get_user_memories(self.user_id, self.db)
+        user_memories = await _load_user_memories_safely(self.db, self.user_id)
         notebook_summary = await get_notebook_summary(conv.notebook_id, self.db)
         if conv.notebook_id:
             chunks, graph_ctx = await asyncio.gather(
@@ -225,155 +256,134 @@ class ConversationService:
         attachments_meta: list[dict] | None = None,
         thinking_enabled: bool | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Run the ReAct agent and yield SSE lines."""
-        conv = await self._get_owned(conversation_id)
+        """Compatibility streaming endpoint backed by durable chat generation."""
+        generation = await self.start_message_generation(
+            conversation_id,
+            content,
+            global_search=global_search,
+            tool_hint=tool_hint,
+            attachment_ids=attachment_ids,
+            attachments_meta=attachments_meta,
+            thinking_enabled=thinking_enabled,
+        )
+        async for line in self.subscribe_message_generation(generation["generation_id"], from_index=0):
+            yield line
+
+    async def start_message_generation(
+        self,
+        conversation_id: UUID,
+        content: str,
+        *,
+        global_search: bool = False,
+        tool_hint: str | None = None,
+        attachment_ids: list[str] | None = None,
+        attachments_meta: list[dict] | None = None,
+        thinking_enabled: bool | None = None,
+    ) -> dict[str, UUID]:
+        """Create a durable chat generation and kick off background execution."""
+        from app.agents.chat import start_message_generation_task
+        from app.config import settings
+
+        await self._get_owned(conversation_id)
 
         user_msg = Message(
             conversation_id=conversation_id,
             role="user",
+            status="completed",
             content=content,
             attachments=attachments_meta,
         )
+        assistant_msg = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            status="streaming",
+            content="",
+        )
         self.db.add(user_msg)
+        self.db.add(assistant_msg)
         await self.db.flush()
 
-        history = await self._load_history(conversation_id)
-
-        from app.agents.core.react_agent import run_agent
-        from app.agents.memory import build_memory_context, get_notebook_summary
-        from app.agents.writing.scene_detector import detect_scene, get_scene_instruction
-
-        # 提前启动 detect_scene（LLM 调用），使其与后续 DB 操作并行
-        detect_task = asyncio.create_task(detect_scene(content))
-
-        # When notebook_id is None (global chat), skip notebook-scoped context
-        notebook_summary = await get_notebook_summary(conv.notebook_id, self.db) if conv.notebook_id else None
-
-        # 此时 LLM 调用已在后台运行，大概率已完成
-        scene = await detect_task
-
-        try:
-            user_memories = await build_memory_context(
-                self.user_id, content, self.db, top_k=5, scene=scene
-            )
-        except Exception as exc:
-            logger.warning("build_memory_context failed: %s", exc)
-            user_memories = []
-
-        scene_instruction = get_scene_instruction(scene)
-
-        full_content: list[str] = []
-        full_reasoning: list[str] = []
-        citations: list[dict] = []
-        agent_steps: list[dict] = []
-        speed_metrics: dict | None = None
-        mind_map_data: dict | None = None
-        diagram_data: dict | None = None
-        mcp_result_data: dict | None = None
-        ui_elements_data: list[dict] = []
-
-        async for event in run_agent(
-            query=content,
-            notebook_id=str(conv.notebook_id) if conv.notebook_id else None,
+        generation = MessageGeneration(
+            conversation_id=conversation_id,
+            user_message_id=user_msg.id,
+            assistant_message_id=assistant_msg.id,
             user_id=self.user_id,
-            history=history,
-            db=self.db,
-            user_memories=user_memories,
-            notebook_summary=notebook_summary,
-            scene_instruction=scene_instruction,
-            global_search=True if conv.notebook_id is None else global_search,
+            status="running",
+            model=settings.llm_model,
+        )
+        self.db.add(generation)
+        await self.db.flush()
+
+        assistant_msg.generation_id = generation.id
+        await self.db.commit()
+
+        start_message_generation_task(
+            str(generation.id),
+            content=content,
+            global_search=global_search,
             tool_hint=tool_hint,
             attachment_ids=attachment_ids,
             thinking_enabled=thinking_enabled,
-        ):
-            event_type = event.get("type")
+            trace_id=get_trace_id(),
+        )
 
-            if event_type == "token":
-                full_content.append(event["content"])
-                yield f"data: {json.dumps(event)}\n\n"
+        return {
+            "generation_id": generation.id,
+            "conversation_id": conversation_id,
+            "user_message_id": user_msg.id,
+            "assistant_message_id": assistant_msg.id,
+        }
 
-            elif event_type == "citations":
-                citations = event["citations"]
-                yield f"data: {json.dumps(event)}\n\n"
+    async def get_message_generation_status(self, generation_id: UUID) -> dict:
+        generation = await self._get_owned_generation(generation_id)
+        assistant_message = await self.db.get(Message, generation.assistant_message_id)
+        return {
+            "generation_id": generation.id,
+            "conversation_id": generation.conversation_id,
+            "user_message_id": generation.user_message_id,
+            "assistant_message_id": generation.assistant_message_id,
+            "status": generation.status,
+            "model": generation.model,
+            "error_message": generation.error_message,
+            "last_event_index": generation.last_event_index,
+            "assistant_message": assistant_message,
+            "created_at": generation.started_at,
+            "completed_at": generation.completed_at,
+        }
 
-            elif event_type in ("thought", "tool_call", "tool_result"):
-                agent_steps.append({
-                    "type": event_type,
-                    "content": event.get("content"),
-                    "tool": event.get("tool"),
-                    "input": event.get("input"),
-                })
-                yield f"data: {json.dumps(event)}\n\n"
+    async def subscribe_message_generation(
+        self,
+        generation_id: UUID,
+        *,
+        from_index: int = 0,
+    ) -> AsyncGenerator[str, None]:
+        """Stream durable generation events with DB replay fallback."""
+        from app.agents.chat import get_generation_buffer, load_generation_events
 
-            elif event_type == "reasoning":
-                chunk = event.get("content")
-                if chunk:
-                    full_reasoning.append(chunk)
-                yield f"data: {json.dumps(event)}\n\n"
+        generation = await self._get_owned_generation(generation_id)
+        persisted_events = await load_generation_events(generation.id, from_index=from_index)
+        buf = get_generation_buffer(str(generation.id))
+        terminal = generation.status in {"done", "error", "cancelled"}
 
-            elif event_type == "error":
-                full_content.append(event.get("content", ""))
-                yield f"data: {json.dumps(event)}\n\n"
+        async def _replay_then_follow() -> AsyncGenerator[str, None]:
+            next_index = from_index
+            for event in persisted_events:
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                next_index = max(next_index, int(event.get("event_index", next_index - 1)) + 1)
 
-            elif event_type == "speed":
-                speed_metrics = {
-                    "ttft_ms": event.get("ttft_ms", 0),
-                    "tps": event.get("tps", 0),
-                    "tokens": event.get("tokens", 0),
-                }
-                yield f"data: {json.dumps(event)}\n\n"
+            if buf is None:
+                yield "data: [DONE]\n\n"
+                return
 
-            elif event_type == "done":
-                content_text = "".join(full_content)
-                reasoning_text = "".join(full_reasoning).strip() or None
-                # If the LLM embedded a GenUI JSON block in text (instead of calling
-                # a tool), extract it now so the frontend can render it properly.
-                if mcp_result_data is None:
-                    content_text, extracted_mcp = _extract_genui_from_content(content_text)
-                    if extracted_mcp:
-                        mcp_result_data = extracted_mcp
-                        # Notify the frontend: set mcpResult and replace the content
-                        # (remove the raw JSON code block that was streamed as tokens).
-                        yield f"data: {json.dumps({'type': 'mcp_result', 'data': extracted_mcp})}\n\n"
-                        yield f"data: {json.dumps({'type': 'content_replace', 'content': content_text})}\n\n"
-                if content_text:
-                    assistant_msg = Message(
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content=content_text,
-                        reasoning=reasoning_text,
-                        citations=citations,
-                        agent_steps=agent_steps or None,
-                        speed=speed_metrics,
-                        mind_map=mind_map_data,
-                        diagram=diagram_data,
-                        mcp_result=mcp_result_data,
-                        ui_elements=ui_elements_data or None,
-                    )
-                    self.db.add(assistant_msg)
-                    await self.db.flush()
+            async for event in buf.subscribe(from_index=next_index):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
 
-                    self._dispatch_post_chat_tasks(
-                        conversation_id, scene, user_memories
-                    )
+        if buf is None and not terminal and not persisted_events:
+            raise NotFoundError("消息生成缓冲已失效")
 
-                    event = {**event, "message_id": str(assistant_msg.id)}
-                yield f"data: {json.dumps(event)}\n\n"
-
-            else:
-                # Capture rich-media payloads so they can be persisted with the message.
-                if event_type == "mind_map" and event.get("data"):
-                    mind_map_data = event["data"]
-                elif event_type == "diagram" and event.get("data"):
-                    diagram_data = event["data"]
-                elif event_type == "mcp_result" and event.get("data"):
-                    mcp_result_data = event["data"]
-                elif event_type == "ui_element" and event.get("element_type"):
-                    ui_elements_data.append({
-                        "element_type": event["element_type"],
-                        "data": event.get("data", {}),
-                    })
-                yield f"data: {json.dumps(event)}\n\n"
+        async for line in _replay_then_follow():
+            yield line
 
     # ── History loading ───────────────────────────────────────────────────────
 
@@ -386,6 +396,7 @@ class ConversationService:
             result = await self.db.execute(
                 select(Message)
                 .where(Message.conversation_id == conversation_id)
+                .where(or_(Message.status != "streaming", Message.content != ""))
                 .order_by(Message.created_at.desc(), Message.role.asc())
                 .limit(RAW_HISTORY_WINDOW)
             )
@@ -405,6 +416,7 @@ class ConversationService:
         result = await self.db.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
+            .where(or_(Message.status != "streaming", Message.content != ""))
             .order_by(Message.created_at.asc(), Message.role.desc())
             .limit(20)
         )
@@ -526,3 +538,15 @@ class ConversationService:
         if conv is None:
             raise NotFoundError("对话不存在")
         return conv
+
+    async def _get_owned_generation(self, generation_id: UUID) -> MessageGeneration:
+        result = await self.db.execute(
+            select(MessageGeneration).where(
+                MessageGeneration.id == generation_id,
+                MessageGeneration.user_id == self.user_id,
+            )
+        )
+        generation = result.scalar_one_or_none()
+        if generation is None:
+            raise NotFoundError("消息生成不存在")
+        return generation

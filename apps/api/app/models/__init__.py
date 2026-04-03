@@ -26,7 +26,20 @@ from app.models.memory import (
     UserPortrait,
 )
 from app.models.skill import SkillInstall, UserSkillConfig
-from app.models.task import ScheduledTask, ScheduledTaskRun, ResearchTask
+from app.models.task import (
+    ScheduledTask,
+    ScheduledTaskRun,
+    ResearchTask,
+    MessageGeneration,
+    MessageGenerationEvent,
+)
+from app.models.observability import (
+    ObservabilityRun,
+    ObservabilitySpan,
+    ObservabilityLLMCall,
+    ObservabilityToolCall,
+    WorkerHeartbeat,
+)
 from app.models.knowledge import KnowledgeEntity, KnowledgeRelation, ProactiveInsight
 from app.models.mcp import MCPServerConfig
 from app.models.public_home import PublicHomeState
@@ -67,6 +80,13 @@ __all__ = [
     "ScheduledTask",
     "ScheduledTaskRun",
     "ResearchTask",
+    "MessageGeneration",
+    "MessageGenerationEvent",
+    "ObservabilityRun",
+    "ObservabilitySpan",
+    "ObservabilityLLMCall",
+    "ObservabilityToolCall",
+    "WorkerHeartbeat",
     # knowledge graph + insights
     "KnowledgeEntity",
     "KnowledgeRelation",

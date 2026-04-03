@@ -22,6 +22,7 @@ class MemoryOut(BaseModel):
     value: str
     confidence: float
     memory_type: str
+    memory_kind: str
     access_count: int
     last_accessed_at: str | None = None
     expires_at: str | None = None
