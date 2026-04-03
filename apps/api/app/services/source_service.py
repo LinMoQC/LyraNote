@@ -14,6 +14,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -45,6 +46,14 @@ class DownloadStream:
 
 
 DownloadResult = DownloadRedirect | DownloadStream
+
+
+@dataclass
+class WebImportResult:
+    notebook_id: UUID
+    created_count: int
+    skipped_count: int
+    source_ids: list[UUID]
 
 
 class SourceService:
@@ -101,6 +110,31 @@ class SourceService:
             await self.db.flush()
             await self.db.refresh(nb)
         return nb
+
+    @staticmethod
+    def _normalize_web_url(url: str | None) -> str:
+        if not url:
+            return ""
+
+        raw = url.strip()
+        if not raw:
+            return ""
+
+        parts = urlsplit(raw)
+        filtered_query = [
+            (key, value)
+            for key, value in parse_qsl(parts.query, keep_blank_values=True)
+            if not key.lower().startswith("utm_")
+            and key.lower() not in {"fbclid", "gclid", "mc_cid", "mc_eid"}
+        ]
+        normalized_path = parts.path.rstrip("/") or parts.path or ""
+        return urlunsplit((
+            parts.scheme.lower(),
+            parts.netloc.lower(),
+            normalized_path,
+            urlencode(filtered_query, doseq=True),
+            "",
+        ))
 
     def _dispatch_refresh_summary(self, notebook_id: UUID) -> None:
         asyncio.create_task(self._refresh_summary_safe(notebook_id))
@@ -176,6 +210,70 @@ class SourceService:
         ingest_source.delay(str(source.id))
 
         return source
+
+    async def import_web_sources(
+        self,
+        sources: list[dict],
+        *,
+        notebook_id: UUID | None = None,
+    ) -> WebImportResult:
+        target_notebook_id = notebook_id
+        if target_notebook_id is not None:
+            await self._assert_notebook_owner(target_notebook_id)
+        else:
+            nb = await self._get_or_create_global_notebook()
+            target_notebook_id = nb.id
+
+        existing_result = await self.db.execute(
+            select(Source.url).where(
+                Source.notebook_id == target_notebook_id,
+                Source.url.isnot(None),
+            )
+        )
+        existing_urls = {
+            normalized
+            for normalized in (
+                self._normalize_web_url(url)
+                for url in existing_result.scalars().all()
+            )
+            if normalized
+        }
+
+        created_count = 0
+        skipped_count = 0
+        source_ids: list[UUID] = []
+
+        for item in sources:
+            normalized_url = self._normalize_web_url(item.get("url"))
+            if not normalized_url or normalized_url in existing_urls:
+                skipped_count += 1
+                continue
+
+            source = Source(
+                notebook_id=target_notebook_id,
+                title=(item.get("title") or normalized_url)[:500],
+                type="web",
+                status="pending",
+                url=normalized_url,
+            )
+            self.db.add(source)
+            await self.db.flush()
+            await self.db.refresh(source)
+
+            from app.workers.tasks import ingest_source
+
+            ingest_source.delay(str(source.id))
+
+            existing_urls.add(normalized_url)
+            created_count += 1
+            source_ids.append(source.id)
+
+        return WebImportResult(
+            notebook_id=target_notebook_id,
+            created_count=created_count,
+            skipped_count=skipped_count,
+            source_ids=source_ids,
+        )
 
     # ── List ──────────────────────────────────────────────────────────────────
 

@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.models import (
+    Base,
+    ObservabilityLLMCall,
+    ObservabilityRun,
+    ObservabilitySpan,
+    ObservabilityToolCall,
+    WorkerHeartbeat,
+)
+from app.services.monitoring_service import (
+    classify_worker_status,
+    create_observability_run,
+    touch_worker_heartbeat,
+)
+
+
+@pytest.mark.asyncio
+async def test_trace_middleware_sets_header_without_persisting_http_run(client, db_session) -> None:
+    response = await client.get("/api/v1/setup/status")
+
+    assert response.status_code == 200
+    assert response.headers["X-Trace-Id"]
+
+    result = await db_session.execute(
+        select(ObservabilityRun)
+        .where(ObservabilityRun.trace_id == response.headers["X-Trace-Id"])
+    )
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_monitoring_api_requires_authentication(client) -> None:
+    response = await client.get("/api/v1/monitoring/overview")
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_monitoring_endpoints_return_overview_trace_detail_and_workers(
+    client,
+    db_session,
+    auth_headers,
+    test_user,
+) -> None:
+    user, _ = test_user
+    trace_id = "trace-monitoring"
+    conversation_id = uuid.uuid4()
+    generation_id = uuid.uuid4()
+    now = datetime.now(UTC) - timedelta(seconds=3)
+
+    run = await create_observability_run(
+        db_session,
+        trace_id=trace_id,
+        run_type="chat_generation",
+        name="chat.generation",
+        status="done",
+        user_id=user.id,
+        conversation_id=conversation_id,
+        generation_id=generation_id,
+        started_at=now,
+        metadata={"scene": "chat", "model": "gpt-4o-mini"},
+    )
+    run.finished_at = now + timedelta(seconds=2)
+    run.duration_ms = 2000
+    db_session.add(
+        ObservabilitySpan(
+            run_id=run.id,
+            trace_id=trace_id,
+            span_name="chat.llm.stream",
+            status="success",
+            started_at=now,
+            finished_at=now + timedelta(seconds=1),
+            duration_ms=1000,
+            metadata_json={"tokens": 128},
+        )
+    )
+    db_session.add(
+        ObservabilityLLMCall(
+            run_id=run.id,
+            trace_id=trace_id,
+            call_type="stream_answer",
+            provider="openai",
+            model="gpt-4o-mini",
+            status="success",
+            input_tokens=120,
+            output_tokens=48,
+            prompt_snapshot={"raw_preview": "prompt", "char_count": 6, "sha256": "abc", "redaction_applied": False, "truncated": False},
+            response_snapshot={"raw_preview": "answer", "char_count": 6, "sha256": "def", "redaction_applied": False, "truncated": False},
+            started_at=now,
+            finished_at=now + timedelta(seconds=2),
+            duration_ms=2000,
+        )
+    )
+    db_session.add(
+        ObservabilityToolCall(
+            run_id=run.id,
+            trace_id=trace_id,
+            tool_name="search_notebook_knowledge",
+            status="success",
+            cache_hit=False,
+            result_count=3,
+            input_snapshot={"raw_preview": "{\"query\":\"test\"}", "char_count": 16, "sha256": "ghi", "redaction_applied": False, "truncated": False},
+            output_snapshot={"raw_preview": "3 hits", "char_count": 6, "sha256": "jkl", "redaction_applied": False, "truncated": False},
+            started_at=now,
+            finished_at=now + timedelta(seconds=1),
+            duration_ms=1000,
+        )
+    )
+    db_session.add(
+        WorkerHeartbeat(
+            component="worker",
+            instance_id="worker:test:1",
+            hostname="test-host",
+            pid=1234,
+            status="healthy",
+            metadata_json={"queue": "default"},
+            last_seen_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    overview_response = await client.get("/api/v1/monitoring/overview", headers=auth_headers)
+    assert overview_response.status_code == 200
+    overview = overview_response.json()["data"]
+    assert overview["chat"]["total"] >= 1
+
+    traces_response = await client.get("/api/v1/monitoring/traces", headers=auth_headers)
+    traces_payload = traces_response.json()["data"]
+    traces = traces_payload["items"]
+    assert any(item["trace_id"] == trace_id for item in traces)
+    assert traces_payload["total"] >= 1
+
+    detail_response = await client.get(f"/api/v1/monitoring/traces/{trace_id}", headers=auth_headers)
+    assert detail_response.status_code == 200
+    detail = detail_response.json()["data"]
+    assert detail["trace_id"] == trace_id
+    assert detail["runs"][0]["generation_id"] == str(generation_id)
+    assert detail["spans"][0]["span_name"] == "chat.llm.stream"
+    assert detail["llm_calls"][0]["call_type"] == "stream_answer"
+    assert detail["tool_calls"][0]["tool_name"] == "search_notebook_knowledge"
+    assert detail["summary"]["total_llm_calls"] == 1
+    assert detail["summary"]["total_output_tokens"] == 48
+
+    workers_response = await client.get("/api/v1/monitoring/workers", headers=auth_headers)
+    workers = workers_response.json()["data"]
+    assert workers[0]["component"] == "worker"
+    assert workers[0]["status"] == "healthy"
+
+
+def test_classify_worker_status_marks_stale_and_down() -> None:
+    now = datetime.now(UTC)
+
+    assert classify_worker_status(now - timedelta(seconds=15), stale_after_seconds=30) == "healthy"
+    assert classify_worker_status(now - timedelta(seconds=45), stale_after_seconds=30) == "stale"
+    assert classify_worker_status(now - timedelta(seconds=75), stale_after_seconds=30) == "down"
+
+
+@pytest.mark.asyncio
+async def test_touch_worker_heartbeat_uses_background_session_for_own_db(monkeypatch, tmp_path) -> None:
+    db_path = tmp_path / "heartbeat.sqlite3"
+    database_url = f"sqlite+aiosqlite:///{db_path}"
+    engine = create_async_engine(database_url)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr("app.services.monitoring_service.settings.database_url", database_url)
+
+    try:
+        heartbeat = await touch_worker_heartbeat(
+            "beat",
+            metadata={"source": "unit-test"},
+            instance_id="beat:test:1",
+        )
+
+        assert heartbeat.component == "beat"
+        assert heartbeat.instance_id == "beat:test:1"
+        assert heartbeat.metadata_json == {"source": "unit-test"}
+
+        async with session_factory() as session:
+            result = await session.execute(
+                select(WorkerHeartbeat).where(WorkerHeartbeat.instance_id == "beat:test:1")
+            )
+            stored = result.scalar_one()
+
+        assert stored.component == "beat"
+        assert stored.status == "healthy"
+        assert stored.metadata_json == {"source": "unit-test"}
+    finally:
+        await engine.dispose()

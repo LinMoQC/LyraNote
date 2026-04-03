@@ -15,11 +15,17 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from app.dependencies import CurrentUser, DbDep
-from app.domains.ai.schemas import ClarifyRequest, DeepResearchRequest
+from app.domains.ai.schemas import (
+    ClarifyRequest,
+    DeepResearchRequest,
+    SaveDeepResearchSourcesRequest,
+)
 from app.config import settings
 from app.models import ResearchTask, Conversation, Message, Notebook
 from app.schemas.response import success
 from app.agents.research.task_manager import get_buffer, run_research_task
+from app.services.source_service import SourceService
+from app.trace import get_trace_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -86,7 +92,7 @@ async def create_deep_research(
     task = ResearchTask(
         id=task_id,
         user_id=current_user.id,
-        notebook_id=str(notebook.id),
+        notebook_id=str(notebook_id_uuid) if notebook_id_uuid else None,
         conversation_id=conv.id,
         query=body.query,
         mode=body.mode,
@@ -114,6 +120,7 @@ async def create_deep_research(
             tavily_api_key=settings.tavily_api_key or None,
             user_memories=user_memories,
             clarification_context=body.clarification_context,
+            trace_id=get_trace_id(),
         )
     )
 
@@ -226,9 +233,54 @@ async def get_deep_research_status(
         "report": task.report,
         "deliverable": task.deliverable_json,
         "timeline": task.timeline_json,
+        "web_sources": task.web_sources_json,
         "error_message": task.error_message,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "event_count": event_count,
         "buffer_alive": buf is not None,
+    })
+
+
+@router.post("/ai/deep-research/{task_id}/save-sources")
+async def save_deep_research_sources(
+    task_id: str,
+    body: SaveDeepResearchSourcesRequest,
+    current_user: CurrentUser,
+    db: DbDep,
+):
+    try:
+        tid = _uuid.UUID(task_id)
+    except ValueError:
+        raise HTTPException(400, "Invalid task_id")
+
+    result = await db.execute(
+        select(ResearchTask).where(
+            ResearchTask.id == tid,
+            ResearchTask.user_id == current_user.id,
+        )
+    )
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    raw_target = body.target_notebook_id or task.notebook_id
+    target_notebook_id: _uuid.UUID | None = None
+    if raw_target:
+        try:
+            target_notebook_id = _uuid.UUID(raw_target)
+        except ValueError:
+            raise HTTPException(400, "Invalid target_notebook_id")
+
+    source_service = SourceService(db, current_user.id)
+    import_result = await source_service.import_web_sources(
+        task.web_sources_json or [],
+        notebook_id=target_notebook_id,
+    )
+    await db.commit()
+
+    return success({
+        "created_count": import_result.created_count,
+        "skipped_count": import_result.skipped_count,
+        "target_notebook_id": str(import_result.notebook_id),
     })

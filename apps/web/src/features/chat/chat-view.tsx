@@ -73,6 +73,13 @@ export function ChatView() {
                   onFeedback={p.handleFeedback}
                   onRegenerate={p.stableRegenerate}
                   onFollowUp={p.stableFollowUp}
+                  onSaveDeepResearchSources={
+                    msg.deepResearch &&
+                    p.dr.taskId &&
+                    p.activeConvId === p.drConversationId
+                      ? p.dr.handleSaveSources
+                      : undefined
+                  }
                   onArtifact={p.setArtifactState}
                 />
               ))}
@@ -102,6 +109,7 @@ export function ChatView() {
                   <DeepResearchProgress
                     progress={p.dr.drProgress}
                     onSaveNote={p.dr.handleSaveAsNote}
+                    onSaveSources={p.dr.handleSaveSources}
                     onFollowUp={(q) => p.chat.handleSend(q)}
                     onRate={p.dr.handleDrRate}
                     onCopy={p.copy}

@@ -16,6 +16,7 @@ export async function showLogs() {
       { name: 'Worker',   value: 'worker' },
       { name: 'Beat',     value: 'beat' },
       { name: 'Web',      value: 'web' },
+      { name: 'Monitoring', value: 'monitoring' },
       { name: '数据库',   value: 'db' },
       { name: 'Redis',    value: 'redis' },
     ],

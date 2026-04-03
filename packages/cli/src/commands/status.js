@@ -6,6 +6,7 @@ const CONTAINERS = [
   'lyranote-worker-1',
   'lyranote-beat-1',
   'lyranote-web-1',
+  'lyranote-monitoring-1',
   'lyranote-db-1',
   'lyranote-redis-1',
   'lyranote-minio-1',
@@ -13,6 +14,7 @@ const CONTAINERS = [
 
 const ENDPOINTS = [
   { name: '前端',       host: 'localhost', port: 3000 },
+  { name: '监控面板',   host: 'localhost', port: 3100 },
   { name: 'API',        host: 'localhost', port: 8000 },
   { name: 'MinIO',      host: 'localhost', port: 9001 },
   { name: 'PostgreSQL', host: 'localhost', port: 5433 },

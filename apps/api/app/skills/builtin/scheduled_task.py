@@ -25,6 +25,7 @@ class ScheduledTaskSkill(SkillBase):
             "如果用户只给了订阅链接或部分信息，必须先询问补全缺失项，不要自行编造。"
         ),
         category="productivity",
+        interrupt_behavior="block",
         always=False,
         thought_label="⏰ 正在创建定时任务",
     )

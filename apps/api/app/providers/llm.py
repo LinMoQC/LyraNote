@@ -163,3 +163,24 @@ async def chat_with_tools(
     temperature: float = 0.7,
 ) -> dict:
     return await get_provider().chat_with_tools(messages, tools, model, temperature)
+
+
+async def chat_stream_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    model: str | None = None,
+    temperature: float = 0.7,
+    thinking_enabled: bool | None = None,
+):
+    """Unified streaming call — yields tokens directly and emits a final
+    ``tool_calls`` event if the model chose to call tools instead of answering.
+
+    Yields:
+      {"type": "token",      "content": str}
+      {"type": "reasoning",  "content": str}
+      {"type": "tool_calls", "calls": list[dict], "raw_assistant": dict}
+    """
+    async for chunk in get_provider().chat_stream_with_tools(
+        messages, tools, model, temperature, thinking_enabled
+    ):
+        yield chunk

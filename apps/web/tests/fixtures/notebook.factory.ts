@@ -9,6 +9,7 @@ export function buildNotebook(overrides: NotebookFactoryOverrides = {}): Noteboo
     description: "",
     updatedAt: "2026-03-29T08:00:00.000Z",
     sourceCount: 0,
+    noteCount: 0,
     artifactCount: 0,
     wordCount: 0,
     summary: undefined,

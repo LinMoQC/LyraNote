@@ -17,6 +17,7 @@ class CreateNoteSkill(SkillBase):
             "当用户要求整理笔记、保存结论或创建新文档时调用。"
     ),
         category="writing",
+        interrupt_behavior="block",
         thought_label="✏️ 正在创建笔记",
     )
 

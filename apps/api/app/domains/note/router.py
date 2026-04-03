@@ -16,7 +16,10 @@ router = APIRouter(tags=["notes"])
 def _compute_word_count(text: str | None) -> int:
     if not text:
         return 0
-    return len(text.split())
+    import re
+    chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
+    english = len(re.findall(r'[a-zA-Z0-9]+', text))
+    return chinese + english
 
 
 def _dispatch_summary(notebook_id: UUID, content_text: str | None) -> None:
@@ -73,7 +76,8 @@ async def create_note(
 ):
     await _assert_notebook_owner(db, notebook_id, current_user.id)
     data = body.model_dump()
-    data["word_count"] = _compute_word_count(data.get("content_text"))
+    if data.get("word_count") is None:
+        data["word_count"] = _compute_word_count(data.get("content_text"))
     note = Note(notebook_id=notebook_id, user_id=current_user.id, **data)
     db.add(note)
     await db.flush()
@@ -95,7 +99,7 @@ async def update_note(
     note = await _get_owned_note(db, note_id, current_user.id)
     updates = body.model_dump(exclude_none=True)
 
-    if "content_text" in updates:
+    if "content_text" in updates and updates.get("word_count") is None:
         updates["word_count"] = _compute_word_count(updates["content_text"])
 
     for field, value in updates.items():

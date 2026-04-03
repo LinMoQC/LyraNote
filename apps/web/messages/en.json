@@ -173,7 +173,8 @@
     "clearNotebookLabel": "Clear notebook filter",
     "noNotebooks": "No notebooks",
     "notebookSourceCount": "{count} srcs",
-    "timeCost": "Time: {label}"
+    "timeCost": "Time: {label}",
+    "tokenCost": "{count} tokens"
   },
   "notebook": {
     "toc": "Table of Contents",
@@ -192,6 +193,7 @@
     "tabSources": "Sources",
     "noSummary": "No summary yet",
     "sourceCount": "{count} sources",
+    "noteCount": "{count} notes",
     "wordCountK": "{count}k words",
     "wordCount": "{count} words",
     "card": {
@@ -818,6 +820,8 @@
     "allSources": "All Sources",
     "followUp": "Follow-up Questions",
     "saveAsNote": "Save as Note",
+    "saveSources": "Save Search Sources",
+    "savedSources": "Saved {created} sources, skipped {skipped} duplicates",
     "citationTable": "Citation Table ({count} entries)",
     "sourceCount": "{count} sources",
     "requestFailed": "Deep research request failed, please try again.",
@@ -952,7 +956,7 @@
       "updateMemory": "Updating memory",
       "toolCall": "Tool Call",
       "done": "Done",
-      "thinking": "Thinking…"
+      "thinking": "Thinking"
     },
     "citationSources": "Citations · {count}",
     "refSources": "Reference Sources",
@@ -1217,6 +1221,7 @@
     "chartStreaming": "Generating chart...",
     "cardStreaming": "Generating card...",
     "agentViewReasoning": "View reasoning",
-    "timeCost": "Time: {label}"
+    "timeCost": "Time: {label}",
+    "tokenCost": "{count} tokens"
   }
 }

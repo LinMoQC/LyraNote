@@ -112,7 +112,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({ message
         {choices && <ChoiceCards choices={choices} onSelect={(q) => onInsert?.(q)} />}
 
         {message.citations && message.citations.length > 0 && (
-          <CitationFooter citations={message.citations} />
+          <CitationFooter citations={message.citations} content={message.content} />
         )}
 
         {message.mindMap && <MindMapView data={message.mindMap} />}

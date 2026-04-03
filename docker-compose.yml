@@ -165,6 +165,36 @@ services:
       retries: 15
       start_period: 60s
 
+  monitoring:
+    build:
+      context: .
+      dockerfile: apps/monitoring/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api/v1
+        MONITORING_BASE_PATH: /ops
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3100:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: /api/v1
+      MONITORING_BASE_PATH: /ops
+      HOSTNAME: "0.0.0.0"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const c=require('net').connect({port:3000,host:'127.0.0.1'},()=>{c.end();process.exit(0)});c.on('error',()=>process.exit(1));c.setTimeout(4000,()=>{c.destroy();process.exit(1)})",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+
 volumes:
   postgres_data:
   redis_data:

@@ -43,8 +43,15 @@ class StreamAnswerInstruction:
 
 @dataclass
 class CompressContextInstruction:
-    """Compress old messages into a summary to save context window space."""
+    """Compress old messages to save context window space.
 
+    mode="snip"     — fast path: drop the oldest N middle messages, no LLM call.
+                      Fires at a lower token threshold (snipCompact layer).
+    mode="summarize"— slow path: LLM-based summarization of middle messages.
+                      Fires only after snip passes are exhausted (reactiveCompact layer).
+    """
+
+    mode: str = "summarize"  # "snip" | "summarize"
     type: str = "compress_context"
 
 

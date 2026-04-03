@@ -35,11 +35,18 @@ class AgentState:
     verification_done: bool = False
     verification_reason: str = ""
 
+    # Multi-layer context compression tracking (P3)
+    # snip_count: how many snipCompact passes have been run (max 2 before LLM compress)
+    snip_count: int = 0
+
+    # Diminishing-returns detection (P6)
+    # How many consecutive LLM turns generated fewer than _LOW_OUTPUT_TOKEN_THRESHOLD tokens.
+    # Brain aborts the loop and streams the answer when this exceeds the max.
+    consecutive_low_output_turns: int = 0
+
     query: str = ""
     global_search: bool = False
     active_scene: str = "research"
-    execution_path: str = "direct_answer"
-    route_reason: str = ""
     context_compressed: bool = False
     context_budget_chars: int = 6000
 

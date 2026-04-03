@@ -3,12 +3,12 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.config import settings
 from app.models._base import uuid_pk, now_col
+from app.models._json import json_type
 
 
 class UserMemory(Base):
@@ -49,8 +49,8 @@ class AgentRun(Base):
     id: Mapped[uuid.UUID] = uuid_pk()
     type: Mapped[str] = mapped_column(String(100))   # ingest | compose | write
     status: Mapped[str] = mapped_column(String(50), default="queued")  # queued | running | success | failed
-    input_data: Mapped[dict | None] = mapped_column(JSONB)
-    output_data: Mapped[dict | None] = mapped_column(JSONB)
+    input_data: Mapped[dict | None] = mapped_column(json_type)
+    output_data: Mapped[dict | None] = mapped_column(json_type)
     error: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -72,7 +72,7 @@ class AgentReflection(Base):
     what_worked: Mapped[str | None] = mapped_column(Text)
     what_failed: Mapped[str | None] = mapped_column(Text)
     # list of memory keys that were reinforced (up-rating)
-    memory_reinforced: Mapped[list | None] = mapped_column(JSONB)
+    memory_reinforced: Mapped[list | None] = mapped_column(json_type)
     created_at: Mapped[datetime] = now_col()
 
     user: Mapped["User"] = relationship(back_populates="reflections")
@@ -124,7 +124,7 @@ class AgentThought(Base):
     visibility: Mapped[str] = mapped_column(String(20), default="internal", nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     # 触发本次思考的用户活动上下文（JSON 快照）
-    activity_context: Mapped[dict | None] = mapped_column(JSONB)
+    activity_context: Mapped[dict | None] = mapped_column(json_type)
     # 本次思考关联的笔记本（可选）
     notebook_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("notebooks.id", ondelete="SET NULL"), nullable=True
@@ -145,7 +145,7 @@ class UserPortrait(Base):
         ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
     )
     # 六维画像 JSON，结构见 docs/lyra-soul-system.md
-    portrait_json: Mapped[dict | None] = mapped_column(JSONB)
+    portrait_json: Mapped[dict | None] = mapped_column(json_type)
     # AI 生成的头像 URL（由公开主页生成时写入）
     avatar_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 合成摘要（供 Lyra 直接引用的自然语言描述）

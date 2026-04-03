@@ -173,7 +173,8 @@
     "clearNotebookLabel": "清除笔记本限制",
     "noNotebooks": "暂无笔记本",
     "notebookSourceCount": "{count} 源",
-    "timeCost": "用时 {label}"
+    "timeCost": "用时 {label}",
+    "tokenCost": "{count} tokens"
   },
   "notebook": {
     "toc": "目录",
@@ -192,6 +193,7 @@
     "tabSources": "来源",
     "noSummary": "暂无摘要",
     "sourceCount": "{count} 个来源",
+    "noteCount": "{count} 篇笔记",
     "wordCountK": "{count}k 字",
     "wordCount": "{count} 字",
     "card": {
@@ -818,6 +820,8 @@
     "allSources": "全部来源",
     "followUp": "推荐追问",
     "saveAsNote": "保存为笔记",
+    "saveSources": "保存搜索来源",
+    "savedSources": "已保存 {created} 个来源，跳过 {skipped} 个重复来源",
     "citationTable": "引用结论表 ({count} 条)",
     "sourceCount": "{count} 个来源",
     "requestFailed": "深度研究请求失败，请重试。",
@@ -952,7 +956,7 @@
       "updateMemory": "正在更新记忆",
       "toolCall": "工具调用",
       "done": "完成",
-      "thinking": "思考中…"
+      "thinking": "思考中"
     },
     "citationSources": "引用来源 · {count}",
     "refSources": "参考来源",
@@ -1217,6 +1221,7 @@
     "chartStreaming": "正在生成图表...",
     "cardStreaming": "正在生成卡片...",
     "agentViewReasoning": "查看推理过程",
-    "timeCost": "用时 {label}"
+    "timeCost": "用时 {label}",
+    "tokenCost": "{count} tokens"
   }
 }

@@ -18,6 +18,8 @@ class DeepReadSkill(SkillBase):
             "当用户要求深度阅读、批判性分析或学术审阅时调用。"
         ),
         category="knowledge",
+        concurrency_safe=True,
+        max_result_chars=10000,
         thought_label="📖 正在深度阅读",
     )
 

@@ -16,8 +16,7 @@ export interface ParsedMessageContent {
 }
 
 export function parseMessageContent(content: string): ParsedMessageContent {
-  const { textBefore, choices } = parseChoicesBlock(content);
-  const textContent = choices ? textBefore : content;
+  const { textContent, choices } = parseChoicesBlock(content);
   const needsRichMarkdown =
     textContent.includes("\n## ") || textContent.startsWith("## ") ||
     textContent.includes("\n### ") || textContent.startsWith("### ") ||

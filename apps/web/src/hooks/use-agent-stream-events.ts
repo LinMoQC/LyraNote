@@ -69,6 +69,7 @@ export function useAgentStreamEvents() {
         content: e.content,
         tool: e.tool,
         input: e.input,
+        ...(e.is_system ? { is_system: true } : {}),
       })),
   []);
 

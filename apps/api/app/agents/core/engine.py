@@ -17,6 +17,9 @@ from collections.abc import AsyncGenerator
 from typing import Any
 
 from app.agents.core.brain import AgentBrain
+from app.agents.core.hooks import PostToolHook, default_post_tool_hooks
+from app.agents.core.llm_backend import DefaultLLMBackend, LLMBackend
+from app.agents.core.retry import classify_llm_error, max_retries_for, sleep_before_retry
 from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
@@ -30,7 +33,17 @@ from app.agents.core.instructions import (
     VerifyResultInstruction,
 )
 from app.agents.core.state import AgentState
-from app.agents.core.tools import ToolContext, execute_tool
+from app.agents.core.tools import ToolContext, execute_tool, is_read_only_tool
+from app.services.monitoring_service import (
+    build_text_snapshot,
+    estimate_message_tokens,
+    estimate_tokens,
+    record_completed_llm_call,
+    record_completed_span,
+    record_completed_tool_call,
+    traced_span,
+    utcnow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +58,10 @@ def _verification_reason_for_tool(tool_name: str, result: str) -> str | None:
         return "本轮使用了 MCP 工具，请在回答前确认工具结果与后续结论一致。"
     if tool_name in {"summarize_sources", "compare_sources", "deep_read_sources"}:
         return "本轮生成了结构化研究结果，请在回答前核对结论是否与工具输出一致。"
-    if tool_name in {"search_notebook_knowledge", "web_search"} and "[片段" in result:
+    if tool_name == "search_notebook_knowledge" and "[片段" in result:
         return "本轮依赖检索结果，请在回答前核对引用编号、来源与结论是否一致。"
+    if tool_name == "web_search" and "[结果" in result:
+        return "本轮依赖网络搜索结果，请在回答前核对引用来源与结论是否一致。"
     return None
 
 
@@ -157,6 +172,18 @@ def _build_context(tool_results: list[str], max_total_chars: int = 6000) -> str:
     return combined
 
 
+def _llm_response_snapshot(response: dict) -> dict[str, Any]:
+    if response.get("finish_reason") == "tool_calls":
+        return {
+            "finish_reason": "tool_calls",
+            "tool_calls": response.get("tool_calls", []),
+        }
+    return {
+        "finish_reason": response.get("finish_reason"),
+        "content": response.get("content", ""),
+    }
+
+
 class AgentEngine:
     """Execute agent instructions, yielding SSE-compatible event dicts."""
 
@@ -167,12 +194,21 @@ class AgentEngine:
         tool_schemas: list[dict],
         thought_labels: dict[str, str],
         thinking_enabled: bool | None = None,
+        llm_backend: LLMBackend | None = None,
+        post_tool_hooks: list[PostToolHook] | None = None,
     ) -> None:
         self.brain = brain
         self.tool_ctx = tool_ctx
         self.tool_schemas = tool_schemas
         self.thought_labels = thought_labels
         self.thinking_enabled = thinking_enabled
+        self._llm: LLMBackend = llm_backend or DefaultLLMBackend()
+        # Post-tool hooks run in order after each tool execution.
+        # None → use the default registered hooks. Pass an explicit list to override
+        # (useful for testing or extending with custom post-processing).
+        self._post_tool_hooks: list[PostToolHook] = (
+            post_tool_hooks if post_tool_hooks is not None else default_post_tool_hooks()
+        )
 
     async def run(self, state: AgentState) -> AsyncGenerator[dict, None]:
         while state.phase not in ("done", "error"):
@@ -215,11 +251,10 @@ class AgentEngine:
     # ── Executors ─────────────────────────────────────────────────────────
 
     async def _exec_call_llm(self, state: AgentState) -> AsyncGenerator[dict, None]:
-        from app.providers.llm import chat_with_tools
+        """Unified streaming LLM call — single round-trip that either streams
+        the answer directly to the user OR detects tool calls and sets up the
+        next execution step, matching Claude Code's single-call architecture."""
 
-        # Exclude no-arg MCP tools (e.g. read_me) that have already been called
-        # and are cached.  Presenting them to the LLM again causes re-call loops
-        # because the model ignores in-result "do not call again" instructions.
         cached_no_arg_tools: set[str] = {
             key.split("::")[0]
             for key in state.tool_result_cache
@@ -234,48 +269,148 @@ class AgentEngine:
 
         if state.step_count >= state.max_steps - 2 and state.step_count > 0:
             state.messages.append({
-                "role": "system",
+                "role": "user",
                 "content": (
                     f"[系统提示] 你已使用 {state.step_count}/{state.max_steps} 步。"
                     "请尽快整合已有信息回答用户，避免不必要的额外工具调用。"
                 ),
             })
 
-        try:
-            response = await chat_with_tools(state.messages, tool_schemas, temperature=0.2)
-        except Exception as exc:
-            logger.error("LLM call failed: %s", exc)
-            state.phase = "error"
-            yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
-            yield {"type": "done"}
-            return
+        t0 = time.monotonic()
+        llm_started_at = utcnow()
+        token_count = 0
+        ttft: float | None = None
+        output_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        got_tool_calls = False
+        api_output_tokens: int | None = None
+
+        # Industrial retry loop (P7): classified backoff for 529/429/network errors.
+        # Only retries when no tokens have been streamed yet — mid-stream failures
+        # cannot be retried because partial output has already been sent to the client.
+        _llm_attempt = 0
+        while True:
+            try:
+                async with traced_span(
+                    self.tool_ctx.db,
+                    "chat.llm.stream",
+                    metadata={"step_count": state.step_count, "attempt": _llm_attempt},
+                ):
+                    async for chunk in self._llm.chat_stream_with_tools(
+                        state.messages,
+                        tool_schemas,
+                        temperature=0.2,
+                        thinking_enabled=self.thinking_enabled,
+                    ):
+                        if chunk["type"] == "token":
+                            token_count += 1
+                            output_parts.append(chunk["content"])
+                            if ttft is None:
+                                ttft = time.monotonic() - t0
+                            yield chunk
+                        elif chunk["type"] == "reasoning":
+                            reasoning_parts.append(chunk["content"])
+                            yield chunk
+                        elif chunk["type"] == "usage":
+                            api_output_tokens = chunk.get("output_tokens")
+                        elif chunk["type"] == "tool_calls":
+                            got_tool_calls = True
+                            if output_parts:
+                                yield {"type": "thought", "content": "".join(output_parts)}
+                            state.messages.append(chunk["raw_assistant"])
+                            state.pending_tool_calls = chunk["calls"]
+                break  # success — exit retry loop
+            except Exception as exc:
+                error_class = classify_llm_error(exc)
+                can_retry = (
+                    error_class != "auth"
+                    and _llm_attempt < max_retries_for(error_class)
+                    and not output_parts  # never retry mid-stream
+                )
+                if can_retry:
+                    yield {
+                        "type": "agent_trace",
+                        "event": "llm_retry",
+                        "reason": error_class,
+                        "detail": f"attempt={_llm_attempt + 1} error={type(exc).__name__}",
+                    }
+                    await sleep_before_retry(error_class, _llm_attempt, str(exc)[:120])
+                    _llm_attempt += 1
+                    # Reset per-call counters so the retry is measured cleanly.
+                    t0 = time.monotonic()
+                    llm_started_at = utcnow()
+                    continue
+                # Unrecoverable or retries exhausted — record and surface error.
+                elapsed = time.monotonic() - t0
+                await record_completed_llm_call(
+                    self.tool_ctx.db,
+                    call_type="stream",
+                    prompt=state.messages,
+                    response={"error": str(exc)},
+                    status="error",
+                    error_message=str(exc),
+                    metadata={
+                        "message_count": len(state.messages),
+                        "step_count": state.step_count,
+                        "error_class": error_class,
+                        "attempts": _llm_attempt + 1,
+                    },
+                    input_tokens=estimate_message_tokens(state.messages),
+                    output_tokens=0,
+                    started_at=llm_started_at,
+                    finished_at=utcnow(),
+                    duration_ms=int(elapsed * 1000),
+                )
+                logger.error("LLM call failed (class=%s, attempts=%d): %s", error_class, _llm_attempt + 1, exc)
+                state.phase = "error"
+                yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
+                yield {"type": "done"}
+                return
+
+        elapsed = time.monotonic() - t0
+        final_output = "".join(output_parts)
+        final_reasoning = "".join(reasoning_parts)
+        await record_completed_llm_call(
+            self.tool_ctx.db,
+            call_type="stream",
+            prompt=state.messages,
+            response={"content": final_output, "reasoning": final_reasoning},
+            finish_reason="tool_calls" if got_tool_calls else "stop",
+            metadata={"message_count": len(state.messages), "step_count": state.step_count},
+            input_tokens=estimate_message_tokens(state.messages),
+            output_tokens=estimate_tokens(final_output),
+            reasoning_tokens=estimate_tokens(final_reasoning),
+            ttft_ms=round((ttft or 0) * 1000),
+            started_at=llm_started_at,
+            finished_at=utcnow(),
+            duration_ms=int(elapsed * 1000),
+        )
         state.step_count += 1
 
-        if response["finish_reason"] == "tool_calls":
-            raw = response["raw_message"]
-            assistant_dict: dict = {"role": "assistant", "content": raw.content or ""}
-            if raw.tool_calls:
-                assistant_dict["tool_calls"] = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
-                        },
-                    }
-                    for tc in raw.tool_calls
-                ]
-            state.messages.append(assistant_dict)
-            state.pending_tool_calls = response["tool_calls"]
+        # Diminishing-returns detection (P6): track consecutive low-output turns
+        # so the Brain can abort the loop before burning all remaining steps.
+        _LOW_OUTPUT_TOKEN_THRESHOLD = 50
+        if not got_tool_calls and token_count < _LOW_OUTPUT_TOKEN_THRESHOLD:
+            state.consecutive_low_output_turns += 1
+        else:
+            state.consecutive_low_output_turns = 0
+
+        if got_tool_calls:
             state.phase = "llm_result"
         else:
-            state.pending_tool_calls = []
-            state.phase = "llm_result"
-
-        # No SSE events from this executor — events come from tool/stream executors
-        return
-        yield  # pragma: no cover — makes this an async generator
+            # Model answered directly — tokens already streamed, emit closing events.
+            # Prefer actual token count from API usage; fall back to text-length estimate.
+            output_tokens = api_output_tokens if api_output_tokens is not None else estimate_tokens(final_output)
+            tps = output_tokens / elapsed if elapsed > 0 else 0
+            yield {
+                "type": "speed",
+                "ttft_ms": round((ttft or 0) * 1000),
+                "tps": round(tps, 1),
+                "tokens": output_tokens,
+            }
+            yield {"type": "citations", "citations": self.tool_ctx.collected_citations}
+            yield {"type": "done"}
+            state.phase = "done"
 
     async def _exec_call_tools(
         self, instruction: CallToolsInstruction, state: AgentState
@@ -288,8 +423,6 @@ class AgentEngine:
             # already in the message history from a previous step.
             is_cached = state.is_tool_cached(tc["name"], tc.get("arguments", {}))
             if not is_cached:
-                label = self.thought_labels.get(tc["name"], f"⚙️ 调用 {tc['name']}")
-                yield {"type": "thought", "content": label}
                 yield {"type": "tool_call", "tool": tc["name"], "input": tc["arguments"]}
             else:
                 state.add_policy_trace("tool_cache_hit", "duplicate_tool_call_blocked", tc["name"])
@@ -302,17 +435,37 @@ class AgentEngine:
 
         # Resolve each tool call: use cached result if the same tool+args was
         # already executed in this session, otherwise execute normally.
-        async def _resolve(tc: dict) -> str:
+        async def _resolve(tc: dict) -> dict[str, Any]:
             args = tc.get("arguments", {})
+            started_at = utcnow()
+            started = time.monotonic()
             cache_key = state.tool_cache_key(tc["name"], args)
             if cache_key in state.tool_result_cache:
                 logger.debug("Tool '%s' already called with same args — returning cached result", tc["name"])
-                return state.tool_result_cache[cache_key]
+                finished_at = utcnow()
+                return {
+                    "result": state.tool_result_cache[cache_key],
+                    "status": "success",
+                    "error_message": None,
+                    "cache_hit": True,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                }
             if state.tool_failure_counts.get(tc["name"], 0) >= 2:
                 skip_result = f"[系统已阻止重复调用工具 {tc['name']}：此前已连续失败 2 次，请改用其他工具或直接回答]"
                 state.tool_result_cache[cache_key] = skip_result
                 state.add_policy_trace("tool_blocked", "tool_failure_attempt_limit", tc["name"])
-                return skip_result
+                finished_at = utcnow()
+                return {
+                    "result": skip_result,
+                    "status": "blocked",
+                    "error_message": "tool_failure_attempt_limit",
+                    "cache_hit": False,
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "duration_ms": int((time.monotonic() - started) * 1000),
+                }
             try:
                 state.tool_call_counts[tc["name"]] = state.tool_call_counts.get(tc["name"], 0) + 1
                 result = await execute_tool(tc, self.tool_ctx)
@@ -322,13 +475,28 @@ class AgentEngine:
                 logger.error("Tool '%s' raised error: %s", tc["name"], msg, exc_info=True)
                 result = f"[工具 {tc['name']} 调用失败: {msg}]"
                 state.tool_failure_counts[tc["name"]] = state.tool_failure_counts.get(tc["name"], 0) + 1
+                status = "error"
+                error_message = msg
             else:
                 if result.strip().startswith("[工具") and "调用失败" in result:
                     state.tool_failure_counts[tc["name"]] = state.tool_failure_counts.get(tc["name"], 0) + 1
+                    status = "error"
+                    error_message = result[:2000]
                 else:
                     state.tool_failure_counts[tc["name"]] = 0
+                    status = "success"
+                    error_message = None
             state.tool_result_cache[cache_key] = result
-            return result
+            finished_at = utcnow()
+            return {
+                "result": result,
+                "status": status,
+                "error_message": error_message,
+                "cache_hit": False,
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "duration_ms": int((time.monotonic() - started) * 1000),
+            }
 
         # Record which calls are cache hits BEFORE _resolve runs (after _resolve
         # all keys exist in the cache, making it impossible to distinguish).
@@ -338,95 +506,98 @@ class AgentEngine:
             if state.is_tool_cached(tc["name"], tc.get("arguments", {}))
         }
 
-        results = await asyncio.gather(*[_resolve(tc) for tc in tool_calls])
+        # Partition into read-only (concurrent) and write (serial) batches,
+        # matching Claude Code's isConcurrencySafe() partitioning pattern.
+        read_calls = [tc for tc in tool_calls if is_read_only_tool(tc["name"])]
+        write_calls = [tc for tc in tool_calls if not is_read_only_tool(tc["name"])]
 
-        for tc, result in zip(tool_calls, results):
-            if self.tool_ctx.mind_map_data is not None:
-                yield {"type": "mind_map", "data": self.tool_ctx.mind_map_data}
-                self.tool_ctx.mind_map_data = None
-                state.terminal_tool_called = True
+        read_results = (
+            await asyncio.gather(*[_resolve(tc) for tc in read_calls])
+            if read_calls else []
+        )
+        write_results: list[dict] = []
+        for tc in write_calls:
+            write_results.append(await _resolve(tc))
 
-            if self.tool_ctx.diagram_data is not None:
-                yield {"type": "diagram", "data": self.tool_ctx.diagram_data}
-                self.tool_ctx.diagram_data = None
-                state.terminal_tool_called = True
+        # Reassemble in original call order for consistent message-history insertion
+        _exec_map = {id(tc): r for tc, r in zip(read_calls, read_results)}
+        _exec_map.update({id(tc): r for tc, r in zip(write_calls, write_results)})
+        results = [_exec_map[id(tc)] for tc in tool_calls]
 
-            # For MCP-namespaced tools (name contains '__'), if the result is
-            # valid JSON forward it as a generic mcp_result event so the frontend
-            # can render it without any backend knowledge of the specific tool.
-            _mcp_payload = _try_parse_mcp_json(tc["name"], result)
-            if _mcp_payload is not None:
-                yield {"type": "mcp_result", "data": _mcp_payload}
-                state.terminal_tool_called = True
-                result = f"[工具 {tc['name']} 已执行，返回结构化数据]"
+        for tc, tool_exec in zip(tool_calls, results):
+            result = tool_exec["result"]
 
-            # MCP action tools (create_view, export, etc.) that return plain-text
-            # confirmations (not JSON) are also terminal — they produce a self-contained
-            # side-effect (e.g. rendering a diagram) and the loop should stop.
-            # Read/list/save tools are NOT terminal; only skip tools that mutate or display.
-            _NON_TERMINAL_PREFIXES = ("read", "list", "get", "fetch", "save", "load")
-            if "__" in tc["name"] and not _mcp_payload and not state.terminal_tool_called:
-                _tool_suffix = tc["name"].rsplit("__", 1)[-1]
-                if not any(_tool_suffix.startswith(p) for p in _NON_TERMINAL_PREFIXES):
-                    state.terminal_tool_called = True
-
-            if self.tool_ctx.created_note_id is not None:
-                yield {
-                    "type": "note_created",
-                    "note_id": self.tool_ctx.created_note_id,
-                    "note_title": self.tool_ctx.created_note_title,
-                    # Use newly created notebook_id (global chat) or original one
-                    "notebook_id": self.tool_ctx.created_notebook_id or self.tool_ctx.notebook_id,
-                }
-                if result.startswith("NOTE_CREATED:"):
-                    result = result.split(":", 2)[-1]
-                self.tool_ctx.created_note_id = None
-                self.tool_ctx.created_note_title = None
-                self.tool_ctx.created_notebook_id = None
-                state.terminal_tool_called = True  # note creation is always a terminal action
-
-            if tc["name"] == "search_notebook_knowledge" and self.tool_ctx.collected_citations:
-                summary_lines = [
-                    f"[片段{i}] 来源：《{c['source_title']}》（相关度 {c.get('score', 0):.0%}）"
-                    for i, c in enumerate(self.tool_ctx.collected_citations, 1)
-                ]
-                yield {
-                    "type": "tool_result",
-                    "content": f"✓ 找到 {len(summary_lines)} 个相关片段\n" + "\n".join(summary_lines),
-                }
-            elif tc["name"] == "web_search" and self.tool_ctx.collected_citations:
-                web_citations = [
-                    c
-                    for c in self.tool_ctx.collected_citations
-                    if str(c.get("source_id", "")).startswith("web-search")
-                ]
-                summary_lines = [
-                    f"[网络{i}] 《{c['source_title']}》（相关度 {c.get('score', 0):.0%}）"
-                    for i, c in enumerate(web_citations, 1)
-                ]
-                yield {
-                    "type": "tool_result",
-                    "content": f"✓ 搜索到 {len(summary_lines)} 条网络结果\n" + "\n".join(summary_lines),
-                }
-            else:
-                yield {"type": "tool_result", "content": result[:300]}
-
-            for elem in self.tool_ctx.ui_elements:
-                yield {"type": "ui_element", **elem}
-            self.tool_ctx.ui_elements.clear()
+            # Run post-tool hooks in registration order (P9: hook middleware).
+            # Each hook may transform the result and emit SSE events.
+            # CitationSummaryHook and DefaultToolResultHook together ensure exactly
+            # one tool_result event is emitted per tool call: CitationSummaryHook
+            # handles RAG/web_search, DefaultToolResultHook handles everything else.
+            # The hooks also handle mind_map, diagram, note_created, mcp_result, and
+            # ui_elements — replacing the former if-elif chain.
+            _citation_or_default_emitted = False
+            for hook in self._post_tool_hooks:
+                modified_result, events = hook(tc, result, state, self.tool_ctx)
+                if modified_result is not None:
+                    result = modified_result
+                for event in events:
+                    # Prevent double-emitting tool_result when CitationSummaryHook
+                    # already produced one — DefaultToolResultHook fires after it.
+                    if event.get("type") == "tool_result":
+                        if _citation_or_default_emitted:
+                            continue
+                        _citation_or_default_emitted = True
+                    yield event
 
             state.tool_results.append(result)
+            # Layer 1 (microCompact): cap individual tool results in the message-history
+            # copy to avoid runaway context growth.  The full result stays in
+            # state.tool_results for _build_context in _exec_stream_answer.
+            # Limit is per-tool (SkillMeta.max_result_chars); falls back to 3000.
+            _DEFAULT_MICRO_COMPACT_LIMIT = 3000
+            try:
+                from app.skills.registry import skill_registry as _sr
+                _skill = _sr.resolve(tc["name"])
+                _limit = (_skill.meta.max_result_chars if _skill is not None else _DEFAULT_MICRO_COMPACT_LIMIT)
+            except Exception:
+                _limit = _DEFAULT_MICRO_COMPACT_LIMIT
+            # max_result_chars=0 means "never truncate" (e.g. read_skill_guide body)
+            if _limit > 0 and len(result) > _limit:
+                msg_result = result[:_limit] + "\n…[内容已截断，完整结果已存入上下文]"
+            else:
+                msg_result = result
             state.messages.append({
                 "role": "tool",
                 "tool_call_id": tc["id"],
-                "content": result,
+                "content": msg_result,
             })
             followup_tool = _extract_followup_tool_hint(result)
+            result_count = None
+            if tc["name"] in {"search_notebook_knowledge", "web_search"}:
+                result_count = len(self.tool_ctx.collected_citations or [])
+            await record_completed_tool_call(
+                self.tool_ctx.db,
+                tool_name=tc["name"],
+                tool_args=tc.get("arguments", {}),
+                tool_result=result,
+                status=tool_exec["status"],
+                cache_hit=tool_exec["cache_hit"],
+                result_count=result_count,
+                followup_tool_hint=followup_tool,
+                error_message=tool_exec["error_message"],
+                metadata={
+                    "phase": "tool.execution",  # P8: OTel span hierarchy — distinguishes from tool.blocked_on_user
+                    "terminal_tool_called": state.terminal_tool_called,
+                    "recommended_next_tool": followup_tool,
+                },
+                started_at=tool_exec["started_at"],
+                finished_at=tool_exec["finished_at"],
+                duration_ms=tool_exec["duration_ms"],
+            )
             if followup_tool:
                 state.recommended_next_tool = followup_tool
                 state.add_policy_trace("mcp_followup", "tool_result_requested_followup", followup_tool)
                 state.messages.append({
-                    "role": "system",
+                    "role": "user",
                     "content": (
                         f"[系统提示] 上一步工具结果明确要求下一步优先使用 `{followup_tool}`。"
                         "不要重复调用刚才的工具。"
@@ -460,10 +631,6 @@ class AgentEngine:
                     f"请不要再次调用这些工具。根据已有结果，直接调用下一步工具或回答用户。"
                 ),
             })
-            state.messages.append({
-                "role": "assistant",
-                "content": f"明白，我不会再重复调用 {names}，将根据已有结果继续下一步。",
-            })
             yield {
                 "type": "agent_trace",
                 "event": "tool_cache_guard",
@@ -474,17 +641,35 @@ class AgentEngine:
     async def _exec_compress_context(
         self, state: AgentState
     ) -> AsyncGenerator[dict, None]:
-        """Compress old messages into a summary to free context window space.
+        """Multi-layer context compression.
 
-        Always keeps the current turn intact (from the last user message to the
-        end of messages, including all tool calls and results).  Only history
-        messages from previous turns are summarised.
+        Dispatches to one of two compression layers based on instruction.mode:
+
+        Layer 2 — snipCompact (mode="snip"):
+            Fast, no LLM call.  Drops the oldest _SNIP_DROP_COUNT messages from the
+            middle section (between system prompt and current turn).  Fires up to
+            _MAX_SNIP_PASSES times before escalating to Layer 3.
+
+        Layer 3 — reactiveCompact (mode="summarize"):
+            LLM-based summarisation of all middle messages.  One-shot: marks
+            state.context_compressed=True so it never fires again in this loop.
+
+        Both layers always preserve:
+          - The system message (index 0)
+          - The current turn (from the last user message to end of messages)
         """
-        from app.providers.llm import chat
-        from app.providers.llm import get_utility_model as _get_utility_model
+        # Retrieve the mode from the last instruction that triggered this executor.
+        # We cannot pass it as a parameter to _exec_compress_context directly, so we
+        # re-derive it from state: if snip_count < _MAX_SNIP_PASSES and tokens are in
+        # the snip band, this is a snip pass; otherwise it is a summarize pass.
+        # In practice the Brain already decided the mode — we just need to honour it.
+        _SNIP_DROP_COUNT = 4   # messages to drop per snip pass
+        _SNIP_THRESHOLD = 4000  # must match brain.SNIP_TOKEN_THRESHOLD
 
         msgs = state.messages
         if len(msgs) <= 6:
+            # Not enough history to compress — skip and proceed.
+            state.snip_count = max(state.snip_count, 2)  # prevent infinite snip loop
             state.context_compressed = True
             state.phase = "tool_result"
             return
@@ -492,10 +677,8 @@ class AgentEngine:
 
         system_msg = msgs[0] if msgs[0].get("role") == "system" else None
 
-        # Find the start of the current turn: the last "user" role message.
-        # Everything from there to the end must be kept intact so the LLM
-        # always sees the current query + all tool call / result pairs.
-        current_turn_start = 1  # fallback: right after system
+        # Find the start of the current turn (last user message).
+        current_turn_start = 1
         for i in range(len(msgs) - 1, 0, -1):
             if msgs[i].get("role") == "user":
                 current_turn_start = i
@@ -505,12 +688,42 @@ class AgentEngine:
         middle = msgs[1:current_turn_start] if system_msg else msgs[:current_turn_start]
 
         if not middle:
+            state.snip_count = max(state.snip_count, 2)
             state.context_compressed = True
             state.phase = "tool_result"
             return
             yield  # pragma: no cover
 
-        yield {"type": "thought", "content": "📝 压缩上下文以节省 token…"}
+        # Determine which layer to run based on current compression state.
+        use_snip = (
+            state.snip_count < 2
+            and state.estimate_tokens() <= 8000  # haven't breached LLM compress threshold
+        )
+
+        # ── Layer 2: snipCompact ────────────────────────────────────────────
+        if use_snip:
+            drop_count = min(_SNIP_DROP_COUNT, len(middle))
+            kept_middle = middle[drop_count:]
+            state.messages = [
+                *(([system_msg] if system_msg else [])),
+                *kept_middle,
+                *tail,
+            ]
+            state.snip_count += 1
+            yield {
+                "type": "agent_trace",
+                "event": "context_snip",
+                "reason": "snip_token_threshold_exceeded",
+                "detail": f"dropped={drop_count} snip_pass={state.snip_count} tokens={state.estimate_tokens()}",
+            }
+            state.phase = "tool_result"
+            return
+            yield  # pragma: no cover
+
+        # ── Layer 3: reactiveCompact (LLM summarize) ────────────────────────
+        from app.providers.llm import get_utility_model as _get_utility_model
+
+        yield {"type": "thought", "content": "context_compress", "is_system": True}
         yield {
             "type": "agent_trace",
             "event": "context_compression",
@@ -522,27 +735,53 @@ class AgentEngine:
             f"[{m.get('role', '?')}] {str(m.get('content', ''))[:500]}"
             for m in middle
         )
+        compress_prompt = [
+            {
+                "role": "user",
+                "content": (
+                    "请将以下对话历史压缩为一段简洁的摘要（200字以内），"
+                    "保留关键信息和结论：\n\n" + middle_text[:6000]
+                ),
+            }
+        ]
+        llm_started_at = utcnow()
+        llm_started = time.monotonic()
         try:
-            summary = await chat(
-                [
-                    {
-                        "role": "user",
-                        "content": (
-                            "请将以下对话历史压缩为一段简洁的摘要（200字以内），"
-                            "保留关键信息和结论：\n\n" + middle_text[:6000]
-                        ),
-                    }
-                ],
-                _get_utility_model(),
-                0,
-                300,
-            )
+            summary = await self._llm.chat(compress_prompt, _get_utility_model(), 0, 300)
         except Exception:
             logger.warning("Context compression failed, continuing without compression")
+            await record_completed_llm_call(
+                self.tool_ctx.db,
+                call_type="compress",
+                prompt=compress_prompt,
+                response={"error": "context_compression_failed"},
+                model=_get_utility_model(),
+                status="error",
+                error_message="context_compression_failed",
+                metadata={"message_count": len(middle)},
+                input_tokens=estimate_message_tokens(compress_prompt),
+                output_tokens=0,
+                started_at=llm_started_at,
+                finished_at=utcnow(),
+                duration_ms=int((time.monotonic() - llm_started) * 1000),
+            )
             state.context_compressed = True
             state.phase = "tool_result"
             return
             yield  # pragma: no cover
+        await record_completed_llm_call(
+            self.tool_ctx.db,
+            call_type="compress",
+            prompt=compress_prompt,
+            response=summary,
+            model=_get_utility_model(),
+            metadata={"message_count": len(middle)},
+            input_tokens=estimate_message_tokens(compress_prompt),
+            output_tokens=estimate_tokens(summary),
+            started_at=llm_started_at,
+            finished_at=utcnow(),
+            duration_ms=int((time.monotonic() - llm_started) * 1000),
+        )
 
         compressed = [
             *(([system_msg] if system_msg else [])),
@@ -577,15 +816,43 @@ class AgentEngine:
             "tool_calls": instruction.tool_calls,
         }
 
+        # Record how long the agent was blocked waiting for human input (P8 OTel span).
+        # This is the "tool.blocked_on_user" phase from Claude Code's span hierarchy.
+        _approval_started_at = utcnow()
+        _approval_t0 = time.monotonic()
+        approved = False
         try:
-            event = approval_store._events.get(approval_id)
-            if event is not None:
-                await asyncio.wait_for(event.wait(), timeout=120.0)
-            approved = approval_store.get_result(approval_id)
+            async with traced_span(
+                self.tool_ctx.db,
+                "tool.blocked_on_user",
+                metadata={
+                    "approval_id": approval_id,
+                    "tool_names": [tc.get("name", "") for tc in instruction.tool_calls],
+                },
+            ):
+                event = approval_store._events.get(approval_id)
+                if event is not None:
+                    await asyncio.wait_for(event.wait(), timeout=120.0)
+                approved = approval_store.get_result(approval_id)
         except asyncio.TimeoutError:
             approved = False
         finally:
             approval_store.cleanup(approval_id)
+
+        _approval_wait_ms = int((time.monotonic() - _approval_t0) * 1000)
+        await record_completed_span(
+            self.tool_ctx.db,
+            "tool.approval_result",
+            status="success" if approved else "rejected",
+            metadata={
+                "approval_id": approval_id,
+                "approved": approved,
+                "wait_ms": _approval_wait_ms,
+            },
+            started_at=_approval_started_at,
+            finished_at=utcnow(),
+            duration_ms=_approval_wait_ms,
+        )
 
         if approved:
             # Mark each tool call as approved so Brain won't request approval again
@@ -605,22 +872,67 @@ class AgentEngine:
         from app.agents.rag.graph_retrieval import graph_augmented_context
         from app.agents.rag.retrieval import retrieve_chunks
 
-        # Run vector/FTS retrieval and graph-context lookup in parallel.
-        # graph_augmented_context is fail-open: returns "" on any error.
-        chunks_coro = retrieve_chunks(
-            instruction.query,
-            self.tool_ctx.notebook_id,
-            self.tool_ctx.db,
-            global_search=self.tool_ctx.global_search,
-            user_id=self.tool_ctx.user_id,
+        async def _time_call(awaitable):
+            started_at = utcnow()
+            started = time.monotonic()
+            try:
+                result = await awaitable
+            except Exception as exc:
+                return exc, started_at, utcnow(), int((time.monotonic() - started) * 1000)
+            return result, started_at, utcnow(), int((time.monotonic() - started) * 1000)
+
+        rag_task = _time_call(
+            retrieve_chunks(
+                instruction.query,
+                self.tool_ctx.notebook_id,
+                self.tool_ctx.db,
+                global_search=self.tool_ctx.global_search,
+                user_id=self.tool_ctx.user_id,
+            )
         )
-        graph_coro = graph_augmented_context(
-            instruction.query,
-            self.tool_ctx.notebook_id,
-            self.tool_ctx.db,
+        graph_task = _time_call(
+            graph_augmented_context(
+                instruction.query,
+                self.tool_ctx.notebook_id,
+                self.tool_ctx.db,
+            )
         )
-        chunks, graph_ctx = await asyncio.gather(
-            chunks_coro, graph_coro, return_exceptions=True
+
+        (chunks, rag_started_at, rag_finished_at, rag_duration_ms), (
+            graph_ctx,
+            graph_started_at,
+            graph_finished_at,
+            graph_duration_ms,
+        ) = await asyncio.gather(rag_task, graph_task)
+
+        await record_completed_span(
+            self.tool_ctx.db,
+            "chat.rag.retrieve",
+            status="error" if isinstance(chunks, Exception) else "success",
+            metadata={
+                "global_search": self.tool_ctx.global_search,
+                "query_snapshot": build_text_snapshot(instruction.query),
+                "hit_count": 0 if isinstance(chunks, Exception) else len(chunks),
+                "source_count": 0 if isinstance(chunks, Exception) else len({c.get("source_id") for c in chunks if c.get("source_id")}),
+            },
+            error_message=str(chunks) if isinstance(chunks, Exception) else None,
+            started_at=rag_started_at,
+            finished_at=rag_finished_at,
+            duration_ms=rag_duration_ms,
+        )
+        await record_completed_span(
+            self.tool_ctx.db,
+            "chat.graph.retrieve",
+            status="error" if isinstance(graph_ctx, Exception) else "success",
+            metadata={
+                "global_search": self.tool_ctx.global_search,
+                "query_snapshot": build_text_snapshot(instruction.query),
+                "output_snapshot": build_text_snapshot("" if isinstance(graph_ctx, Exception) else graph_ctx),
+            },
+            error_message=str(graph_ctx) if isinstance(graph_ctx, Exception) else None,
+            started_at=graph_started_at,
+            finished_at=graph_finished_at,
+            duration_ms=graph_duration_ms,
         )
 
         # Treat unexpected exceptions as empty results
@@ -671,14 +983,19 @@ class AgentEngine:
         if instruction.reason:
             checklist.insert(1, f"- 额外提醒：{instruction.reason}")
 
-        yield {"type": "thought", "content": "✅ 正在核对工具结果与回答一致性…"}
+        yield {"type": "thought", "content": "verify", "is_system": True}
         yield {
             "type": "agent_trace",
             "event": "verification",
             "reason": "verification_gate_triggered",
             "detail": instruction.reason,
         }
-        state.messages.append({"role": "system", "content": "\n".join(checklist)})
+        await record_completed_span(
+            self.tool_ctx.db,
+            "chat.verify",
+            metadata={"reason": instruction.reason},
+        )
+        state.messages.append({"role": "user", "content": "\n".join(checklist)})
         state.verification_done = True
         state.needs_verification = False
         state.phase = "tool_result"
@@ -704,7 +1021,9 @@ class AgentEngine:
         state.phase = "done"
 
     async def _exec_stream_answer(self, state: AgentState) -> AsyncGenerator[dict, None]:
-        from app.providers.llm import chat_stream
+        """Text-only streaming answer — used only for the has_tools=False RAG path
+        and after terminal tools.  Normal tool-use responses are handled directly
+        by _exec_call_llm."""
 
         clean: list[dict] = [
             m
@@ -743,15 +1062,46 @@ class AgentEngine:
         t0 = time.monotonic()
         token_count = 0
         ttft: float | None = None
+        llm_started_at = utcnow()
+        output_parts: list[str] = []
+        reasoning_parts: list[str] = []
 
         try:
-            async for chunk in chat_stream(clean, thinking_enabled=self.thinking_enabled):
-                if chunk.get("type") == "token":
-                    token_count += 1
-                    if ttft is None:
-                        ttft = time.monotonic() - t0
-                yield chunk
+            async with traced_span(
+                self.tool_ctx.db,
+                "chat.llm.stream",
+                metadata={"thinking_enabled": self.thinking_enabled},
+            ):
+                async for chunk in self._llm.chat_stream(clean, thinking_enabled=self.thinking_enabled):
+                    if chunk.get("type") == "token":
+                        token_count += 1
+                        output_parts.append(str(chunk.get("content") or ""))
+                        if ttft is None:
+                            ttft = time.monotonic() - t0
+                    elif chunk.get("type") == "reasoning":
+                        reasoning_parts.append(str(chunk.get("content") or ""))
+                    yield chunk
         except Exception as exc:
+            llm_finished_at = utcnow()
+            await record_completed_llm_call(
+                self.tool_ctx.db,
+                call_type="stream_answer",
+                prompt=clean,
+                response={"error": str(exc)},
+                status="error",
+                error_message=str(exc),
+                metadata={
+                    "scene": state.active_scene,
+                    "tool_result_count": len(state.tool_results),
+                },
+                input_tokens=estimate_message_tokens(clean),
+                output_tokens=estimate_tokens("".join(output_parts)),
+                reasoning_tokens=estimate_tokens("".join(reasoning_parts)),
+                ttft_ms=round((ttft or 0) * 1000) if ttft is not None else None,
+                started_at=llm_started_at,
+                finished_at=llm_finished_at,
+                duration_ms=int((time.monotonic() - t0) * 1000),
+            )
             logger.error("Stream answer failed: %s", exc)
             yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
             yield {"type": "done"}
@@ -759,6 +1109,27 @@ class AgentEngine:
             return
 
         elapsed = time.monotonic() - t0
+        llm_finished_at = utcnow()
+        final_output = "".join(output_parts)
+        final_reasoning = "".join(reasoning_parts)
+        await record_completed_llm_call(
+            self.tool_ctx.db,
+            call_type="stream_answer",
+            prompt=clean,
+            response={"content": final_output, "reasoning": final_reasoning},
+            finish_reason="stop",
+            metadata={
+                "scene": state.active_scene,
+                "tool_result_count": len(state.tool_results),
+            },
+            input_tokens=estimate_message_tokens(clean),
+            output_tokens=estimate_tokens(final_output),
+            reasoning_tokens=estimate_tokens(final_reasoning),
+            ttft_ms=round((ttft or 0) * 1000),
+            started_at=llm_started_at,
+            finished_at=llm_finished_at,
+            duration_ms=int(elapsed * 1000),
+        )
         tps = token_count / elapsed if elapsed > 0 else 0
         yield {
             "type": "speed",

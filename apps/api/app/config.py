@@ -124,6 +124,11 @@ class Settings(BaseSettings):
     # App
     debug: bool = False
     cors_origins: str = "http://localhost:3000"
+    monitoring_enabled: bool = True
+    monitoring_base_path: str = "/ops"
+    monitoring_retention_days: int = 7
+    monitoring_heartbeat_interval_seconds: int = 30
+    monitoring_heartbeat_stale_seconds: int = 90
 
     # Database connection pool (ignored for SQLite)
     db_pool_size: int = 10

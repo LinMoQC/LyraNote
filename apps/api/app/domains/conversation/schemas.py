@@ -51,7 +51,9 @@ class CitationOut(BaseModel):
 class MessageOut(BaseModel):
     id: UUID
     conversation_id: UUID
+    generation_id: UUID | None = None
     role: str
+    status: str
     content: str
     reasoning: str | None = None
     citations: list | None
@@ -65,3 +67,24 @@ class MessageOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class MessageGenerationCreateOut(BaseModel):
+    generation_id: UUID
+    conversation_id: UUID
+    user_message_id: UUID
+    assistant_message_id: UUID
+
+
+class MessageGenerationStatusOut(BaseModel):
+    generation_id: UUID
+    conversation_id: UUID
+    user_message_id: UUID
+    assistant_message_id: UUID
+    status: str
+    model: str | None = None
+    error_message: str | None = None
+    last_event_index: int
+    assistant_message: MessageOut | None = None
+    created_at: datetime
+    completed_at: datetime | None = None

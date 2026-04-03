@@ -27,7 +27,6 @@ class MultiAgentState(TypedDict, total=False):
     user_memories: list[dict] | None    # L2/L3 记忆碎片
     user_portrait: dict | None          # L4 用户画像（由 orchestrator 预加载）
     notebook_summary: dict | None       # 笔记本摘要
-    scene_instruction: str | None       # 场景识别结果
     active_scene: str                   # 当前场景标签
 
     # ── 运行时传递（不可序列化，不适合持久化） ──────────────────────────────
@@ -205,7 +204,6 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     history: list[dict] = state.get("messages", [])
     user_memories = state.get("user_memories")
     notebook_summary = state.get("notebook_summary")
-    scene_instruction = state.get("scene_instruction")
     user_portrait = state.get("user_portrait")
     db = state.get("db")
     specialist: dict = state.get("specialist_result") or {}
@@ -222,7 +220,6 @@ async def synthesis_node(state: MultiAgentState) -> dict:
         system_prompt = await build_system_prompt(
             user_memories=user_memories,
             notebook_summary=notebook_summary,
-            scene_instruction=scene_instruction,
             db=db,
             user_portrait=user_portrait,
             tool_schemas=[],
@@ -268,7 +265,7 @@ async def synthesis_node(state: MultiAgentState) -> dict:
 
     # ── 流式输出 ────────────────────────────────────────────────────────────
     if not is_direct:
-        await adispatch_custom_event("sse", {"type": "thought", "content": "整合研究资料，生成深度回答…"})
+        await adispatch_custom_event("sse", {"type": "thought", "content": "synthesis", "is_system": True})
         await adispatch_custom_event("sse", {
             "type": "agent_trace",
             "event": "synthesis",

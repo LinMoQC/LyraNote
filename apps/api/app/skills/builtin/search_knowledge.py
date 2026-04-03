@@ -23,6 +23,8 @@ class SearchKnowledgeSkill(SkillBase):
         category="knowledge",
         always=True,
         thought_label="🔍 正在检索知识库",
+        concurrency_safe=True,
+        max_result_chars=6000,
         config_schema={
             "type": "object",
             "properties": {

@@ -106,12 +106,17 @@ async def test_build_system_prompt_uses_guide_manifest_instead_of_body(
         active_skills=[tool_skill, guide_skill],
     )
 
-    assert "<skills>" in prompt
+    # <skills> XML is intentionally NOT injected (tool schemas are passed via API parameter)
+    assert "<skills>" not in prompt
+    # <skill-guides> manifest IS injected (on-demand, lightweight — no body duplication)
     assert "<skill-guides>" in prompt
     assert "read_skill_guide" in prompt
     assert "Guide Skill" not in prompt  # display name is not part of the manifest
     assert "Use the special workflow." not in prompt
     assert "先调用 `read_skill_guide` 读取正文" in prompt
+    assert "LyraNote 风格执行纪律" in prompt
+    assert "简单问题直接回答" in prompt
+    assert "不要把结构化 UI payload、原始 JSON 或工具内部格式直接暴露给用户" in prompt
 
 
 @pytest.mark.asyncio

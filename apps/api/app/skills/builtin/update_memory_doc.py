@@ -23,6 +23,7 @@ class UpdateMemoryDocSkill(SkillBase):
             "不要用于记录临时信息或对话摘要。"
         ),
         category="memory",
+        interrupt_behavior="block",
         always=True,
         thought_label="💾 更新记忆…",
     )

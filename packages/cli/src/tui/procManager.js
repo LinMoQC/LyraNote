@@ -4,7 +4,7 @@ import { stripVTControlCharacters } from 'util';
 /**
  * 启动一组服务，把输出推给 TUI 的 _onLog / _onStatus callbacks。
  *
- * @param {Array<{ name, command, args, cwd, _onLog, _onStatus }>} services
+ * @param {Array<{ name, command, args, cwd, env, _onLog, _onStatus }>} services
  * @returns {{ kill: () => void }}
  */
 export function startServices(services) {
@@ -14,7 +14,7 @@ export function startServices(services) {
   for (const svc of services) {
     const proc = spawn(svc.command, svc.args ?? [], {
       cwd: svc.cwd,
-      env: { ...process.env },
+      env: { ...process.env, ...(svc.env ?? {}) },
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: supportsProcessGroups,
     });

@@ -68,6 +68,7 @@ function StatusDot({ done, active }: { done: boolean; active: boolean }) {
 export function DeepResearchProgress({
   progress,
   onSaveNote,
+  onSaveSources,
   onFollowUp,
   onRate,
   onCopy,
@@ -75,6 +76,7 @@ export function DeepResearchProgress({
 }: {
   progress: DrProgress;
   onSaveNote?: (report?: string, title?: string) => void;
+  onSaveSources?: () => void;
   onFollowUp?: (q: string) => void;
   onRate?: (rating: "like" | "dislike") => void;
   onCopy?: (text: string) => void;
@@ -182,6 +184,7 @@ export function DeepResearchProgress({
           progress={progress}
           onOpen={() => setViewerOpen(true)}
           onSaveNote={onSaveNote}
+          onSaveSources={onSaveSources}
           onCopy={onCopy}
         />
         <DrDocumentViewer
@@ -189,6 +192,7 @@ export function DeepResearchProgress({
           progress={progress}
           onClose={() => setViewerOpen(false)}
           onSaveNote={onSaveNote}
+          onSaveSources={onSaveSources}
           onFollowUp={onFollowUp}
           onRate={onRate}
           onCopy={onCopy}

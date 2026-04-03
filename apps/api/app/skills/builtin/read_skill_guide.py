@@ -25,6 +25,8 @@ class ReadSkillGuideSkill(SkillBase):
             "不要一次性读取全部 guide。"
         ),
         category="productivity",
+        concurrency_safe=True,
+        max_result_chars=4000,
         when_to_use="当某个 skill guide 与当前任务明确相关，需要查看详细正文后再决定如何调用工具时使用。",
         always=True,
         thought_label="📘 读取技能指引…",

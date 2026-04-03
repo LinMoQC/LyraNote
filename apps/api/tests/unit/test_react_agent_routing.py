@@ -35,7 +35,6 @@ def test_classify_route_prefers_single_for_attachments() -> None:
 
     assert route.mode == "single"
     assert route.reason == "attachments_require_single_agent"
-    assert route.policy.execution_path == "tool_use"
 
 
 def test_classify_route_prefers_single_for_tool_hint() -> None:
@@ -46,7 +45,6 @@ def test_classify_route_prefers_single_for_tool_hint() -> None:
 
     assert route.mode == "single"
     assert route.reason == "tool_hint_requires_single_agent"
-    assert route.policy.execution_path == "tool_use"
 
 
 def test_classify_route_prefers_single_for_visualization() -> None:
@@ -56,7 +54,6 @@ def test_classify_route_prefers_single_for_visualization() -> None:
 
     assert route.mode == "single"
     assert route.reason == "visualization_requires_single_agent"
-    assert route.policy.execution_path == "tool_use"
 
 
 def test_classify_route_prefers_multi_for_deep_research() -> None:
@@ -66,15 +63,12 @@ def test_classify_route_prefers_multi_for_deep_research() -> None:
 
     assert route.mode == "multi"
     assert route.reason == "deep_research_prefers_multi_agent"
-    assert route.policy.execution_path == "deep_research"
 
 
 def test_classify_route_defaults_to_single() -> None:
     route = classify_agent_execution_route(
         query="帮我解释一下这段内容是什么意思",
-        active_scene="learning",
     )
 
     assert route.mode == "single"
     assert route.reason == "default_single_agent"
-    assert route.policy.execution_path == "rag"

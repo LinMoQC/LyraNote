@@ -6,7 +6,7 @@
  *              支持重命名、删除、发布/取消发布等操作。使用 React.memo 优化列表渲染。
  */
 
-import { Globe, GlobeLock, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
+import { BookOpen, FileText, Globe, GlobeLock, Hash, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { memo, useEffect, useRef, useState } from "react";
@@ -302,7 +302,7 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block h-full">
-        <article className="group relative flex min-h-[180px] cursor-pointer flex-col overflow-hidden rounded-[24px] border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg sm:aspect-square sm:min-h-0 sm:rounded-2xl">
+        <article className="group relative flex min-h-[180px] max-h-[280px] cursor-pointer flex-col overflow-hidden rounded-[24px] border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg sm:min-h-0 sm:h-[200px] sm:max-h-[200px] sm:rounded-2xl">
           <NotebookMenu
             isPublic={notebook.isPublic}
             onRename={() => setEditOpen(true)}
@@ -311,9 +311,9 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
           />
 
           {/* Top area with icon */}
-          <div className="flex items-center gap-3 px-4 pb-2 pt-4 sm:pt-5">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-muted/50 sm:h-12 sm:w-12">
-              <Icon size={26} />
+          <div className="flex items-center gap-3 px-4 pb-1.5 pt-4 sm:pt-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 sm:h-10 sm:w-10">
+              <Icon size={22} />
             </div>
             {notebook.isPublic && (
               <div className="ml-auto flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
@@ -324,34 +324,35 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
           </div>
 
           {/* Body */}
-          <div className="flex flex-1 flex-col px-4 pb-4 pt-1">
+          <div className="flex flex-1 flex-col px-4 pb-3 pt-1.5 min-h-0">
             <h3 className="line-clamp-1 text-base font-semibold text-foreground sm:text-sm">
               {notebook.title}
             </h3>
 
             {notebook.summary ? (
-              <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground/70 sm:text-xs">
+              <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground/70 sm:line-clamp-2 sm:text-xs">
                 {notebook.summary}
               </p>
             ) : (
-              <p className="mt-1.5 text-sm italic text-muted-foreground/40 sm:text-xs">{t("noSummary")}</p>
+              <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground/35 sm:text-[11px]">{t("noSummary")}</p>
             )}
 
             {/* Footer stats */}
-            <div className="mt-auto flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-border/20 pt-3 text-[11px] text-muted-foreground/50">
-              <span>{formatDate(notebook.updatedAt)}</span>
-              <span className="opacity-30">·</span>
-              <span>{t("sourceCount", { count: notebook.sourceCount })}</span>
-              {notebook.wordCount > 0 && (
-                <>
-                  <span className="opacity-30">·</span>
-                  <span>
-                    {notebook.wordCount >= 1000
-                      ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
-                      : t("wordCount", { count: notebook.wordCount })}
-                  </span>
-                </>
-              )}
+            <div className="mt-auto flex items-center gap-2.5 border-t border-border/20 pt-2.5">
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/50">
+                <FileText size={10} className="opacity-60" />
+                {t("sourceCount", { count: notebook.sourceCount })}
+              </span>
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/50">
+                <BookOpen size={10} className="opacity-60" />
+                {t("noteCount", { count: notebook.noteCount })}
+              </span>
+              <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/50">
+                <Hash size={10} className="opacity-60" />
+                {notebook.wordCount >= 1000
+                  ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
+                  : t("wordCount", { count: notebook.wordCount })}
+              </span>
             </div>
           </div>
         </article>
@@ -414,20 +415,21 @@ export const NotebookListRow = memo(function NotebookListRow({ notebook }: { not
             ) : (
               <p className="mt-2 text-[13px] italic text-muted-foreground/35 sm:hidden">{t("noSummary")}</p>
             )}
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground/55 sm:mt-0">
-              <span>{formatDate(notebook.updatedAt)}</span>
-              <span className="opacity-40">·</span>
-              <span>{t("sourceCount", { count: notebook.sourceCount })}</span>
-              {notebook.wordCount > 0 && (
-                <>
-                  <span className="opacity-40">·</span>
-                  <span>
-                    {notebook.wordCount >= 1000
-                      ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
-                      : t("wordCount", { count: notebook.wordCount })}
-                  </span>
-                </>
-              )}
+            <div className="mt-4 flex items-center gap-2.5 text-[11px] text-muted-foreground/55 sm:mt-0">
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                <FileText size={10} className="opacity-60" />
+                {t("sourceCount", { count: notebook.sourceCount })}
+              </span>
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                <BookOpen size={10} className="opacity-60" />
+                {t("noteCount", { count: notebook.noteCount })}
+              </span>
+              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
+                <Hash size={10} className="opacity-60" />
+                {notebook.wordCount >= 1000
+                  ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
+                  : t("wordCount", { count: notebook.wordCount })}
+              </span>
             </div>
           </div>
           <NotebookMenu
@@ -462,7 +464,7 @@ export function NewNotebookCard({ onClick }: { onClick?: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-h-[180px] w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-[24px] border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50 sm:aspect-square sm:min-h-0 sm:rounded-2xl"
+      className="group flex min-h-[180px] max-h-[280px] w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-[24px] border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50 sm:min-h-0 sm:h-[200px] sm:max-h-[200px] sm:rounded-2xl"
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-primary transition-all duration-200 group-hover:scale-110 group-hover:bg-primary/25">
         <Plus size={20} />

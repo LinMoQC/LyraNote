@@ -19,7 +19,7 @@ import { BotAvatar } from "@/components/ui/bot-avatar";
 import { cn } from "@/lib/utils";
 import { CitationFooter } from "@/components/message-render/citation-footer";
 import { MCPHTMLView, MCPResultCard } from "@/components/message-render/mcp-result-views";
-import { AgentSteps } from "@/components/message-render/agent-steps";
+import { AgentSteps, ThinkingBubble } from "@/components/message-render/agent-steps";
 import { MindMapView } from "@/components/message-render/mind-map-view";
 import { DiagramView } from "@/components/message-render/diagram-view";
 import { ExcalidrawView } from "@/components/message-render/excalidraw-view";
@@ -30,7 +30,6 @@ import { AttachmentImage } from "@/components/message-render/attachment-image";
 import { MarkdownContent } from "@/components/message-render/markdown-content";
 import { CodeBlock } from "@/components/message-render/code-block";
 import { ReasoningBlock } from "@/components/message-render/reasoning-block";
-import { WebCard } from "@/components/message-render/source-cards";
 import { buildMarkdownComponents } from "@/components/genui";
 import type { AgentEvent } from "@/services/ai-service";
 import type { FeedbackRating } from "@/services/feedback-service";
@@ -51,7 +50,32 @@ export interface ChatMessageBubbleProps {
   onFeedback: (msgId: string, rating: FeedbackRating) => void;
   onRegenerate: () => void;
   onFollowUp: (q: string) => void;
+  onSaveDeepResearchSources?: () => void;
   onArtifact?: (payload: { type: "html"; content: string; title: string }) => void;
+}
+
+function StreamingEllipsis() {
+  return (
+    <div
+      data-testid="streaming-ellipsis"
+      className="mt-3 flex items-end gap-1.5 text-foreground/42"
+      aria-hidden="true"
+    >
+      {[0, 1, 2].map((dot) => (
+        <m.span
+          key={dot}
+          className="h-2 w-2 rounded-full bg-current"
+          animate={{ y: [0, -8, 0], opacity: [0.35, 1, 0.45], scale: [1, 1.12, 1] }}
+          transition={{
+            duration: 0.9,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: dot * 0.14,
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export const ChatMessageBubble = memo(function ChatMessageBubble({
@@ -68,9 +92,11 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   onFeedback,
   onRegenerate,
   onFollowUp,
+  onSaveDeepResearchSources,
   onArtifact,
 }: ChatMessageBubbleProps) {
   const t = useTranslations("chat");
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(), []);
 
   const stepsToShow = isLastAssistant && liveAgentSteps.length > 0 ? liveAgentSteps : msg.agentSteps;
   const isStreaming = isLastAssistant && streaming;
@@ -79,7 +105,17 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
     msg.role === "assistant" &&
     msg.deepResearch?.status === "done" &&
     !!msg.deepResearch.reportTokens;
-  const showBubble = msg.role === "user" || msg.content !== "";
+  // Pre-tool phase: a non-system thought arrived but no tool_call yet.
+  // Non-system thoughts are emitted by the engine ONLY immediately before a tool_call,
+  // so this window is narrow and deterministic. During this phase the content area
+  // still holds the draining transition text — hide it so only the ThinkingBubble shows.
+  const isPreToolPhase =
+    isStreaming &&
+    liveAgentSteps.some((s) => s.type === "thought" && !s.is_system) &&
+    !liveAgentSteps.some((s) => s.type === "tool_call");
+  const showBubble =
+    msg.role === "user" ||
+    (msg.content !== "" && !isPreToolPhase);
 
   const { textContent, choices, needsRichMarkdown } = useMemo(
     () => parseMessageContent(msg.content),
@@ -105,6 +141,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
         <div className="mb-3">
           <DeepResearchProgress
             progress={msg.deepResearch.status === "done" ? msg.deepResearch : { ...msg.deepResearch, reportTokens: "" }}
+            onSaveSources={onSaveDeepResearchSources}
             onFollowUp={(q) => onFollowUp(q)}
             onCopy={(text) => onCopy(text)}
           />
@@ -115,7 +152,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
         <AgentSteps
           steps={stepsToShow}
           isStreaming={isStreaming}
-          defaultOpen={isStreaming || undefined}
+          defaultOpen={false}
           className="mb-4"
         />
       ) : null}
@@ -123,10 +160,17 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
       {!hasDeepResearchDone && (
         <div className={cn("flex gap-2 md:gap-3", msg.role === "user" ? "justify-end" : "justify-start")}>
           {msg.role === "assistant" && (
-            <BotAvatar
-              spinning={isSpinning}
-              className={isSpinning ? undefined : "h-6 w-6 flex-shrink-0 md:h-7 md:w-7"}
-            />
+            <div className="relative flex-shrink-0 self-start">
+              <BotAvatar
+                spinning={isSpinning}
+                className={isSpinning ? undefined : "h-6 w-6 md:h-7 md:w-7"}
+              />
+              {isStreaming && (
+                <div className="absolute bottom-full left-0 mb-3 w-max max-w-[180px]">
+                  <ThinkingBubble steps={liveAgentSteps} />
+                </div>
+              )}
+            </div>
           )}
           <div className="min-w-0 max-w-[85%] md:max-w-[80%]">
             {msg.role === "assistant" && msg.reasoning && showReasoning && (
@@ -153,6 +197,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                       <MarkdownContent content={textContent} citations={msg.citations} />
                     )}
                     {choices && <ChoiceCards choices={choices} onSelect={onFollowUp} />}
+                    {isStreaming && <StreamingEllipsis />}
                   </>
                 ) : (
                   <p className="text-sm leading-relaxed">{msg.content}</p>
@@ -180,12 +225,13 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                     {msg.role === "assistant" && msg.speed && !isStreaming && (() => {
                       const totalSec = (msg.speed.ttft_ms + (msg.speed.tokens / (msg.speed.tps || 1)) * 1000) / 1000;
                       const label = totalSec >= 1 ? `${totalSec.toFixed(1)}s` : `${msg.speed.ttft_ms}ms`;
+                      const tokenLabel = t("tokenCost", { count: numberFormatter.format(msg.speed.tokens) });
                       return (
                         <span
                           className="tabular-nums"
                           title={`TTFT ${msg.speed.ttft_ms}ms · ${msg.speed.tps} tok/s · ${msg.speed.tokens} tokens`}
                         >
-                          {t("timeCost", { label })}
+                          {t("timeCost", { label })} · {tokenLabel}
                         </span>
                       );
                     })()}
@@ -195,19 +241,10 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             )}
 
             {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
-              <CitationFooter citations={msg.citations} namespace="chat" />
+              <CitationFooter citations={msg.citations} content={msg.content} namespace="chat" />
             )}
 
-            {msg.role === "assistant" && msg.uiElements && msg.uiElements.some(el => el.element_type === "web-card") && (
-              <div className="mt-2 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                {msg.uiElements.map((el, i) =>
-                  el.element_type === "web-card" ? <WebCard key={i} data={el.data} />
-                  : null,
-                )}
-              </div>
-            )}
-
-            {msg.role === "assistant" && msg.mindMap && <MindMapView data={msg.mindMap} />}
+{msg.role === "assistant" && msg.mindMap && <MindMapView data={msg.mindMap} />}
             {msg.role === "assistant" && msg.diagram && <DiagramView data={msg.diagram} />}
             {msg.role === "assistant" && msg.mcpResult && (
               msg.mcpResult.html_content

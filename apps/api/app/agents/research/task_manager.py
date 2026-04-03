@@ -20,7 +20,17 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
-from app.models import ResearchTask, Message
+from app.models import Message, ObservabilityRun, ResearchTask
+from app.services.monitoring_service import (
+    bind_trace_and_run,
+    build_text_snapshot,
+    create_observability_run,
+    finish_observability_run,
+    reset_trace_and_run,
+    summarize_run_details,
+    traced_span,
+    update_observability_run,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +80,31 @@ def get_buffer(task_id: str) -> TaskBuffer | None:
     return _buffers.get(task_id)
 
 
+def collect_web_sources(learnings: list[dict]) -> list[dict]:
+    seen_urls: set[str] = set()
+    web_sources: list[dict] = []
+
+    for learning in learnings:
+        question = str(learning.get("sub_question") or learning.get("question") or "")
+        for citation in learning.get("citations", []):
+            if citation.get("type") != "web":
+                continue
+
+            url = str(citation.get("url") or "").strip()
+            if not url or url in seen_urls:
+                continue
+
+            seen_urls.add(url)
+            web_sources.append({
+                "title": citation.get("title") or url,
+                "url": url,
+                "excerpt": citation.get("excerpt") or "",
+                "query": question,
+            })
+
+    return web_sources
+
+
 async def run_research_task(
     task_id: str,
     query: str,
@@ -81,10 +116,14 @@ async def run_research_task(
     tavily_api_key: str | None,
     user_memories: list[dict],
     clarification_context: list[dict] | None = None,
+    trace_id: str | None = None,
 ) -> None:
     """Background coroutine: run LangGraph, push events to buffer, save to DB."""
     buf = TaskBuffer()
     _buffers[task_id] = buf
+    trace_token = None
+    run_token = None
+    run = None
 
     try:
         from app.agents.research.deep_research import create_research_graph
@@ -93,6 +132,24 @@ async def run_research_task(
         client = get_client()
 
         async with AsyncSessionLocal() as db:
+            task_uuid = uuid.UUID(task_id)
+            run = await create_observability_run(
+                db,
+                trace_id=trace_id or task_id,
+                run_type="research_task",
+                name="research.task",
+                status="running",
+                user_id=uuid.UUID(user_id),
+                conversation_id=uuid.UUID(conversation_id) if conversation_id else None,
+                task_id=task_uuid,
+                notebook_id=uuid.UUID(notebook_id) if notebook_id else None,
+                metadata={
+                    "mode": mode,
+                    "model": model,
+                    "query_snapshot": build_text_snapshot(query),
+                },
+            )
+            trace_token, run_token = bind_trace_and_run(trace_id or task_id, run.id)
             graph = create_research_graph(
                 db=db,
                 client=client,
@@ -125,6 +182,17 @@ async def run_research_task(
                 "mode": mode,
             }
 
+            async with traced_span(db, "research.context_load", run=run):
+                await update_observability_run(
+                    db,
+                    run,
+                    metadata={
+                        "memory_count": len(user_memories),
+                        "clarification_count": len(clarification_context or []),
+                        "query_snapshot": build_text_snapshot(query),
+                    },
+                )
+
             async for event in graph.astream_events(input_state, version="v2"):
                 if event["event"] != "on_custom_event":
                     continue
@@ -150,29 +218,48 @@ async def run_research_task(
                 elif etype == "deliverable":
                     deliverable = edata
 
+            web_sources = collect_web_sources(timeline["learnings"])
             timeline["deliverable"] = deliverable
+            timeline["webSources"] = web_sources
 
-            await db.execute(
-                update(ResearchTask)
-                .where(ResearchTask.id == uuid.UUID(task_id))
-                .values(
+            async with traced_span(db, "research.persist", run=run):
+                await db.execute(
+                    update(ResearchTask)
+                    .where(ResearchTask.id == task_uuid)
+                    .values(
+                        status="done",
+                        report=full_report,
+                        deliverable_json=deliverable,
+                        timeline_json=timeline,
+                        web_sources_json=web_sources,
+                        completed_at=datetime.now(timezone.utc),
+                    )
+                )
+
+                if conversation_id and full_report:
+                    assistant_msg = Message(
+                        conversation_id=uuid.UUID(conversation_id),
+                        role="assistant",
+                        content=full_report,
+                    )
+                    db.add(assistant_msg)
+
+                await finish_observability_run(
+                    db,
+                    run,
                     status="done",
-                    report=full_report,
-                    deliverable_json=deliverable,
-                    timeline_json=timeline,
-                    completed_at=datetime.now(timezone.utc),
+                    metadata={
+                        **(await summarize_run_details(db, run.id)),
+                        "learning_count": len(timeline["learnings"]),
+                        "web_sources_count": len(web_sources),
+                        "plan_subquestion_count": len(timeline.get("subQuestions", [])),
+                        "search_round_count": len(timeline["learnings"]),
+                        "final_report_snapshot": build_text_snapshot(full_report),
+                        "deliverable_type": "research_report" if deliverable else None,
+                        "deliverable_snapshot": build_text_snapshot(deliverable or {}),
+                    },
                 )
-            )
-
-            if conversation_id and full_report:
-                assistant_msg = Message(
-                    conversation_id=uuid.UUID(conversation_id),
-                    role="assistant",
-                    content=full_report,
-                )
-                db.add(assistant_msg)
-
-            await db.commit()
+                await db.commit()
 
     except Exception as exc:
         logger.exception("Research task %s failed", task_id)
@@ -181,19 +268,40 @@ async def run_research_task(
 
         try:
             async with AsyncSessionLocal() as db:
+                task_uuid = uuid.UUID(task_id)
                 await db.execute(
                     update(ResearchTask)
-                    .where(ResearchTask.id == uuid.UUID(task_id))
+                    .where(ResearchTask.id == task_uuid)
                     .values(
                         status="error",
                         error_message=str(exc)[:2000],
                         completed_at=datetime.now(timezone.utc),
                     )
                 )
+                result = await db.execute(
+                    select(ObservabilityRun)
+                    .where(ObservabilityRun.task_id == task_uuid)
+                    .order_by(ObservabilityRun.started_at.desc())
+                    .limit(1)
+                )
+                run = result.scalar_one_or_none()
+                if run is not None:
+                    await finish_observability_run(
+                        db,
+                        run,
+                        status="error",
+                        metadata={
+                            **(await summarize_run_details(db, run.id)),
+                            "query_snapshot": build_text_snapshot(query),
+                        },
+                        error_message=str(exc),
+                    )
                 await db.commit()
         except Exception:
             logger.exception("Failed to update task status for %s", task_id)
     finally:
+        if trace_token is not None and run_token is not None:
+            reset_trace_and_run(trace_token, run_token)
         await buf.mark_done()
         # Keep buffer for reconnects; clean up after 10 minutes
         asyncio.get_event_loop().call_later(600, lambda: _buffers.pop(task_id, None))

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +10,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import settings
 from app.exceptions import AppError
+from app.services.monitoring_service import heartbeat_loop
+from app.trace import bind_trace_context, generate_trace_id
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,30 @@ async def lifespan(app: FastAPI):
     from app.skills.registry import bootstrap_builtin_skills
     bootstrap_builtin_skills()
 
+    # On startup, immediately expire any sources left stuck in 'processing' / 'pending'
+    # from a previous process crash or restart (belt-and-suspenders alongside the beat task).
+    try:
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import select
+        from app.models import Source as _Source
+        async with AsyncSessionLocal() as _db:
+            _cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+            _result = await _db.execute(
+                select(_Source).where(
+                    _Source.status.in_(["processing", "pending"]),
+                    _Source.updated_at < _cutoff,
+                )
+            )
+            _stuck = _result.scalars().all()
+            if _stuck:
+                for _src in _stuck:
+                    _src.status = "failed"
+                    _src.metadata_ = {**(_src.metadata_ or {}), "error": "indexing_timeout"}
+                await _db.commit()
+                logger.warning("startup: expired %d stuck source(s)", len(_stuck))
+    except Exception:
+        logger.exception("startup: failed to expire stuck sources (non-fatal)")
+
     # Initialize file-based memory storage (create dirs + default MEMORY.md)
     from app.agents.memory.file_storage import init_memory_storage
     init_memory_storage()
@@ -49,7 +74,22 @@ async def lifespan(app: FastAPI):
     from app.agents.soul.soul import soul
     await soul.start()
 
+    heartbeat_task = None
+    heartbeat_stop = None
+    if settings.monitoring_enabled:
+        import asyncio
+
+        heartbeat_stop = asyncio.Event()
+        heartbeat_task = asyncio.create_task(heartbeat_loop("api", heartbeat_stop))
+        app.state.api_heartbeat_stop = heartbeat_stop
+        app.state.api_heartbeat_task = heartbeat_task
+
     yield
+
+    if heartbeat_stop is not None:
+        heartbeat_stop.set()
+    if heartbeat_task is not None:
+        await heartbeat_task
 
     # Shutdown Lyra Soul
     await soul.stop()
@@ -70,6 +110,26 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def trace_middleware(request: Request, call_next):
+    trace_id = request.headers.get("X-Trace-Id") or generate_trace_id()
+    request.state.trace_id = trace_id
+    response = None
+    raised_error: Exception | None = None
+
+    try:
+        with bind_trace_context(trace_id):
+            response = await call_next(request)
+    except Exception as exc:
+        raised_error = exc
+        raise
+    finally:
+        if response is not None:
+            response.headers["X-Trace-Id"] = trace_id
+
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +197,7 @@ from app.domains.knowledge_graph.router import router as knowledge_graph_router
 from app.domains.mcp.router import router as mcp_router
 from app.domains.activity.router import router as activity_router
 from app.domains.events.router import router as events_router
+from app.domains.monitoring.router import router as monitoring_router
 from app.domains.portrait.router import router as portrait_router
 from app.domains.public_home.router import router as public_home_router
 
@@ -160,6 +221,7 @@ app.include_router(knowledge_graph_router, prefix="/api/v1")
 app.include_router(mcp_router, prefix="/api/v1")
 app.include_router(activity_router, prefix="/api/v1")
 app.include_router(events_router, prefix="/api/v1")
+app.include_router(monitoring_router, prefix="/api/v1")
 app.include_router(portrait_router, prefix="/api/v1")
 app.include_router(public_home_router, prefix="/api/v1")
 

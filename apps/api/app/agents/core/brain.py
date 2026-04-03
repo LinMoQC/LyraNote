@@ -25,7 +25,6 @@ from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
     CallToolsInstruction,
-    ClarifyInstruction,
     CompressContextInstruction,
     FinishInstruction,
     Instruction,
@@ -44,21 +43,16 @@ TOOLS_REQUIRING_APPROVAL: set[str] = set()
 def _requires_approval(tool_name: str) -> bool:
     return "__" in tool_name or tool_name in TOOLS_REQUIRING_APPROVAL
 
+# Layer 2 (snipCompact): drop oldest messages, no LLM call. Fires up to _MAX_SNIP_PASSES times.
+SNIP_TOKEN_THRESHOLD = 4000
+_MAX_SNIP_PASSES = 2
+
+# Layer 3 (reactiveCompact): LLM-based summarization. Fires after snip passes exhausted.
 CONTEXT_TOKEN_THRESHOLD = 8000
 
-# Queries shorter than this are treated as conversational greetings / chitchat
-# and do not warrant a RAG lookup.
-_KNOWLEDGE_QUERY_MIN_CHARS = 8
-
-
-def _is_knowledge_query(query: str, scene: str = "research") -> bool:
-    """Return True if the query looks like a substantive knowledge question."""
-    threshold = _KNOWLEDGE_QUERY_MIN_CHARS
-    if scene == "review":
-        threshold = 4
-    elif scene == "writing":
-        threshold = 10
-    return len(query.strip()) >= threshold
+# Diminishing-returns detection (P6): abort the loop if the model generates
+# fewer than _LOW_OUTPUT_TOKEN_THRESHOLD tokens for this many turns in a row.
+_DIMINISHING_RETURNS_MAX_TURNS = 3
 
 
 class AgentBrain:
@@ -112,16 +106,7 @@ class AgentBrain:
 
                 state.pending_tool_calls = fresh_calls
                 return CallToolsInstruction(tool_calls=fresh_calls)
-            # LLM chose not to call any tool.
-            # If we already have retrieved content, stream directly.
-            if state.tool_results:
-                return StreamAnswerInstruction()
-            if state.execution_path == "clarify":
-                return ClarifyInstruction(reason=state.route_reason)
-            # For knowledge-seeking queries with no existing context, fall back to
-            # RAG so the answer has grounding material.
-            if state.execution_path == "rag" or _is_knowledge_query(state.query, state.active_scene):
-                return CallRAGInstruction(query=state.query)
+            # LLM chose not to call any tool — trust that decision and stream.
             return StreamAnswerInstruction()
 
         if phase == "tool_result":
@@ -137,12 +122,29 @@ class AgentBrain:
             # (e.g. create_view).  Compressing them would strip the instructions
             # that tell the LLM what to do next, causing the loop to stall.
             mcp_was_called = any("__" in key for key in state.tool_result_cache)
-            if (
-                not mcp_was_called
-                and not state.context_compressed
-                and state.estimate_tokens() > CONTEXT_TOKEN_THRESHOLD
-            ):
-                return CompressContextInstruction()
+            if not mcp_was_called:
+                token_est = state.estimate_tokens()
+                # Layer 2 (snipCompact): cheap, no LLM call — fires first.
+                if (
+                    token_est > SNIP_TOKEN_THRESHOLD
+                    and state.snip_count < _MAX_SNIP_PASSES
+                ):
+                    return CompressContextInstruction(mode="snip")
+                # Layer 3 (reactiveCompact): LLM summarize — fires after snip exhausted.
+                if (
+                    not state.context_compressed
+                    and token_est > CONTEXT_TOKEN_THRESHOLD
+                ):
+                    return CompressContextInstruction(mode="summarize")
+            # Diminishing-returns guard: abort re-loop if model keeps generating
+            # almost nothing, indicating it is stuck without useful new information.
+            if state.consecutive_low_output_turns >= _DIMINISHING_RETURNS_MAX_TURNS:
+                state.add_policy_trace(
+                    "diminishing_returns",
+                    "consecutive_low_output_turns_exceeded",
+                    str(state.consecutive_low_output_turns),
+                )
+                return StreamAnswerInstruction()
             return CallLLMInstruction()
 
         if phase == "rag_done":

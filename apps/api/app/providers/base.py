@@ -45,3 +45,22 @@ class BaseLLMProvider(ABC):
         model: str | None = None,
         temperature: float = 0.7,
     ) -> dict: ...
+
+    @abstractmethod
+    async def chat_stream_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        model: str | None = None,
+        temperature: float = 0.7,
+        thinking_enabled: bool | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Unified streaming call that handles both tool decisions and direct answers.
+
+        Yields:
+          {"type": "token",      "content": str}            — streamed answer tokens
+          {"type": "reasoning",  "content": str}            — reasoning tokens
+          {"type": "tool_calls", "calls": list[dict],
+                                 "raw_assistant": dict}     — final event when tools called
+        """
+        ...

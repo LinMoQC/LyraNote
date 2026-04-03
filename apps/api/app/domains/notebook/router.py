@@ -37,8 +37,19 @@ def _source_count_subquery():
     )
 
 
-def _build_out(nb: Notebook, src_count: int, word_count: int) -> NotebookOut:
+def _note_count_subquery():
+    return (
+        select(func.count(Note.id))
+        .where(Note.notebook_id == Notebook.id)
+        .correlate(Notebook)
+        .scalar_subquery()
+        .label("note_count")
+    )
+
+
+def _build_out(nb: Notebook, src_count: int, note_count: int, word_count: int) -> NotebookOut:
     nb.source_count = src_count
+    nb.note_count = note_count
     nb.word_count = word_count
     nb.summary_md = nb.summary.summary_md if nb.summary else None
     return nb
@@ -49,10 +60,14 @@ async def _fill_counts(db, notebook: Notebook) -> Notebook:
     src_res = await db.execute(
         select(func.count(Source.id)).where(Source.notebook_id == notebook.id)
     )
+    note_res = await db.execute(
+        select(func.count(Note.id)).where(Note.notebook_id == notebook.id)
+    )
     wc_res = await db.execute(
         select(func.coalesce(func.sum(Note.word_count), 0)).where(Note.notebook_id == notebook.id)
     )
     notebook.source_count = src_res.scalar() or 0
+    notebook.note_count = note_res.scalar() or 0
     notebook.word_count = wc_res.scalar() or 0
     notebook.summary_md = notebook.summary.summary_md if notebook.summary else None
     return notebook
@@ -86,12 +101,12 @@ async def _get_or_create_global_notebook(db, user_id) -> Notebook:
 @router.get("", response_model=ApiResponse[list[NotebookOut]])
 async def list_notebooks(db: DbDep, current_user: CurrentUser):
     result = await db.execute(
-        select(Notebook, _source_count_subquery(), _word_count_subquery())
+        select(Notebook, _source_count_subquery(), _note_count_subquery(), _word_count_subquery())
         .options(selectinload(Notebook.summary))
         .where(Notebook.user_id == current_user.id, Notebook.is_global.is_(False))
         .order_by(Notebook.updated_at.desc())
     )
-    return success([_build_out(nb, src_cnt, wc) for nb, src_cnt, wc in result.all()])
+    return success([_build_out(nb, src_cnt, note_cnt, wc) for nb, src_cnt, note_cnt, wc in result.all()])
 
 
 @router.post("", response_model=ApiResponse[NotebookOut], status_code=status.HTTP_201_CREATED)

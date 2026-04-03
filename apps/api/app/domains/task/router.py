@@ -7,6 +7,7 @@ from app.dependencies import CurrentUser, DbDep
 from app.exceptions import NotFoundError
 from app.models import ScheduledTask, ScheduledTaskRun
 from app.schemas.response import ApiResponse, success
+from app.trace import get_trace_id
 from app.utils.cron import next_run_from_cron
 from .schemas import ManualRunOut, TaskCreate, TaskOut, TaskRunOut, TaskUpdate
 
@@ -109,7 +110,7 @@ async def manual_run(task_id: UUID, current_user: CurrentUser, db: DbDep):
     task = await _get_owned_task(db, task_id, current_user.id)
     from app.workers.tasks import execute_scheduled_task
     try:
-        execute_scheduled_task.delay(str(task.id))
+        execute_scheduled_task.delay(str(task.id), get_trace_id())
     except Exception:
         return success(ManualRunOut(status="error", message="任务队列不可用，请稍后重试"))
     return success(ManualRunOut(status="dispatched", message="任务已加入执行队列"))

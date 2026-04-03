@@ -32,11 +32,12 @@ class WebSearchSkill(SkillBase):
         description=(
             "在互联网上搜索最新信息。"
             "当笔记本知识库中没有足够信息，或用户明确要求搜索网络、查找最新资讯时调用此工具。"
-            "搜索结果会自动保存到笔记本知识库中供后续使用。"
         ),
         category="web",
         requires_env=[],  # Jina Search works without any key; Tavily/Perplexity optional
         thought_label="🌐 正在搜索网络",
+        concurrency_safe=True,
+        max_result_chars=8000,
         config_schema={
             "type": "object",
             "properties": {
@@ -90,8 +91,7 @@ class WebSearchSkill(SkillBase):
         from app.config import settings
         from app.providers import jina, perplexity, tavily
         from app.providers.reranker import rerank
-        from sqlalchemy import select
-        from app.models import Source
+        from app.services.source_service import SourceService
 
         query: str = args.get("query", "")
         search_depth: str = args.get("search_depth", "basic")
@@ -164,14 +164,7 @@ class WebSearchSkill(SkillBase):
         # -------------------------------------------------------
         # Step 5: Build output + quality signal
         # -------------------------------------------------------
-        existing_result = await ctx.db.execute(
-            select(Source.url).where(
-                Source.notebook_id == UUID(ctx.notebook_id) if ctx.notebook_id else False,
-                Source.url.isnot(None),
-            )
-        )
-        existing_urls: set[str] = set(existing_result.scalars().all())
-
+        import_candidates: list[dict] = []
         new_source_count = 0
         result_parts: list[str] = []
         top_score: float = 0.0
@@ -207,27 +200,25 @@ class WebSearchSkill(SkillBase):
                 f"{content[:1200]}"
             )
 
-            if url and url not in existing_urls and ctx.notebook_id:
-                source = Source(
-                    notebook_id=UUID(ctx.notebook_id),
-                    title=title[:500],
-                    type="web",
-                    status="pending",
-                    url=url,
+            if url:
+                import_candidates.append({"title": title, "url": url})
+
+        if import_candidates and ctx.persist_web_sources:
+            save_candidates = [
+                c for c, r in zip(import_candidates, results)
+                if float(r.get("score") or 0.0) >= 0.4
+            ][:3]
+            if save_candidates:
+                source_service = SourceService(ctx.db, ctx.user_id)
+                import_result = await source_service.import_web_sources(
+                    save_candidates,
+                    notebook_id=UUID(ctx.notebook_id) if ctx.notebook_id else None,
                 )
-                ctx.db.add(source)
-                await ctx.db.flush()
-                await ctx.db.refresh(source)
-
-                from app.workers.tasks import ingest_source
-                ingest_source.delay(str(source.id))
-
-                existing_urls.add(url)
-                new_source_count += 1
+                new_source_count = import_result.created_count
 
         footer = f"\n\n---\n共搜索到 {len(results)} 条结果"
         if new_source_count > 0:
-            footer += f"，其中 {new_source_count} 个新来源正在后台导入到知识库"
+            footer += f"，其中 {new_source_count} 个新来源已保存到知识库"
 
         # Quality signal for LLM self-reflection (Step 5)
         quality_hint = (

@@ -5,6 +5,7 @@ import {
   Copy,
   ExternalLink,
   FileText,
+  Globe,
   MoreHorizontal,
   Save,
 } from "lucide-react";
@@ -19,11 +20,13 @@ export function DrDocumentCard({
   progress,
   onOpen,
   onSaveNote,
+  onSaveSources,
   onCopy,
 }: {
   progress: DrProgress;
   onOpen: () => void;
   onSaveNote?: (report?: string, title?: string) => void;
+  onSaveSources?: () => void;
   onCopy?: (text: string) => void;
 }) {
   const t = useTranslations("deepResearch");
@@ -92,6 +95,20 @@ export function DrDocumentCard({
                   >
                     <Copy size={12} />
                     {t("copyReport")}
+                  </button>
+                )}
+                {onSaveSources && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      onSaveSources();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground/80 transition-colors hover:bg-muted/50"
+                  >
+                    <Globe size={12} />
+                    {t("saveSources")}
                   </button>
                 )}
                 <button

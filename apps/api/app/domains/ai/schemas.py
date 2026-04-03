@@ -54,6 +54,10 @@ class DeepResearchRequest(BaseModel):
     clarification_context: list[dict] | None = None
 
 
+class SaveDeepResearchSourcesRequest(BaseModel):
+    target_notebook_id: str | None = None
+
+
 # ── Writing ─────────────────────────────────────────────────────────────────
 
 class PolishRequest(BaseModel):

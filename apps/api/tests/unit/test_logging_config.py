@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from app.logging_config import JsonFormatter
+from app.trace import bind_trace_context
 from app.logging_config import setup_logging
 
 
@@ -43,3 +45,25 @@ def test_setup_logging_writes_task_info_to_dedicated_file(tmp_path):
         for handler in original_handlers:
             root.addHandler(handler)
         root.setLevel(original_level)
+
+
+def test_json_formatter_includes_trace_fields() -> None:
+    formatter = JsonFormatter()
+    record = logging.LogRecord(
+        name="app.monitoring",
+        level=logging.WARNING,
+        pathname=__file__,
+        lineno=42,
+        msg="worker heartbeat stale",
+        args=(),
+        exc_info=None,
+    )
+    record.event = "worker.heartbeat"
+    record.duration_ms = 17
+
+    with bind_trace_context("trace-xyz"):
+        payload = formatter.format(record)
+
+    assert '"trace_id": "trace-xyz"' in payload
+    assert '"event": "worker.heartbeat"' in payload
+    assert '"duration_ms": 17' in payload

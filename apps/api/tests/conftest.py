@@ -87,6 +87,7 @@ async def client(engine):
                 raise
 
     app.dependency_overrides[get_db] = override_get_db
+    app.state.monitoring_session_factory = session_factory
 
     async with AsyncClient(
         transport=ASGITransport(app=app),
@@ -95,6 +96,8 @@ async def client(engine):
         yield ac
 
     app.dependency_overrides.clear()
+    if hasattr(app.state, "monitoring_session_factory"):
+        delattr(app.state, "monitoring_session_factory")
 
 
 @pytest_asyncio.fixture

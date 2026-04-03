@@ -18,6 +18,7 @@ class UpdatePreferenceSkill(SkillBase):
             "只在用户明确指示偏好时调用，不要主动猜测。"
         ),
         category="memory",
+        interrupt_behavior="block",
         always=True,
         thought_label="💾 正在保存偏好",
     )
