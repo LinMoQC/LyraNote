@@ -924,7 +924,7 @@
     "webPlaceholder": "Paste URL, e.g. https://example.com",
     "addBtn": "Add",
     "webHint": "Supports web pages, articles, and online document links",
-    "fileHint": "Supports PDF, Word, TXT, MP3, MP4",
+    "fileHint": "Supports PDF, Word, TXT, Markdown, MP3, MP4",
     "browseFiles": "Browse files",
     "uploading": "Uploading…",
     "imported": "Imported"

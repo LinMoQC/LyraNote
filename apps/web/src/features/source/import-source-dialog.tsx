@@ -318,7 +318,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
                           ref={fileInputRef}
                           type="file"
                           multiple
-                          accept=".pdf,.doc,.docx,.txt,.mp3,.mp4,.wav"
+                          accept=".pdf,.doc,.docx,.txt,.md,.markdown,.mp3,.mp4,.wav,text/markdown"
                           className="hidden"
                           onChange={(e) => handleFileChange(e.target.files)}
                         />

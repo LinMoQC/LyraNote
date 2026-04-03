@@ -175,7 +175,7 @@ export function ChatView() {
                   ref={p.fileInputRef}
                   type="file"
                   multiple
-                  accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
+                  accept=".pdf,.doc,.docx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,text/markdown"
                   className="hidden"
                   onChange={(e) => {
                     if (e.target.files && e.target.files.length > 0) {

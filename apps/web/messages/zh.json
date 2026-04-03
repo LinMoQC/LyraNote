@@ -924,7 +924,7 @@
     "webPlaceholder": "粘贴网址，例如 https://example.com",
     "addBtn": "添加",
     "webHint": "支持网页、文章、在线文档等链接",
-    "fileHint": "支持 PDF、Word、TXT、MP3、MP4",
+    "fileHint": "支持 PDF、Word、TXT、Markdown、MP3、MP4",
     "browseFiles": "浏览文件",
     "uploading": "上传中…",
     "imported": "已导入"

@@ -82,7 +82,7 @@ export function HomeQA({ showHint = true }: HomeQAProps) {
         ref={fileInputRef}
         type="file"
         multiple
-        accept=".pdf,.doc,.docx,.txt,.png,.jpg,.jpeg,.webp"
+        accept=".pdf,.doc,.docx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,text/markdown"
         className="hidden"
         onChange={handleFileSelect}
       />
