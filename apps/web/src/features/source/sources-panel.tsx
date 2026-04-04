@@ -8,6 +8,7 @@ import { startTransition, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { getSourceSuggestions } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
+import { dedupeSourcesByLatest } from "@/features/source/source-list";
 import { useNotebookStore } from "@/store/use-notebook-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
@@ -124,23 +125,29 @@ export function SourcesPanel({
   const { data: sources = [], isLoading } = useQuery({
     queryKey: ["sources", notebookId],
     queryFn: () => getSources(notebookId),
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     refetchInterval: (query) => {
       const list = query.state.data ?? []
       return list.some((s) => s.status === "processing" || s.status === "pending")
         ? 4000
         : false
     },
+    refetchIntervalInBackground: true,
   })
+
+  const visibleSources = dedupeSourcesByLatest(sources);
 
   // Detect processing → indexed transitions and trigger AI suggestions
   useEffect(() => {
     const prev = prevSourcesRef.current;
-    if (prev.length === 0 && sources.length > 0) {
-      prevSourcesRef.current = sources;
+    if (prev.length === 0 && visibleSources.length > 0) {
+      prevSourcesRef.current = visibleSources;
       return;
     }
 
-    for (const source of sources) {
+    for (const source of visibleSources) {
       if (source.status !== "indexed") continue;
       const prevSource = prev.find((s) => s.id === source.id);
       if (prevSource && (prevSource.status === "processing" || prevSource.status === "pending")) {
@@ -158,12 +165,12 @@ export function SourcesPanel({
       }
     }
 
-    prevSourcesRef.current = sources;
-  }, [sources, addSuggestion]);
+    prevSourcesRef.current = visibleSources;
+  }, [visibleSources, addSuggestion, t]);
 
-  const indexed = sources.filter((s) => s.status === "indexed");
-  const processing = sources.filter((s) => s.status === "processing" || s.status === "pending");
-  const failed = sources.filter((s) => s.status === "failed");
+  const indexed = visibleSources.filter((s) => s.status === "indexed");
+  const processing = visibleSources.filter((s) => s.status === "processing" || s.status === "pending");
+  const failed = visibleSources.filter((s) => s.status === "failed");
 
   const isSheet = variant === "sheet";
 
@@ -245,7 +252,7 @@ export function SourcesPanel({
               </div>
             )}
 
-            {sources.length === 0 && (
+            {visibleSources.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <p className="text-sm text-muted-foreground">{t("noSources")}</p>
                 <button

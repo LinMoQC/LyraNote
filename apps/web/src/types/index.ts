@@ -167,6 +167,7 @@ export type Source = {
   type: SourceType;
   summary: string;
   status: SourceStatus;
+  updatedAt?: string;
   metadata?: Record<string, unknown>;
 };
 

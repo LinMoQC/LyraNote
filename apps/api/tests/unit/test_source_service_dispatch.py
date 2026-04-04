@@ -10,19 +10,8 @@ from app.models import Source
 from app.services.source_service import SourceService
 
 
-class _ScalarResult:
-    def __init__(self, values: list[str]) -> None:
-        self._values = values
-
-    def scalars(self) -> "_ScalarResult":
-        return self
-
-    def all(self) -> list[str]:
-        return self._values
-
-
 @pytest.mark.asyncio
-async def test_import_web_sources_dedupes_existing_urls(monkeypatch) -> None:
+async def test_upload_source_dispatches_ingestion_after_commit(monkeypatch) -> None:
     added: list[object] = []
 
     async def flush() -> None:
@@ -35,43 +24,34 @@ async def test_import_web_sources_dedupes_existing_urls(monkeypatch) -> None:
         flush=AsyncMock(side_effect=flush),
         refresh=AsyncMock(return_value=None),
         commit=AsyncMock(return_value=None),
-        execute=AsyncMock(return_value=_ScalarResult(["https://example.com/page?utm_source=test"])),
         sync_session=SimpleNamespace(info={}),
     )
     service = SourceService(db, uuid.uuid4())
     notebook_id = uuid.uuid4()
     monkeypatch.setattr(service, "_assert_notebook_owner", AsyncMock(return_value=None))
 
+    storage = SimpleNamespace(upload=AsyncMock(return_value=None))
+    monkeypatch.setattr("app.providers.storage.storage", lambda: storage)
+
     delayed: list[str] = []
     monkeypatch.setattr("app.workers.tasks.ingest_source.delay", lambda source_id: delayed.append(source_id))
 
-    result = await service.import_web_sources(
-        [
-            {"title": "Existing", "url": "https://example.com/page"},
-            {"title": "New", "url": "https://example.com/new?utm_medium=cpc"},
-            {"title": "DupInBatch", "url": "https://example.com/new"},
-            {"title": "Missing", "url": ""},
-        ],
-        notebook_id=notebook_id,
-    )
+    source = await service.upload_source(notebook_id, "demo.pdf", b"pdf-bytes")
 
-    assert result.notebook_id == notebook_id
-    assert result.created_count == 1
-    assert result.skipped_count == 3
+    assert source.status == "pending"
     assert delayed == []
 
     callbacks = db.sync_session.info.get("_after_commit_callbacks", [])
     assert len(callbacks) == 1
     callbacks[0]()
-    assert len(delayed) == 1
-    db.commit.assert_awaited_once()
 
-    created_source = next(obj for obj in added if isinstance(obj, Source))
-    assert created_source.url == "https://example.com/new"
+    assert delayed == [str(source.id)]
+    storage.upload.assert_awaited_once()
+    db.commit.assert_awaited_once()
 
 
 @pytest.mark.asyncio
-async def test_import_web_sources_uses_global_notebook_when_target_missing(monkeypatch) -> None:
+async def test_import_source_url_dispatches_ingestion_after_commit(monkeypatch) -> None:
     added: list[object] = []
 
     async def flush() -> None:
@@ -84,27 +64,25 @@ async def test_import_web_sources_uses_global_notebook_when_target_missing(monke
         flush=AsyncMock(side_effect=flush),
         refresh=AsyncMock(return_value=None),
         commit=AsyncMock(return_value=None),
-        execute=AsyncMock(return_value=_ScalarResult([])),
         sync_session=SimpleNamespace(info={}),
     )
     service = SourceService(db, uuid.uuid4())
-    global_notebook = SimpleNamespace(id=uuid.uuid4())
-    monkeypatch.setattr(service, "_get_or_create_global_notebook", AsyncMock(return_value=global_notebook))
+    service._assert_notebook_owner = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
     delayed: list[str] = []
     monkeypatch.setattr("app.workers.tasks.ingest_source.delay", lambda source_id: delayed.append(source_id))
 
-    result = await service.import_web_sources(
-        [{"title": "Global Source", "url": "https://global.example.com/article"}],
+    source = await service.import_source_url(
+        uuid.uuid4(),
+        "https://example.com/post",
+        "Example Post",
     )
 
-    assert result.notebook_id == global_notebook.id
-    assert result.created_count == 1
-    assert result.skipped_count == 0
+    assert source.status == "pending"
     assert delayed == []
 
     callbacks = db.sync_session.info.get("_after_commit_callbacks", [])
     assert len(callbacks) == 1
     callbacks[0]()
-    assert len(delayed) == 1
+    assert delayed == [str(source.id)]
     db.commit.assert_awaited_once()

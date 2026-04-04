@@ -934,6 +934,7 @@
     "placeholder": "Ask your notebook...",
     "sendHint": "Enter to send · Shift+Enter for new line",
     "notebookLabel": "Notebook",
+    "clearContext": "Clear context",
     "closePanel": "Close",
     "dockPanel": "Dock to sidebar",
     "floatPanel": "Floating window",

@@ -8,7 +8,7 @@
  */
 
 import { AnimatePresence, m, MotionConfig } from "framer-motion";
-import { ChevronDown, PanelRight, PictureInPicture2, Sparkles, X } from "lucide-react";
+import { ChevronDown, PanelRight, PictureInPicture2, Sparkles, SquarePen, X } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +16,6 @@ import { useCopilotResize, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 import type { CopilotMode } from "@/features/notebook/notebook-workspace";
 
 import { ChatInput } from "@/components/chat-input";
-import { AgentSteps } from "@/components/message-render/agent-steps";
 import { ApprovalCard } from "@/components/message-render/approval-card";
 import { CopilotMessageBubble } from "@/features/copilot/copilot-message-bubble";
 import { ProactiveCard } from "@/features/copilot/proactive-card";
@@ -89,6 +88,7 @@ export function CopilotPanel({
   const [input, setInput] = useState("");
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
+  const streamAbortRef = useRef<AbortController | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   // Persist the copilot's conversation ID so history is maintained across messages
   const [copilotConvId, setCopilotConvId] = useState<string | undefined>(undefined);
@@ -244,6 +244,8 @@ export function CopilotPanel({
       setQuotedText(null);
       // ChatInput handles auto-resize internally
       setStreaming(true);
+      const abortController = new AbortController();
+      streamAbortRef.current = abortController;
 
       const assistantId = `assistant-${Date.now()}`;
       setMessages((c) => [...c, { id: assistantId, role: "assistant", content: "" }]);
@@ -275,6 +277,7 @@ export function CopilotPanel({
                   }
                 : m))
             );
+            streamAbortRef.current = null;
             setStreaming(false);
           },
           editorContext,
@@ -321,7 +324,7 @@ export function CopilotPanel({
           },
           copilotConvId,  // reuse existing conversation for context continuity
           undefined, // globalSearch
-          undefined, // signal
+          abortController.signal,
           undefined, // toolHint
           undefined, // attachmentIds
           undefined, // attachmentsMeta
@@ -333,7 +336,13 @@ export function CopilotPanel({
         if (newConvId && newConvId !== copilotConvId) {
           setCopilotConvId(newConvId);
         }
-      } catch {
+      } catch (err) {
+        streamAbortRef.current = null;
+        // Aborted by user — keep whatever content was streamed so far
+        if (err instanceof Error && err.name === "AbortError") {
+          setStreaming(false);
+          return;
+        }
         setMessages((c) =>
           c.map((m) =>
             m.id === assistantId ? { ...m, content: t("errorRetry") } : m
@@ -346,6 +355,24 @@ export function CopilotPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [streaming, quotedText, getEditorContext, notebookId, copilotConvId]
   );
+
+  const handleCancel = useCallback(() => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setStreaming(false);
+  }, []);
+
+  const handleClearContext = useCallback(() => {
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    setStreaming(false);
+    setMessages([]);
+    setCopilotConvId(undefined);
+    resetAgentState();
+    if (notebookId) {
+      try { localStorage.removeItem(`chat:${notebookId}`); } catch { /* ignore */ }
+    }
+  }, [notebookId, resetAgentState]);
 
   // Auto-submit when parent sends a pending prompt (polish / shorten)
   const lastPendingKey = useRef<number | null>(null);
@@ -451,6 +478,16 @@ export function CopilotPanel({
         </div>
 
         <div className="flex items-center gap-1">
+          {hasMessages && (
+            <button
+              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
+              onClick={handleClearContext}
+              type="button"
+              title={t("clearContext")}
+            >
+              <SquarePen size={12} />
+            </button>
+          )}
           {!isSheet && onModeChange && (
             <button
               className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
@@ -610,19 +647,9 @@ export function CopilotPanel({
             )}
             {messages.map((message, idx) => {
               const isLastAssistant = message.role === "assistant" && idx === messages.length - 1;
-              const stepsToShow = isLastAssistant && agentSteps.length > 0
-                ? agentSteps
-                : message.agentSteps;
 
               return (
                 <div key={message.id}>
-                  {message.role === "assistant" && stepsToShow?.length ? (
-                    <AgentSteps
-                      steps={stepsToShow}
-                      isStreaming={isLastAssistant && streaming}
-                      defaultOpen={false}
-                    />
-                  ) : null}
                   {isLastAssistant && streaming && pendingApproval && (
                     <ApprovalCard
                       toolCalls={pendingApproval.toolCalls}
@@ -634,6 +661,9 @@ export function CopilotPanel({
                   )}
                   <CopilotMessageBubble
                     message={message}
+                    isLastAssistant={isLastAssistant}
+                    streaming={streaming}
+                    liveAgentSteps={agentSteps}
                     onInsert={message.role === "assistant" ? onInsertToEditor : undefined}
                     onInsertMindMap={message.role === "assistant" ? onInsertMindMap : undefined}
                   />
@@ -660,6 +690,7 @@ export function CopilotPanel({
           value={input}
           onChange={setInput}
           onSubmit={(text) => void submit(text)}
+          onCancel={handleCancel}
           placeholder={t("placeholder")}
           streaming={streaming}
           variant={isSheet ? "default" : "compact"}

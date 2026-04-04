@@ -108,7 +108,30 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=4
+    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=4 -Q celery,scheduled,maintenance -n worker-main@%h
+
+  worker-ingestion:
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    env_file:
+      - ./apps/api/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@db:5432/lyranote
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_S3_ENDPOINT_URL: http://minio:9000
+      STORAGE_S3_PUBLIC_URL: http://localhost:9000
+      APP_BASE_URL: http://localhost:8000
+      API_PREFIX: /api/v1
+      FRONTEND_URL: http://localhost:3000
+      CORS_ORIGINS: http://localhost:3000
+      DEBUG: "false"
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      api:
+        condition: service_healthy
+    command: celery -A app.workers.tasks.celery_app worker --loglevel=info --concurrency=4 -Q ingestion -n worker-ingestion@%h
 
   beat:
     build:

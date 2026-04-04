@@ -45,24 +45,12 @@ async def lifespan(app: FastAPI):
     # On startup, immediately expire any sources left stuck in 'processing' / 'pending'
     # from a previous process crash or restart (belt-and-suspenders alongside the beat task).
     try:
-        from datetime import datetime, timedelta, timezone
-        from sqlalchemy import select
-        from app.models import Source as _Source
+        from app.workers.tasks.ingestion import _expire_stuck_sources_impl
+
         async with AsyncSessionLocal() as _db:
-            _cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-            _result = await _db.execute(
-                select(_Source).where(
-                    _Source.status.in_(["processing", "pending"]),
-                    _Source.updated_at < _cutoff,
-                )
-            )
-            _stuck = _result.scalars().all()
-            if _stuck:
-                for _src in _stuck:
-                    _src.status = "failed"
-                    _src.metadata_ = {**(_src.metadata_ or {}), "error": "indexing_timeout"}
-                await _db.commit()
-                logger.warning("startup: expired %d stuck source(s)", len(_stuck))
+            _expired = await _expire_stuck_sources_impl(_db)
+            if _expired:
+                logger.warning("startup: expired %d stuck source(s)", _expired)
     except Exception:
         logger.exception("startup: failed to expire stuck sources (non-fatal)")
 

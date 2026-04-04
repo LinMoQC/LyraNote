@@ -934,6 +934,7 @@
     "placeholder": "向笔记本提问…",
     "sendHint": "Enter 发送 · Shift+Enter 换行",
     "notebookLabel": "笔记本",
+    "clearContext": "清除上下文",
     "closePanel": "关闭",
     "dockPanel": "固定到侧栏",
     "floatPanel": "悬浮窗口",

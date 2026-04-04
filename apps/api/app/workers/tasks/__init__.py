@@ -16,6 +16,7 @@ from app.workers.tasks.ingestion import (  # noqa: F401
     extract_knowledge_graph,
     expire_stuck_sources,
     ingest_source,
+    postprocess_indexed_source,
     rebuild_knowledge_graph_task,
 )
 from app.workers.tasks.memory import (  # noqa: F401

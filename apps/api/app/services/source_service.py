@@ -21,6 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.database import enqueue_after_commit
 from app.exceptions import ConflictError, NotFoundError
 from app.models import Chunk, Notebook, Source
 
@@ -30,6 +31,7 @@ _CONTENT_TYPES = {
     ".pdf": "application/pdf",
     ".md": "text/markdown",
     ".txt": "text/plain",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
@@ -155,6 +157,49 @@ class SourceService:
             while chunk := await f.read(65536):
                 yield chunk
 
+    def _enqueue_ingestion(
+        self,
+        source_id: UUID,
+        *,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        splitter_type: str | None = None,
+        separators: list[str] | None = None,
+        min_chunk_size: int | None = None,
+    ) -> None:
+        from app.workers.tasks import ingest_source
+
+        def _dispatch() -> None:
+            logger.info(
+                "Dispatching ingest_source for source %s (chunk_size=%s, chunk_overlap=%s, splitter_type=%s)",
+                source_id,
+                chunk_size,
+                chunk_overlap,
+                splitter_type,
+            )
+            if (
+                chunk_size is None
+                and chunk_overlap is None
+                and splitter_type is None
+                and separators is None
+                and min_chunk_size is None
+            ):
+                ingest_source.delay(str(source_id))
+                return
+
+            ingest_source.apply_async(
+                args=[str(source_id)],
+                kwargs={
+                    "chunk_size": chunk_size,
+                    "chunk_overlap": chunk_overlap,
+                    "splitter_type": splitter_type,
+                    "separators": separators,
+                    "min_chunk_size": min_chunk_size,
+                },
+            )
+
+        enqueue_after_commit(self.db, _dispatch)
+
     # ── Upload / Import ────────────────────────────────────────────────────────
 
     async def upload_source(
@@ -163,7 +208,7 @@ class SourceService:
         await self._assert_notebook_owner(notebook_id)
 
         ext = os.path.splitext(filename or "")[1].lower()
-        type_map = {".pdf": "pdf", ".md": "md", ".txt": "md"}
+        type_map = {".pdf": "pdf", ".md": "md", ".txt": "md", ".docx": "doc"}
         source_type = type_map.get(ext, "md")
 
         file_id = str(uuid.uuid4())
@@ -185,8 +230,8 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(source.id)
+        await self.db.commit()
 
         return source
 
@@ -206,8 +251,8 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(source.id)
+        await self.db.commit()
 
         return source
 
@@ -260,13 +305,14 @@ class SourceService:
             await self.db.flush()
             await self.db.refresh(source)
 
-            from app.workers.tasks import ingest_source
-
-            ingest_source.delay(str(source.id))
+            self._enqueue_ingestion(source.id)
 
             existing_urls.add(normalized_url)
             created_count += 1
             source_ids.append(source.id)
+
+        if created_count > 0:
+            await self.db.commit()
 
         return WebImportResult(
             notebook_id=target_notebook_id,
@@ -376,17 +422,15 @@ class SourceService:
         source.status = "pending"
         await self.db.flush()
 
-        from app.workers.tasks import ingest_source
-        ingest_source.apply_async(
-            args=[str(source.id)],
-            kwargs={
-                "chunk_size": size,
-                "chunk_overlap": overlap,
-                "splitter_type": splitter_type,
-                "separators": separators,
-                "min_chunk_size": min_chunk_size,
-            },
+        self._enqueue_ingestion(
+            source.id,
+            chunk_size=size,
+            chunk_overlap=overlap,
+            splitter_type=splitter_type,
+            separators=separators,
+            min_chunk_size=min_chunk_size,
         )
+        await self.db.commit()
         return size, overlap
 
     # ── Download ──────────────────────────────────────────────────────────────
@@ -485,8 +529,8 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(source.id)
+        await self.db.commit()
 
         return source
 
@@ -504,7 +548,7 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(source.id)
+        await self.db.commit()
 
         return source
