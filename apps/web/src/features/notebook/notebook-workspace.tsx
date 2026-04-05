@@ -8,7 +8,7 @@
 
 import type { Editor } from "@tiptap/react";
 import { AnimatePresence, m } from "framer-motion";
-import { Library } from "lucide-react";
+import { Library, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -17,12 +17,15 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { CopilotPanel, DEFAULT_WIDTH } from "@/features/copilot/copilot-panel";
 import { FloatingOrb } from "@/features/copilot/floating-orb";
 import { NoteEditor } from "@/features/editor/note-editor";
+import type { EditorActionRequest } from "@/features/editor/editor-actions";
 import { NotebookTopBar } from "@/features/notebook/notebook-header";
 import type { SaveStatus } from "@/features/notebook/notebook-header";
 import { MobileWorkspaceSheet } from "@/features/notebook/mobile-workspace-sheet";
 import type { MobileCopilotSnap, MobileWorkspaceSheetKey } from "@/features/notebook/mobile-workspace-sheet";
+import { RelevantSourcesView } from "@/features/copilot/relevant-sources-view";
 import { NotebookTOC } from "@/features/notebook/notebook-toc";
 import { FloatingTOC } from "@/features/notebook/floating-toc";
+import { ProactiveToaster } from "@/features/copilot/proactive-toaster";
 import { ImportSourceDialog } from "@/features/source/import-source-dialog";
 import { SourceDetailDrawer } from "@/features/source/source-detail-drawer";
 import { SourcesPanel } from "@/features/source/sources-panel";
@@ -31,6 +34,7 @@ import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { getWritingContext } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
+import { getRelatedKnowledge, type CrossNotebookChunk } from "@/services/ai-service";
 import { listNotes } from "@/services/note-service";
 import type { NoteRecord } from "@/services/note-service";
 import { useMarkdownWorker } from "@/hooks/use-markdown-worker";
@@ -38,14 +42,6 @@ import { cn } from "@/lib/utils";
 import type { Message, MindMapData } from "@/types";
 
 export type CopilotMode = "docked" | "floating";
-
-const ACTION_PROMPT_KEYS: Record<string, string> = {
-  ask: "selectionExplain",
-  polish: "selectionRewrite",
-  shorten: "selectionCondense",
-  continue: "continueWritingPrompt",
-  summarize: "summarizeSourcesPrompt",
-};
 
 export function NotebookWorkspace({
   notebookId,
@@ -63,6 +59,7 @@ export function NotebookWorkspace({
   const setMobileHeaderMode = useUiStore((state) => state.setMobileHeaderMode);
   const activeSourceId = useNotebookStore((state) => state.activeSourceId);
   const setActiveSourceId = useNotebookStore((state) => state.setActiveSourceId);
+  const setCopilotPanelOpen = useNotebookStore((state) => state.setCopilotPanelOpen);
   const { matches: isMobile, ready: mediaReady } = useMediaQuery("(max-width: 767px)");
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -102,6 +99,13 @@ export function NotebookWorkspace({
   }, [isMobile, setMobileHeaderMode]);
 
   useEffect(() => {
+    const open = isMobile ? mobileActiveSheet === "copilot" : copilotOpen;
+    setCopilotPanelOpen(open);
+  }, [copilotOpen, isMobile, mobileActiveSheet, setCopilotPanelOpen]);
+
+  useEffect(() => () => setCopilotPanelOpen(false), [setCopilotPanelOpen]);
+
+  useEffect(() => {
     localStorage.setItem("lyra:copilot-mode", copilotMode);
   }, [copilotMode]);
 
@@ -133,6 +137,7 @@ export function NotebookWorkspace({
   // Bridge: hold a reference to the Tiptap editor instance
   // Also keep it as state so TOC and other consumers can re-render on change
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
+  const [charCount, setCharCount] = useState(0);
   const [noteRefreshKey, setNoteRefreshKey] = useState(0);
   const convertMarkdown = useMarkdownWorker();
 
@@ -186,20 +191,47 @@ export function NotebookWorkspace({
   const handleEditorReady = useCallback((editor: Editor) => {
     editorRef.current = editor;
     setEditorInstance(editor);
+    // Initialize char count
+    setCharCount(editor.storage.characterCount?.characters?.() ?? 0);
+    editor.on("update", () => {
+      setCharCount(editor.storage.characterCount?.characters?.() ?? 0);
+    });
   }, []);
 
-  const handleAskAI = useCallback((text: string, action: string) => {
+  const handleEditorAction = useCallback((payload: EditorActionRequest) => {
     if (isMobile) {
       setMobileActiveSheet("copilot");
     } else {
       setCopilotOpen(true);
     }
-    if (action === "ask") {
-      setPendingQuote({ text, key: Date.now() });
-    } else {
-      const promptKey = ACTION_PROMPT_KEYS[action] ?? ACTION_PROMPT_KEYS.ask;
-      setPendingPrompt({ text: tNotebook(promptKey, { text }), key: Date.now() });
+    if (payload.action === "askCopilot") {
+      setPendingQuote({ text: payload.text, key: Date.now() });
+      return;
     }
+
+    if (payload.action === "customEdit") {
+      setPendingPrompt({
+        text: tNotebook("customEditPrompt", {
+          text: payload.text,
+          intent: payload.intent ?? "",
+        }),
+        key: Date.now(),
+      });
+      return;
+    }
+
+    const promptByAction: Partial<Record<EditorActionRequest["action"], string>> = {
+      explain: tNotebook("selectionExplain", { text: payload.text }),
+      continue: tNotebook("continueWritingPrompt"),
+      summarize: tNotebook("summarizeSourcesPrompt"),
+      comment: tNotebook("selectionExplain", { text: payload.text }),
+      editSuggestion: tNotebook("selectionExplain", { text: payload.text }),
+    };
+
+    setPendingPrompt({
+      text: promptByAction[payload.action] ?? tNotebook("selectionExplain", { text: payload.text }),
+      key: Date.now(),
+    });
   }, [isMobile, tNotebook]);
 
   const handleInsertToEditor = useCallback(async (content: string) => {
@@ -296,6 +328,13 @@ export function NotebookWorkspace({
       data-testid="notebook-workspace"
     >
       <ImportSourceDialog notebookId={notebookId} />
+      
+      <ProactiveToaster
+        onAsk={(text) => {
+          setCopilotOpen(true);
+          setPendingPrompt({ text, key: Date.now() });
+        }}
+      />
 
       <NotebookTopBar
         notebookId={notebookId}
@@ -312,6 +351,7 @@ export function NotebookWorkspace({
         isMobile={isMobile}
         mobileActiveSheet={mobileActiveSheet}
         onMobileSheetChange={handleMobileSheetChange}
+        charCount={charCount}
       />
 
       <div className="relative flex flex-1 overflow-hidden" data-testid="notebook-workspace-main">
@@ -342,7 +382,7 @@ export function NotebookWorkspace({
             noteId={activeNoteId}
             notebookTitle={notebookTitle}
             onEditorReady={handleEditorReady}
-            onAskAI={handleAskAI}
+            onEditorAction={handleEditorAction}
             onSaveStatusChange={setSaveStatus}
             onActiveNoteTitleChange={handleEditorNoteTitleChange}
             onNoteSaved={handleNoteSaved}
@@ -352,6 +392,8 @@ export function NotebookWorkspace({
             wideLayout={isFullscreen}
             isMobileLayout={isMobile}
           />
+
+
           {!isMobile && isFullscreen && <FloatingTOC editor={editorInstance} />}
         </div>
 
@@ -422,19 +464,38 @@ export function NotebookWorkspace({
 
         {/* Floating sources toggle */}
         {!isMobile && !isFullscreen && (
-          <button
+          <m.button
+            key="sources-toggle"
             type="button"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => setSourcesOpen((v) => !v)}
             title={tNotebook("tabSources")}
             className={cn(
-              "absolute bottom-6 left-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border shadow-sm backdrop-blur-sm transition-all",
+              "absolute bottom-6 left-6 z-20 flex h-10 w-10 items-center justify-center rounded-full border shadow-xl backdrop-blur-md transition-all duration-300",
               sourcesOpen
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border/30 bg-card/80 text-muted-foreground/50 hover:text-foreground hover:border-border/60"
+                ? "border-primary/40 bg-primary/10 text-primary ring-4 ring-primary/5"
+                : "border-border/30 bg-card/60 text-muted-foreground/50 hover:border-border/60 hover:text-foreground hover:shadow-primary/5",
             )}
           >
-            <Library size={15} />
-          </button>
+            <m.div
+              animate={{ rotate: sourcesOpen ? 90 : 0 }}
+              transition={{ type: "spring", stiffness: 260, damping: 20 }}
+            >
+              <Library size={18} strokeWidth={2.2} />
+            </m.div>
+
+            {/* Numeric Badge */}
+            {sources.length > 0 && (
+              <m.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground shadow-sm ring-2 ring-background/50"
+              >
+                {sources.length > 9 ? "9+" : sources.length}
+              </m.div>
+            )}
+          </m.button>
         )}
 
         {isMobile && (

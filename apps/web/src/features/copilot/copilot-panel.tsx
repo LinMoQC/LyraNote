@@ -8,7 +8,7 @@
  */
 
 import { AnimatePresence, m, MotionConfig } from "framer-motion";
-import { ChevronDown, PanelRight, PictureInPicture2, Sparkles, SquarePen, X } from "lucide-react";
+import { BookOpen, ChevronDown, PanelRight, PictureInPicture2, Sparkles, SquarePen, X } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,16 +17,17 @@ import type { CopilotMode } from "@/features/notebook/notebook-workspace";
 
 import { ChatInput } from "@/components/chat-input";
 import { ApprovalCard } from "@/components/message-render/approval-card";
+import { BotAvatar } from "@/components/ui/bot-avatar";
 import { CopilotMessageBubble } from "@/features/copilot/copilot-message-bubble";
-import { ProactiveCard } from "@/features/copilot/proactive-card";
-import { SoulCard } from "@/features/copilot/soul-card";
-import { WritingContextBar } from "@/features/copilot/writing-context-bar";
-import { approveToolCall, getContextGreeting, getInsights, getRelatedKnowledge, sendMessageStream, type CrossNotebookChunk, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
+import { approveToolCall, getContextGreeting, getInsights, sendMessageStream, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
 import { cn } from "@/lib/utils";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
+import { RelevantSourcesView } from "@/features/copilot/relevant-sources-view";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useNotebookStore } from "@/store/use-notebook-store";
 import type { CitationData, Message, MindMapData } from "@/types";
+import { getRelatedKnowledge, type CrossNotebookChunk } from "@/services/ai-service";
 
 export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 
@@ -40,6 +41,7 @@ export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize"
  * @param onInsertMindMap - 插入思维导图到编辑器的回调
  * @param onWidthChange - 面板宽度变化回调
  * @param onNoteCreated - AI 创建笔记后的回调
+ * @param onToggleContext - 切换上下文抽屉回调
  */
 export function CopilotPanel({
   notebookId,
@@ -59,6 +61,7 @@ export function CopilotPanel({
   containerTop = 0,
   containerHeight,
   presentation = "fixed",
+  onToggleContext,
 }: {
   notebookId?: string;
   initialMessages: Message[];
@@ -80,6 +83,7 @@ export function CopilotPanel({
   /** 内容区域高度（px），用于侧边栏模式对齐 */
   containerHeight?: number;
   presentation?: "fixed" | "sheet";
+  onToggleContext?: () => void;
 }) {
   const isFloating = mode === "floating";
   const isSheet = presentation === "sheet";
@@ -88,6 +92,7 @@ export function CopilotPanel({
   const [input, setInput] = useState("");
   const [quotedText, setQuotedText] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
+  const setCopilotStreaming = useNotebookStore((s) => s.setCopilotStreaming);
   const streamAbortRef = useRef<AbortController | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   // Persist the copilot's conversation ID so history is maintained across messages
@@ -121,18 +126,6 @@ export function CopilotPanel({
     return () => { cancelled = true; };
   }, [notebookId]);
 
-  // ── Cross-notebook related knowledge ───────────────────────
-  const [relatedKnowledge, setRelatedKnowledge] = useState<CrossNotebookChunk[]>([]);
-
-  useEffect(() => {
-    if (!notebookId) return;
-    let cancelled = false;
-    getRelatedKnowledge(notebookId)
-      .then((chunks) => { if (!cancelled) setRelatedKnowledge(chunks); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [notebookId]);
-
   // ── Proactive suggestions ─────────────────────────────────
   const proactiveSuggestions = useProactiveStore((s) => s.suggestions);
   const markAllRead = useProactiveStore((s) => s.markAllRead);
@@ -141,6 +134,28 @@ export function CopilotPanel({
     [proactiveSuggestions]
   );
   const writingContext = useProactiveStore((s) => s.writingContext);
+
+  // ── Reference Sources Drawer ──────────────────────────────
+  const [showReferences, setShowReferences] = useState(false);
+  const [relatedKnowledge, setRelatedKnowledge] = useState<CrossNotebookChunk[]>([]);
+  const [loadingRelated, setLoadingRelated] = useState(false);
+
+  useEffect(() => {
+    if (!notebookId || !showReferences) return;
+    let cancelled = false;
+    setLoadingRelated(true);
+    getRelatedKnowledge(notebookId)
+      .then((chunks) => {
+        if (!cancelled) setRelatedKnowledge(chunks);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingRelated(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [notebookId, showReferences]);
 
   // ── Backend insights ────────────────────────────────────────
   const [insights, setInsights] = useState<ProactiveInsight[]>([]);
@@ -166,6 +181,13 @@ export function CopilotPanel({
   useEffect(() => {
     if (isOpen) markAllRead?.();
   }, [isOpen, markAllRead]);
+
+  useEffect(() => {
+    setCopilotStreaming(streaming);
+    return () => {
+      setCopilotStreaming(false);
+    };
+  }, [setCopilotStreaming, streaming]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -453,274 +475,320 @@ export function CopilotPanel({
         </div>
       )}
 
+      {/* ── 顶部栏 ── */}
       <div className={cn(
-        "relative flex flex-shrink-0 items-center justify-between overflow-hidden px-3 py-2.5",
+        "relative flex flex-shrink-0 items-center justify-between px-4 py-3",
         isFloating && !isSheet && "rounded-t-2xl"
       )}>
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent" />
+        {/* 顶部渐变线 */}
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" />
 
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center">
-            <div className="absolute inset-0 rounded-lg bg-gradient-to-br from-blue-500/20 to-purple-500/20 blur-sm" />
+        {/* 左侧：Logo + 名称 + 会话选择 */}
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="relative flex h-7 w-7 flex-shrink-0 items-center justify-center">
+            <div className="absolute inset-0 rounded-[10px] bg-gradient-to-br from-violet-500/20 to-blue-500/15 blur-[6px]" />
             <Image
               src="/lyra.png"
               alt="Lyra"
-              width={20}
-              height={20}
-              className="relative h-5 w-5 rounded object-contain"
+              width={24}
+              height={24}
+              className="relative h-6 w-6 rounded-[8px] object-contain"
             />
           </div>
-          <div className="flex min-w-0 flex-col">
-            <span className="truncate text-[13px] font-semibold leading-none tracking-tight text-foreground/90">
-              Lyra
-            </span>
+          <span className="text-[14px] font-semibold tracking-tight text-foreground/90">
+            Lyra
+          </span>
+        </div>
+
+        {/* 右侧：操作按钮 */}
+        <div className="flex items-center gap-0.5">
+          {hasMessages && (
+            <div className="group/btn relative">
+              <button
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-white/[0.06] hover:text-foreground/80"
+                onClick={handleClearContext}
+                type="button"
+              >
+                <SquarePen size={14} />
+              </button>
+              <div className="pointer-events-none absolute right-0 top-[calc(100%+6px)] z-[999] opacity-0 transition-opacity duration-150 delay-500 group-hover/btn:opacity-100">
+                <div className="whitespace-nowrap rounded-[6px] bg-[#111] px-2 py-1 text-[11px] font-medium text-white/90 shadow-lg">
+                  {t("clearContext")}
+                </div>
+                <div className="absolute right-2.5 top-0 h-0 w-0 -translate-y-full border-x-[4px] border-b-[4px] border-x-transparent border-b-[#111]" />
+              </div>
+            </div>
+          )}
+          <div className="group/btn relative">
+            <button
+              className={cn(
+                "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors",
+                showReferences 
+                  ? "bg-primary/20 text-primary" 
+                  : "text-muted-foreground/50 hover:bg-white/[0.06] hover:text-foreground/80"
+              )}
+              onClick={() => setShowReferences((v) => !v)}
+              type="button"
+            >
+              <BookOpen size={14} />
+            </button>
+            <div className="pointer-events-none absolute right-0 top-[calc(100%+6px)] z-[999] opacity-0 transition-opacity duration-150 delay-500 group-hover/btn:opacity-100">
+              <div className="whitespace-nowrap rounded-[6px] bg-[#111] px-2 py-1 text-[11px] font-medium text-white/90 shadow-lg">
+                {t("referenceSources")}
+              </div>
+              <div className="absolute right-2.5 top-0 h-0 w-0 -translate-y-full border-x-[4px] border-b-[4px] border-x-transparent border-b-[#111]" />
+            </div>
+          </div>
+          {!isSheet && onModeChange && (
+            <div className="group/btn relative">
+              <button
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-white/[0.06] hover:text-foreground/80"
+                onClick={() => onModeChange(isFloating ? "docked" : "floating")}
+                type="button"
+              >
+                {isFloating ? <PanelRight size={14} /> : <PictureInPicture2 size={14} />}
+              </button>
+              <div className="pointer-events-none absolute right-0 top-[calc(100%+6px)] z-[999] opacity-0 transition-opacity duration-150 delay-500 group-hover/btn:opacity-100">
+                <div className="whitespace-nowrap rounded-[6px] bg-[#111] px-2 py-1 text-[11px] font-medium text-white/90 shadow-lg">
+                  {isFloating ? t("dockPanel") : t("floatPanel")}
+                </div>
+                <div className="absolute right-2.5 top-0 h-0 w-0 -translate-y-full border-x-[4px] border-b-[4px] border-x-transparent border-b-[#111]" />
+              </div>
+            </div>
+          )}
+          <div className="group/btn relative">
+            <button
+              className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground/50 transition-colors hover:bg-white/[0.06] hover:text-foreground/80"
+              onClick={onClose}
+              type="button"
+            >
+              <X size={14} />
+            </button>
+            <div className="pointer-events-none absolute right-0 top-[calc(100%+6px)] z-[999] opacity-0 transition-opacity duration-150 delay-500 group-hover/btn:opacity-100">
+              <div className="whitespace-nowrap rounded-[6px] bg-[#111] px-2 py-1 text-[11px] font-medium text-white/90 shadow-lg">
+                {t("closePanel")}
+              </div>
+              <div className="absolute right-2.5 top-0 h-0 w-0 -translate-y-full border-x-[4px] border-b-[4px] border-x-transparent border-b-[#111]" />
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          {hasMessages && (
-            <button
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
-              onClick={handleClearContext}
-              type="button"
-              title={t("clearContext")}
-            >
-              <SquarePen size={12} />
-            </button>
-          )}
-          {!isSheet && onModeChange && (
-            <button
-              className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
-              onClick={() => onModeChange(isFloating ? "docked" : "floating")}
-              type="button"
-              title={isFloating ? t("dockPanel") : t("floatPanel")}
-            >
-              {isFloating ? <PanelRight size={12} /> : <PictureInPicture2 size={12} />}
-            </button>
-          )}
-          <button
-            className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground/50 transition-colors hover:bg-muted/50 hover:text-foreground/80"
-            onClick={onClose}
-            type="button"
-            title={t("closePanel")}
-          >
-            <X size={12} />
-          </button>
-        </div>
-
-        <div className="absolute inset-x-0 bottom-0 h-px bg-border/30" />
+        {/* 底部分割线 */}
+        <div className="absolute inset-x-0 bottom-0 h-px bg-white/[0.06]" />
       </div>
 
-      <WritingContextBar
-        chunks={writingContext}
-        onAskAbout={(q) => void submit(q)}
-        onInsertCitation={onInsertToEditor}
-      />
-
-      {relatedKnowledge.length > 0 && (
-        <WritingContextBar
-          chunks={relatedKnowledge.map((c) => ({
-            source_title: `${c.notebook_title} → ${c.source_title}`,
-            excerpt: c.excerpt,
-            score: c.score,
-            chunk_id: c.chunk_id,
-          }))}
-          onAskAbout={(q) => void submit(q)}
-        />
-      )}
-
-      <div className="relative flex-1 overflow-y-auto">
-        {!hasMessages ? (
-          <div className="p-4">
-            <p className="mb-4 text-[12px] leading-5 text-muted-foreground/70">
-              {greetingText || t("greeting")}
-            </p>
-
-            {unreadSuggestions.length > 0 && (
-              <div className="mb-3 space-y-2">
-                <AnimatePresence>
-                  {unreadSuggestions.map((s) =>
-                    s.type === "insight" ? (
-                      <SoulCard
-                        key={s.id}
-                        suggestion={s}
-                        onReply={(text) => void submit(text)}
-                      />
-                    ) : (
-                      <ProactiveCard
-                        key={s.id}
-                        suggestion={s}
-                        onAskQuestion={(q) => void submit(q)}
-                      />
-                    )
-                  )}
-                </AnimatePresence>
+      <div className="relative flex-1 overflow-hidden">
+        {/* References Internal Drawer Overlay */}
+        <AnimatePresence>
+          {showReferences && (
+            <m.div
+              initial={{ x: "100%", opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: "100%", opacity: 0 }}
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="absolute inset-0 z-30 flex flex-col bg-card/95 backdrop-blur-md"
+            >
+              <div className="flex flex-shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <BookOpen size={14} className="text-primary/70" />
+                  <span className="text-[13px] font-semibold text-foreground/90">{t("referenceSources")}</span>
+                </div>
+                <button
+                  onClick={() => setShowReferences(false)}
+                  className="rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-white/5 hover:text-foreground/70"
+                >
+                  <X size={14} />
+                </button>
               </div>
-            )}
-
-            {insights.length > 0 && (
-              <div className="mb-3 space-y-1.5">
-                {insights.slice(0, 3).map((insight) => (
-                  <m.div
-                    key={insight.id}
-                    initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="rounded-lg border border-primary/10 bg-primary/[0.03] px-3 py-2"
-                  >
-                    <p className="text-[11px] font-medium text-foreground/70">{insight.title}</p>
-                    {insight.content && (
-                      <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground/50">{insight.content}</p>
-                    )}
-                  </m.div>
-                ))}
+              <div className="flex-1 overflow-y-auto">
+                {loadingRelated && relatedKnowledge.length === 0 ? (
+                  <div className="space-y-4 p-4">
+                    <Skeleton className="h-[100px] w-full rounded-xl bg-white/[0.02]" />
+                    <Skeleton className="h-[100px] w-full rounded-xl bg-white/[0.02]" />
+                  </div>
+                ) : (
+                  <RelevantSourcesView
+                    localChunks={writingContext}
+                    globalChunks={relatedKnowledge}
+                    onAskAbout={(text) => {
+                      setShowReferences(false);
+                      void submit(text);
+                    }}
+                    onInsertCitation={onInsertToEditor}
+                  />
+                )}
               </div>
-            )}
+            </m.div>
+          )}
+        </AnimatePresence>
 
-            <div className="space-y-2">
-              {greetingLoading ? (
-                <>
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-12 rounded-xl border border-border/30 bg-muted/20" />
+        <div className="h-full overflow-y-auto scroll-smooth">
+          {!hasMessages ? (
+            <div className="flex flex-col px-5 pt-8 pb-4">
+              {/* 问候区：大号图标 + 标题 */}
+              <div className="mb-6">
+                <BotAvatar className="mb-4 h-[42px] w-[42px] shadow-sm" />
+                {greetingLoading ? (
+                  <Skeleton className="h-6 w-48 rounded-lg bg-muted/30" />
+                ) : (
+                  <h2 className="text-[18px] font-semibold leading-snug tracking-tight text-foreground/90">
+                    {greetingText || t("greeting")}
+                  </h2>
+                )}
+              </div>
+
+              {/* 主动建议卡片（已移至全局 Toaster） */}
+
+              {/* 洞察卡片 */}
+              {insights.length > 0 && (
+                <div className="mb-4 space-y-1">
+                  {insights.slice(0, 3).map((insight) => (
+                    <m.div
+                      key={insight.id}
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-lg border border-primary/10 bg-primary/[0.03] px-3 py-2"
+                    >
+                      <p className="text-[11px] font-medium text-foreground/70">{insight.title}</p>
+                      {insight.content && (
+                        <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground/50">{insight.content}</p>
+                      )}
+                    </m.div>
                   ))}
-                </>
-              ) : dynamicSuggestions && dynamicSuggestions.length > 0 ? (
-                dynamicSuggestions.map((s) => (
-                  <button
-                    key={s.label}
-                    className="group flex w-full items-center gap-3 rounded-xl border border-border/50 bg-background px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-accent"
-                    onClick={() => { if (s.prompt) void submit(s.prompt); }}
-                    type="button"
-                  >
-                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
-                      <Sparkles size={13} />
-                    </div>
-                    <span className="text-[13px] text-foreground/70 group-hover:text-foreground/90">
-                      {s.label}
-                    </span>
-                  </button>
-                ))
-              ) : (
-                <>
-                  {[
-                    { label: t("summarize"), prompt: "Summarize the key insights across all sources." },
-                    { label: t("generateOutline"), prompt: "Turn these notes into a short presentation outline." },
-                    { label: t("extractArguments"), prompt: "Compare and contrast the main arguments found in sources." },
-                  ].map((s) => (
+                </div>
+              )}
+
+              {/* 快捷操作：Notion 风格 icon 行列表 */}
+              <div className="space-y-0.5">
+                {greetingLoading ? (
+                  <>
+                    {[1, 2, 3].map((i) => (
+                      <Skeleton key={i} className="h-9 rounded-xl bg-muted/20" />
+                    ))}
+                  </>
+                ) : dynamicSuggestions && dynamicSuggestions.length > 0 ? (
+                  dynamicSuggestions.map((s) => (
                     <button
-                      key={s.prompt}
-                      className="group flex w-full items-center gap-3 rounded-xl border border-border/50 bg-background px-3.5 py-3 text-left transition-colors hover:border-border hover:bg-accent"
-                      onClick={() => void submit(s.prompt)}
+                      key={s.label}
+                      className="group flex w-full items-center gap-3 rounded-[8px] px-2 py-2.5 text-left transition-colors hover:bg-white/[0.05]"
+                      onClick={() => { if (s.prompt) void submit(s.prompt); }}
                       type="button"
                     >
-                      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary transition-colors group-hover:bg-primary/15">
-                        <Sparkles size={13} />
+                      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-muted-foreground/50 transition-colors group-hover:text-foreground/70">
+                        <Sparkles size={14} />
                       </div>
-                      <span className="text-[13px] text-foreground/70 group-hover:text-foreground/90">
+                      <span className="text-[13px] text-foreground/60 transition-colors group-hover:text-foreground/85">
                         {s.label}
                       </span>
                     </button>
-                  ))}
-                </>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4 p-4">
-            {unreadSuggestions.length > 0 && (
-              <AnimatePresence>
-                {unreadSuggestions.map((s) =>
-                  s.type === "insight" ? (
-                    <SoulCard
-                      key={s.id}
-                      suggestion={s}
-                      onReply={(text) => void submit(text)}
-                    />
-                  ) : (
-                    <ProactiveCard
-                      key={s.id}
-                      suggestion={s}
-                      onAskQuestion={(q) => void submit(q)}
-                    />
-                  )
+                  ))
+                ) : (
+                  <>
+                    {[
+                      { label: t("summarize"), prompt: "Summarize the key insights across all sources." },
+                      { label: t("generateOutline"), prompt: "Turn these notes into a short presentation outline." },
+                      { label: t("extractArguments"), prompt: "Compare and contrast the main arguments found in sources." },
+                    ].map((s) => (
+                      <button
+                        key={s.prompt}
+                        className="group flex w-full items-center gap-3 rounded-[8px] px-2 py-2.5 text-left transition-colors hover:bg-white/[0.05]"
+                        onClick={() => void submit(s.prompt)}
+                        type="button"
+                      >
+                        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center text-muted-foreground/50 transition-colors group-hover:text-foreground/70">
+                          <Sparkles size={14} />
+                        </div>
+                        <span className="text-[13px] text-foreground/60 transition-colors group-hover:text-foreground/85">
+                          {s.label}
+                        </span>
+                      </button>
+                    ))}
+                  </>
                 )}
-              </AnimatePresence>
-            )}
-            {messages.map((message, idx) => {
-              const isLastAssistant = message.role === "assistant" && idx === messages.length - 1;
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 p-4 pb-20">
+              {/* unreadSuggestions removed to globally floating ProactiveToaster */}
+              {messages.map((message, idx) => {
+                const isLastAssistant = message.role === "assistant" && idx === messages.length - 1;
 
-              return (
-                <div key={message.id}>
-                  {isLastAssistant && streaming && pendingApproval && (
-                    <ApprovalCard
-                      toolCalls={pendingApproval.toolCalls}
-                      onDecision={async (approved) => {
-                        await approveToolCall(pendingApproval.approvalId, approved);
-                        setPendingApproval(null);
-                      }}
+                return (
+                  <div key={message.id}>
+                    {isLastAssistant && streaming && pendingApproval && (
+                      <ApprovalCard
+                        toolCalls={pendingApproval.toolCalls}
+                        onDecision={async (approved) => {
+                          await approveToolCall(pendingApproval.approvalId, approved);
+                          setPendingApproval(null);
+                        }}
+                      />
+                    )}
+                    <CopilotMessageBubble
+                      message={message}
+                      isLastAssistant={isLastAssistant}
+                      streaming={streaming}
+                      liveAgentSteps={agentSteps}
+                      onInsert={message.role === "assistant" ? onInsertToEditor : undefined}
+                      onInsertMindMap={message.role === "assistant" ? onInsertMindMap : undefined}
                     />
-                  )}
-                  <CopilotMessageBubble
-                    message={message}
-                    isLastAssistant={isLastAssistant}
-                    streaming={streaming}
-                    liveAgentSteps={agentSteps}
-                    onInsert={message.role === "assistant" ? onInsertToEditor : undefined}
-                    onInsertMindMap={message.role === "assistant" ? onInsertMindMap : undefined}
-                  />
-                </div>
-              );
-            })}
-            <div ref={bottomRef} />
-          </div>
-        )}
+                  </div>
+                );
+              })}
+              <div ref={bottomRef} />
+            </div>
+          )}
 
-        {showScrollBtn && hasMessages && (
-          <button
-            className="absolute bottom-3 right-3 flex h-7 w-7 items-center justify-center rounded-full border border-border/50 bg-card text-muted-foreground shadow-lg transition-colors hover:border-border/80 hover:text-foreground"
-            onClick={() => bottomRef.current?.scrollIntoView({ behavior: "smooth" })}
-            type="button"
-          >
-            <ChevronDown size={13} />
-          </button>
-        )}
+          {showScrollBtn && hasMessages && (
+            <button
+              className="absolute bottom-3 right-3 flex h-7 w-7 items-center justify-center rounded-full border border-border/50 bg-card text-muted-foreground shadow-lg transition-colors hover:border-border/80 hover:text-foreground"
+              onClick={() => bottomRef.current?.scrollIntoView({ behavior: "smooth" })}
+              type="button"
+            >
+              <ChevronDown size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="flex-shrink-0 border-t border-border/30 p-3">
-        <ChatInput
-          value={input}
-          onChange={setInput}
-          onSubmit={(text) => void submit(text)}
-          onCancel={handleCancel}
-          placeholder={t("placeholder")}
-          streaming={streaming}
-          variant={isSheet ? "default" : "compact"}
-          accentBorder="border-border/40 focus-within:border-primary/30 focus-within:shadow-[0_0_0_2px_hsl(var(--primary)/0.06)]"
-          showHint={!isSheet}
-          hintText={t("sendHint")}
-          aboveInput={
-            quotedText ? (
-              <div className="mb-2.5 flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2">
-                <div className="mt-0.5 h-full w-0.5 flex-shrink-0 self-stretch rounded-full bg-primary/40" />
-                <p className="min-w-0 flex-1 line-clamp-3 text-[11px] leading-4 text-muted-foreground/70">
-                  {quotedText}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setQuotedText(null)}
-                  className="flex-shrink-0 rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
-                >
-                  <X size={11} />
-                </button>
-              </div>
-            ) : undefined
-          }
-          toolbarLeft={!isSheet ? (
-            <span className="flex items-center gap-1 rounded-full border border-border/30 bg-muted/20 px-2 py-0.5 text-[10px] text-muted-foreground/40">
-              <Sparkles size={8} className="text-primary/50" />
-              {t("notebookLabel")}
-            </span>
-          ) : undefined}
-        />
+      {/* ── 底部输入区 ── */}
+      <div className="flex-shrink-0 px-3 pb-4 pt-2">
+        <div className="overflow-hidden rounded-[14px] border border-white/[0.08] bg-white/[0.04] transition-colors focus-within:border-white/[0.12] focus-within:bg-white/[0.06]">
+          <ChatInput
+            value={input}
+            onChange={setInput}
+            onSubmit={(text) => void submit(text)}
+            onCancel={handleCancel}
+            placeholder={t("placeholder")}
+            streaming={streaming}
+            variant={isSheet ? "default" : "compact"}
+            accentBorder="border-transparent"
+            showHint={false}
+            aboveInput={
+              quotedText ? (
+                <div className="mb-2.5 flex items-start gap-2 rounded-xl border border-primary/15 bg-primary/[0.04] px-3 py-2">
+                  <div className="mt-0.5 h-full w-0.5 flex-shrink-0 self-stretch rounded-full bg-primary/40" />
+                  <p className="min-w-0 flex-1 line-clamp-3 text-[11px] leading-4 text-muted-foreground/70">
+                    {quotedText}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setQuotedText(null)}
+                    className="flex-shrink-0 rounded-md p-0.5 text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+                  >
+                    <X size={11} />
+                  </button>
+                </div>
+              ) : undefined
+            }
+            toolbarLeft={!isSheet ? (
+              <span className="flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.05] px-2 py-0.5 text-[10px] text-muted-foreground/40">
+                <Sparkles size={8} className="text-violet-400/60" />
+                {t("notebookLabel")}
+              </span>
+            ) : undefined}
+          />
+        </div>
       </div>
     </>
   );

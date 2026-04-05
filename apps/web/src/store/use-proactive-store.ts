@@ -12,6 +12,9 @@ import { create } from "zustand";
 export type ProactiveSuggestion = {
   id: string;
   type: "source_indexed" | "insight" | "nudge";
+  origin: "source_indexed" | "proactive_insight" | "lyra_thought";
+  delivery: "inbox" | "surface";
+  fingerprint: string;
   sourceId?: string;
   sourceName?: string;
   summary?: string;
@@ -19,6 +22,8 @@ export type ProactiveSuggestion = {
   message?: string;
   createdAt: number;
   read: boolean;
+  surfacedAt?: number;
+  hiddenAt?: number;
 };
 
 /** 写作辅助上下文片段 */
@@ -35,9 +40,10 @@ type ProactiveStore = {
   writingContext: WritingContextChunk[];
   unreadCount: number;
 
-  addSuggestion: (suggestion: Omit<ProactiveSuggestion, "id" | "createdAt" | "read">) => void;
+  addSuggestion: (suggestion: Omit<ProactiveSuggestion, "id" | "createdAt" | "read">) => string | null;
   markAllRead: () => void;
   dismissSuggestion: (id: string) => void;
+  hideSuggestion: (id: string) => void;
   clearAll: () => void;
   setWritingContext: (chunks: WritingContextChunk[]) => void;
 };
@@ -48,29 +54,61 @@ export const useProactiveStore = create<ProactiveStore>()((set) => ({
   unreadCount: 0,
 
   addSuggestion: (suggestion) =>
+    {
+      const now = Date.now();
+      let createdId: string | null = null;
+      set((state) => {
+        if (state.suggestions.some((item) => item.origin === suggestion.origin && item.fingerprint === suggestion.fingerprint)) {
+          return state;
+        }
+
+        const newSuggestion: ProactiveSuggestion = {
+          ...suggestion,
+          id: `proactive-${now}-${Math.random().toString(36).slice(2, 6)}`,
+          createdAt: now,
+          read: false,
+          surfacedAt: suggestion.delivery === "surface" ? now : undefined,
+        };
+        createdId = newSuggestion.id;
+        const updated = [newSuggestion, ...state.suggestions].slice(0, 20);
+        return {
+          suggestions: updated,
+          unreadCount: updated.filter((s) => !s.read).length,
+        };
+      });
+      return createdId;
+    },
+
+  markAllRead: () =>
+    set((state) => ({
+      suggestions: state.suggestions.map((s) => ({
+        ...s,
+        read: true,
+        hiddenAt: s.hiddenAt ?? Date.now(),
+      })),
+      unreadCount: 0,
+    })),
+
+  dismissSuggestion: (id) =>
     set((state) => {
-      const newSuggestion: ProactiveSuggestion = {
-        ...suggestion,
-        id: `proactive-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        createdAt: Date.now(),
-        read: false,
-      };
-      const updated = [newSuggestion, ...state.suggestions].slice(0, 20);
+      const updated = state.suggestions.map((s) =>
+        s.id === id
+          ? { ...s, read: true, hiddenAt: s.hiddenAt ?? Date.now() }
+          : s,
+      );
       return {
         suggestions: updated,
         unreadCount: updated.filter((s) => !s.read).length,
       };
     }),
 
-  markAllRead: () =>
-    set((state) => ({
-      suggestions: state.suggestions.map((s) => ({ ...s, read: true })),
-      unreadCount: 0,
-    })),
-
-  dismissSuggestion: (id) =>
+  hideSuggestion: (id) =>
     set((state) => {
-      const updated = state.suggestions.filter((s) => s.id !== id);
+      const updated = state.suggestions.map((s) =>
+        s.id === id && !s.hiddenAt
+          ? { ...s, hiddenAt: Date.now() }
+          : s,
+      );
       return {
         suggestions: updated,
         unreadCount: updated.filter((s) => !s.read).length,

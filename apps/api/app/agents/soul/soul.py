@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 _THINK_LOOP_INTERVAL = 120  # 2 分钟扫描一次活跃用户
 
 # 同一用户两次「浮现」推送之间的最小间隔（秒）
-_SURFACE_COOLDOWN = 480  # 8 分钟
+_SURFACE_COOLDOWN = 1_800  # 30 分钟
 
 # LLM 思考 prompt
 _SOUL_MONOLOGUE_PROMPT = """你是 Lyra，一个内嵌在个人知识管理应用中的 AI 助手。
@@ -159,6 +159,8 @@ class AgentSoul:
 
         content = result.get("content", "")
         should_surface = result.get("should_surface", False)
+        if _should_force_silence(activity):
+            should_surface = False
 
         # 持久化到数据库
         notebook_id = activity.get("notebook_id")
@@ -249,3 +251,12 @@ async def _store_thought(
             await db.commit()
     except Exception:
         logger.warning("Failed to store agent thought to DB", exc_info=True)
+
+
+def _should_force_silence(activity: dict) -> bool:
+    """前端明确提示为高打扰场景时，强制仅存内部思考。"""
+    return bool(
+        activity.get("typing_recently")
+        or activity.get("copilot_open")
+        or activity.get("is_mobile")
+    )

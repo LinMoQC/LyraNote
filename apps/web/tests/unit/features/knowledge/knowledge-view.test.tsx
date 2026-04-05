@@ -13,7 +13,8 @@ class MockIntersectionObserver {
 vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
 
 vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, number>) =>
+    values?.total != null ? `${key}:${values.total}` : key,
 }));
 
 vi.mock("framer-motion", () => ({
@@ -35,15 +36,25 @@ vi.mock("@tanstack/react-query", () => ({
         {
           items: [
             {
+              id: "source-older",
+              notebookId: "notebook-1",
+              title: "AI Agent Research",
+              summary: "old failure",
+              type: "web",
+              status: "failed",
+              updatedAt: "2026-04-03T10:00:00Z",
+            },
+            {
               id: "source-1",
               notebookId: "notebook-1",
               title: "AI Agent Research",
               summary: "summary",
               type: "web",
               status: "indexed",
+              updatedAt: "2026-04-03T11:00:00Z",
             },
           ],
-          total: 1,
+          total: 2,
           offset: 0,
           limit: 20,
           hasMore: false,
@@ -79,6 +90,8 @@ describe("KnowledgeView", () => {
     expect(grid.className).toContain("grid-cols-2");
     expect(grid.className).toContain("md:grid-cols-3");
     expect(screen.getByRole("heading", { name: "title" })).toBeInTheDocument();
+    expect(screen.getAllByText("AI Agent Research")).toHaveLength(1);
+    expect(screen.getByText("loadedAll:1")).toBeInTheDocument();
   });
 
   it("can switch to graph view", () => {

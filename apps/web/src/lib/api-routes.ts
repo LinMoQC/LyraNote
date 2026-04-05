@@ -145,6 +145,8 @@ export const AI = {
   SUGGESTIONS: "/ai/suggestions",
   /** POST - 写作辅助上下文 */
   WRITING_CONTEXT: "/ai/writing-context",
+  /** POST - 选中文本改写 */
+  REWRITE: "/ai/rewrite",
   /** POST - 行内润色 (SSE) */
   POLISH: "/ai/polish",
   /** POST - 创建深度研究任务 */

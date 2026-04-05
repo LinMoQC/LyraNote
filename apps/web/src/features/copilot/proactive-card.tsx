@@ -23,12 +23,13 @@ export const ProactiveCard = memo(function ProactiveCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.97 }}
       transition={{ duration: 0.2 }}
-      className="relative rounded-xl border border-primary/15 bg-primary/[0.04] p-3"
+      className="relative rounded-xl border border-primary/15 bg-background/95 p-3 shadow-lg backdrop-blur-xl"
     >
       <button
         type="button"
         onClick={() => dismiss(suggestion.id)}
         className="absolute right-2 top-2 rounded-md p-0.5 text-muted-foreground/30 transition-colors hover:text-muted-foreground/60"
+        aria-label={t("close")}
       >
         <X size={11} />
       </button>

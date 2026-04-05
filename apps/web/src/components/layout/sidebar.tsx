@@ -137,19 +137,17 @@ export function Sidebar() {
 
   return (
     <m.aside
-      initial={false}
+      initial={isMobile ? { x: -288 } : { width: collapsed ? 64 : 240 }}
       animate={
-        !mediaQueryReady
-          ? undefined
-          : isMobile
+        isMobile
           ? { x: sidebarMobileOpen ? 0 : -288 }
           : { width: collapsed ? 64 : 240 }
       }
       transition={hydrated ? { type: "spring", stiffness: 320, damping: 32, restDelta: 0.5 } : { duration: 0 }}
       className={cn(
-        "fixed left-0 top-0 z-50 flex h-screen w-72 -translate-x-full flex-shrink-0 flex-col overflow-hidden bg-sidebar md:static md:z-auto md:w-auto md:translate-x-0",
+        "fixed left-0 top-0 z-50 flex h-screen w-72 -translate-x-full flex-shrink-0 flex-col overflow-hidden bg-sidebar md:static md:z-auto md:w-auto md:translate-x-0"
       )}
-      style={isMobile ? undefined : { width: collapsed ? 64 : 240 }}
+      style={isMobile ? undefined : {}}
     >
       {/* ── Brand ─────────────────────────────────────── */}
       <div className="flex h-16 flex-shrink-0 items-center justify-between px-2">

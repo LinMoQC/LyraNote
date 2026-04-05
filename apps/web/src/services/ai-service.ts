@@ -18,6 +18,8 @@ import {
 } from "@/schemas/chat-api";
 import type { Artifact, CitationData, Message } from "@/types";
 
+type RewriteAction = "polish" | "proofread" | "reformat" | "shorten";
+
 // ─── Conversation history (stub — messages are managed client-side) ──────────
 
 /**
@@ -53,6 +55,19 @@ export async function getInlineSuggestion(context: string): Promise<string> {
     note_context: "",
   });
   return data.suggestion;
+}
+
+export async function rewriteSelection(
+  selectedText: string,
+  action: RewriteAction,
+  noteContext: string = "",
+): Promise<string> {
+  const data = await http.post<{ result: string }>(AI.REWRITE, {
+    selected_text: selectedText,
+    action,
+    note_context: noteContext,
+  });
+  return data.result;
 }
 
 // ─── Streaming chat ───────────────────────────────────────────────────────────

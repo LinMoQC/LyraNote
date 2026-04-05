@@ -39,7 +39,7 @@ export const SoulCard = memo(function SoulCard({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -10, scale: 0.96 }}
       transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
-      className="relative overflow-hidden rounded-xl border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.06] to-indigo-500/[0.04] p-3"
+      className="relative overflow-hidden rounded-xl border border-violet-500/20 bg-background/95 bg-gradient-to-br from-violet-500/[0.08] to-indigo-500/[0.05] p-3 shadow-lg backdrop-blur-xl"
     >
       {/* 装饰性渐变光晕 */}
       <div className="pointer-events-none absolute -right-6 -top-6 h-16 w-16 rounded-full bg-violet-500/10 blur-2xl" />

@@ -1,17 +1,26 @@
 """
 Writing Agent: inline AI actions for the Tiptap editor.
 - Ghost Text suggestion (autocomplete)
-- Selection rewrite (polish / shorten / expand)
+- Selection rewrite (polish / proofread / reformat / shorten / expand)
 """
 
 from typing import Literal
 
-RewriteAction = Literal["polish", "shorten", "expand"]
+RewriteAction = Literal["polish", "proofread", "reformat", "shorten", "expand"]
 
 REWRITE_PROMPTS: dict[str, str] = {
     "polish": (
         "请对以下文字进行润色，使其表达更流畅、专业。保持原意，不要大幅改写。"
         "直接输出改写后的文字，不加任何解释。"
+    ),
+    "proofread": (
+        "请校对以下文字，修正错别字、语病、标点和不自然表达。"
+        "保持原意与语气，直接输出校对后的文字，不加任何解释。"
+    ),
+    "reformat": (
+        "请重新整理以下文字的格式，使结构更清晰、阅读更顺畅。"
+        "可以调整断句、换行和列表表达，但不要添加无关内容。"
+        "直接输出整理后的文字，不加任何解释。"
     ),
     "shorten": (
         "请将以下文字进行精简，在保留核心信息的前提下尽量缩短。"

@@ -16,6 +16,7 @@ function makeSourceKey(source: Source): string {
  */
 export function dedupeSourcesByLatest(sources: Source[]): Source[] {
   const winners = new Map<string, Source>();
+  const seenWinnerIds = new Set<string>();
 
   for (const source of sources) {
     const key = makeSourceKey(source);
@@ -30,5 +31,15 @@ export function dedupeSourcesByLatest(sources: Source[]): Source[] {
     }
   }
 
-  return sources.filter((source) => winners.get(makeSourceKey(source))?.id === source.id);
+  return sources.filter((source) => {
+    if (winners.get(makeSourceKey(source))?.id !== source.id) {
+      return false;
+    }
+    if (seenWinnerIds.has(source.id)) {
+      return false;
+    }
+
+    seenWinnerIds.add(source.id);
+    return true;
+  });
 }

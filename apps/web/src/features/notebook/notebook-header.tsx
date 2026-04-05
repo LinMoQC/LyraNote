@@ -2,6 +2,7 @@
 
 import {
   AlignLeft,
+  ChevronDown,
   ChevronLeft,
   Copy,
   Expand,
@@ -22,6 +23,7 @@ import { AnimatePresence, m } from "framer-motion";
 
 import { deleteNotebook, renameNotebook } from "@/services/notebook-service";
 import { NotePickerDropdown } from "@/features/notebook/note-picker-dropdown";
+import { useUiStore } from "@/store/use-ui-store";
 import type { MobileWorkspaceSheetKey } from "@/features/notebook/mobile-workspace-sheet";
 import type { NoteRecord } from "@/services/note-service";
 
@@ -52,6 +54,7 @@ export function NotebookTopBar({
   isMobile = false,
   mobileActiveSheet = "none",
   onMobileSheetChange,
+  charCount,
 }: {
   notebookId: string;
   title: string;
@@ -67,6 +70,7 @@ export function NotebookTopBar({
   isMobile?: boolean;
   mobileActiveSheet?: MobileWorkspaceSheetKey;
   onMobileSheetChange?: (sheet: MobileWorkspaceSheetKey) => void;
+  charCount?: number;
 }) {
   const t = useTranslations("notebook");
   const tc = useTranslations("common");
@@ -141,7 +145,18 @@ export function NotebookTopBar({
     setMenuOpen(false);
   };
 
+  const { setSettingsOpen } = useUiStore();
+
   const menuItems: MenuItem[] = [
+    {
+      id: "aiSkills",
+      label: "AI 技能",
+      icon: Sparkles,
+      action: () => {
+        setSettingsOpen(true, "skills");
+        setMenuOpen(false);
+      },
+    },
     {
       id: "smallText",
       label: t("smallText"),
@@ -569,8 +584,13 @@ export function NotebookTopBar({
         )}
       </div>
 
-      {/* Right: save status + menu */}
-      <div className="flex flex-shrink-0 items-center gap-1.5">
+      {/* Right: char count + save status + menu */}
+      <div className="flex flex-shrink-0 items-center gap-2.5">
+        {charCount !== undefined && charCount > 0 && (
+          <span className="text-[11px] tabular-nums text-muted-foreground/30">
+            {charCount} 字符
+          </span>
+        )}
         {saveStatus === "saving" && (
           <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40" />
@@ -586,7 +606,6 @@ export function NotebookTopBar({
         {saveStatus === "error" && (
           <span className="text-[11px] text-red-400/70">{t("saveFailedShort")}</span>
         )}
-
         {/* ... menu */}
         <div className="relative">
           <button

@@ -275,7 +275,7 @@ export function KnowledgeView() {
     const items = data?.pages.flatMap((p) => p.items) ?? []
     return dedupeSourcesByLatest(items)
   }, [data])
-  const total = data?.pages[0]?.total ?? 0;
+  const total = allSources.length;
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {

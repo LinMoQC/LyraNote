@@ -54,6 +54,7 @@ RUNTIME_CONFIG_KEYS = [
     "storage_backend",
     "storage_s3_region",
     "storage_s3_endpoint_url",
+    "storage_s3_public_url",
     "storage_s3_bucket",
     "storage_s3_access_key",
     "storage_s3_secret_key",
@@ -63,6 +64,49 @@ RUNTIME_CONFIG_KEYS = [
     "user_preferences",
     "custom_system_prompt",
 ]
+
+LEGACY_RUNTIME_CONFIG_KEY_ALIASES = {
+    "storage_region": "storage_s3_region",
+}
+
+RUNTIME_CONFIG_QUERY_KEYS = [
+    *RUNTIME_CONFIG_KEYS,
+    *LEGACY_RUNTIME_CONFIG_KEY_ALIASES.keys(),
+]
+
+_PROVIDER_RUNTIME_KEYS = {
+    "llm_provider",
+    "openai_api_key",
+    "openai_base_url",
+    "llm_model",
+    "llm_utility_model",
+    "llm_utility_api_key",
+    "llm_utility_base_url",
+}
+
+_EMBEDDING_RUNTIME_KEYS = {
+    "openai_api_key",
+    "openai_base_url",
+    "embedding_api_key",
+    "embedding_base_url",
+    "embedding_model",
+}
+
+_RERANKER_RUNTIME_KEYS = {
+    "reranker_api_key",
+    "reranker_base_url",
+    "reranker_model",
+}
+
+_STORAGE_RUNTIME_KEYS = {
+    "storage_backend",
+    "storage_s3_region",
+    "storage_s3_endpoint_url",
+    "storage_s3_public_url",
+    "storage_s3_bucket",
+    "storage_s3_access_key",
+    "storage_s3_secret_key",
+}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -82,19 +126,78 @@ async def _set_config(db, key: str, value: str) -> None:
         db.add(AppConfig(key=key, value=value))
 
 
+def normalize_runtime_config_key(key: str) -> str:
+    return LEGACY_RUNTIME_CONFIG_KEY_ALIASES.get(key, key)
+
+
+def apply_runtime_settings(config_map: dict[str, str | None]) -> set[str]:
+    """Apply persisted runtime config to in-memory settings and reset stale clients."""
+    from app.config import settings
+
+    touched_keys: set[str] = set()
+    for key, value in config_map.items():
+        normalized_key = normalize_runtime_config_key(key)
+        if value is None:
+            continue
+        try:
+            setattr(settings, normalized_key, value)
+            touched_keys.add(normalized_key)
+        except Exception as e:
+            logger.warning(
+                "Config key %r from DB could not be applied: %s",
+                normalized_key,
+                e,
+            )
+
+    if touched_keys & _PROVIDER_RUNTIME_KEYS:
+        try:
+            from app.providers.provider_factory import reset_provider
+
+            reset_provider()
+        except Exception:
+            logger.exception("Failed to reset LLM provider after runtime config sync")
+
+    if touched_keys & _EMBEDDING_RUNTIME_KEYS:
+        try:
+            from app.providers import embedding
+
+            embedding._client = None  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("Failed to reset embedding client after runtime config sync")
+
+    if touched_keys & _RERANKER_RUNTIME_KEYS:
+        try:
+            from app.providers import reranker
+
+            reranker._client = None  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception("Failed to reset reranker client after runtime config sync")
+
+    if touched_keys & _STORAGE_RUNTIME_KEYS:
+        try:
+            from app.providers.storage import reset_storage_instance
+
+            reset_storage_instance()
+        except Exception:
+            logger.exception("Failed to reset storage provider after runtime config sync")
+
+    return touched_keys
+
+
 async def load_settings_from_db(db) -> None:
     """Called at startup: apply persisted app_config values to in-memory settings."""
-    from app.config import settings
     result = await db.execute(
-        select(AppConfig).where(AppConfig.key.in_(RUNTIME_CONFIG_KEYS))
+        select(AppConfig).where(AppConfig.key.in_(RUNTIME_CONFIG_QUERY_KEYS))
     )
     rows = result.scalars().all()
+    config_map: dict[str, str | None] = {}
     for row in rows:
-        if row.value:
-            try:
-                setattr(settings, row.key, row.value)
-            except Exception as e:
-                logger.warning("Config key %r from DB could not be applied: %s", row.key, e)
+        normalized_key = normalize_runtime_config_key(row.key)
+        is_legacy_key = normalized_key != row.key
+        if is_legacy_key and normalized_key in config_map:
+            continue
+        config_map[normalized_key] = row.value
+    apply_runtime_settings(config_map)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -142,7 +245,7 @@ async def setup_init(body: SetupInitRequest, response: Response, db: DbDep):
         "reranker_model": body.reranker_model,
         "tavily_api_key": body.tavily_api_key,
         "storage_backend": body.storage_backend,
-        "storage_region": body.storage_region,
+        "storage_s3_region": body.storage_region,
         "storage_s3_endpoint_url": body.storage_s3_endpoint_url,
         "storage_s3_bucket": body.storage_s3_bucket,
         "storage_s3_access_key": body.storage_s3_access_key,
@@ -157,15 +260,8 @@ async def setup_init(body: SetupInitRequest, response: Response, db: DbDep):
     for key, val in config_map.items():
         await _set_config(db, key, val)
 
-    # Apply to in-memory settings immediately
-    for key, val in config_map.items():
-        if key != "is_configured" and val:
-            try:
-                setattr(settings, key, val)
-            except Exception:
-                pass
-
     await db.commit()
+    apply_runtime_settings({key: val for key, val in config_map.items() if key != "is_configured"})
 
     token = create_access_token(user.id, expire_days=settings.jwt_expire_days)
 

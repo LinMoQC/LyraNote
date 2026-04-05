@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2, FileAudio, FileText, Globe, Loader2, Notepad
 
 import { startTransition, useEffect, useRef } from "react";
 
+import { createSuggestionFingerprint, shouldAutoSurfaceSource } from "@/features/copilot/proactive-surface-policy";
 import { cn } from "@/lib/utils";
 import { getSourceSuggestions } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
@@ -153,8 +154,16 @@ export function SourcesPanel({
       if (prevSource && (prevSource.status === "processing" || prevSource.status === "pending")) {
         getSourceSuggestions(source.id)
           .then((data) => {
+            const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
             addSuggestion({
               type: "source_indexed",
+              origin: "source_indexed",
+              delivery: shouldAutoSurfaceSource(isMobile) ? "surface" : "inbox",
+              fingerprint: createSuggestionFingerprint("source_indexed", {
+                sourceId: source.id,
+                sourceName: source.title || t("unknownSource"),
+                summary: data.summary || undefined,
+              }),
               sourceId: source.id,
               sourceName: source.title || t("unknownSource"),
               summary: data.summary || undefined,
@@ -187,7 +196,7 @@ export function SourcesPanel({
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
           <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("sourcesHeader", { count: sources.length })}
+            {t("sourcesHeader", { count: visibleSources.length })}
           </span>
           <div className="flex items-center gap-1">
             <button

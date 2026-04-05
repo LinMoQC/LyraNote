@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, m } from "framer-motion";
 import { Pen, Search } from "lucide-react";
 import { SelectionActionMenu } from "@/features/editor/selection-action-menu";
+import type { EditorActionRequest } from "@/features/editor/editor-actions";
 import { tiptapExtensions } from "@/lib/tiptap";
 import { getInlineSuggestion } from "@/services/ai-service";
 import { getNoteForNotebook, getNote, saveNote } from "@/services/note-service";
@@ -29,7 +30,7 @@ type NoteEditorProps = {
   noteId?: string | null;
   notebookTitle?: string;
   onEditorReady?: (editor: Editor) => void;
-  onAskAI?: (text: string, action: string) => void;
+  onEditorAction?: (payload: EditorActionRequest) => void;
   onSaveStatusChange?: (status: SaveStatus) => void;
   /** 顶栏 / 笔记选择器与编辑器标题同步 */
   onActiveNoteTitleChange?: (title: string) => void;
@@ -47,7 +48,7 @@ export function NoteEditor({
   noteId,
   notebookTitle,
   onEditorReady,
-  onAskAI,
+  onEditorAction,
   onSaveStatusChange,
   onActiveNoteTitleChange,
   onNoteSaved,
@@ -76,7 +77,7 @@ export function NoteEditor({
   const editor = useEditor({
     editorProps: {
       attributes: {
-        class: "tiptap outline-none text-[15px] leading-[1.8] text-foreground/85 min-h-[60vh]"
+        class: "tiptap outline-none text-[16px] leading-[1.85] text-foreground/90 min-h-[60vh] [&_p]:mb-[0.8em]"
       }
     },
     extensions: tiptapExtensions,
@@ -147,8 +148,10 @@ export function NoteEditor({
     if (!editor) return
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     if (savedTimerRef.current) clearTimeout(savedTimerRef.current)
-    updateSaveStatus("saving")
-    saveTimerRef.current = setTimeout(() => void saveNow(), 1500)
+    saveTimerRef.current = setTimeout(() => {
+      updateSaveStatus("saving")
+      void saveNow()
+    }, 3000)
   }, [editor, saveNow, updateSaveStatus])
 
   // Cmd+S / Ctrl+S shortcut
@@ -285,8 +288,23 @@ export function NoteEditor({
     if (!editor) return;
     const { from } = editor.state.selection;
     const context = editor.state.doc.textBetween(Math.max(0, from - 200), from);
-    onAskAI?.(context, "ask");
-  }, [editor, onAskAI]);
+    onEditorAction?.({
+      scope: "cursor",
+      action: "askCopilot",
+      text: context,
+      from,
+      noteId: noteIdRef.current ?? undefined,
+      notebookId,
+    });
+  }, [editor, notebookId, onEditorAction]);
+
+  const handleEditorAction = useCallback((payload: EditorActionRequest) => {
+    onEditorAction?.({
+      ...payload,
+      noteId: noteIdRef.current ?? payload.noteId,
+      notebookId,
+    });
+  }, [notebookId, onEditorAction]);
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -303,8 +321,8 @@ export function NoteEditor({
         >
           <input
             className={[
-              "w-full bg-transparent font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-foreground/15",
-              isMobileLayout ? "mb-5 text-[24px]" : "mb-8 text-[30px]",
+              "w-full bg-transparent font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/30 transition-colors focus:placeholder:text-muted-foreground/20",
+              isMobileLayout ? "mb-6 text-[26px]" : "mb-10 text-[32px]",
             ].join(" ")}
             value={title}
             placeholder={t("titlePlaceholder")}
@@ -315,9 +333,9 @@ export function NoteEditor({
               triggerSave()
             }}
           />
-          <SelectionActionMenu editor={editor} onAskAI={onAskAI} />
+          <SelectionActionMenu editor={editor} onEditorAction={handleEditorAction} />
           <div className="relative">
-            <BlockHandle editor={editor} onAskAI={onAskAI} />
+            <BlockHandle editor={editor} onEditorAction={handleEditorAction} />
             <EditorContent editor={editor} />
 
             {/* AI Nudge bubble */}
@@ -328,26 +346,26 @@ export function NoteEditor({
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: 6, scale: 0.95 }}
                   transition={{ duration: 0.18 }}
-                  className="absolute z-30 flex items-center gap-1.5 rounded-xl border border-border/40 bg-card px-3 py-2 shadow-lg"
+                  className="absolute z-30 flex items-center gap-2 rounded-[14px] border border-white/5 bg-[#181816]/90 px-3 py-2 shadow-[0_4px_24px_rgba(0,0,0,0.3)] backdrop-blur-xl"
                   style={{ top: nudgePos.top, left: Math.max(0, nudgePos.left) }}
                 >
-                  <span className="mr-1 text-[11px] text-muted-foreground/70">
+                  <span className="mr-1 text-[12px] font-medium text-muted-foreground/60">
                     {t("needHelp")}
                   </span>
                   <button
                     type="button"
                     onClick={handleNudgeContinue}
-                    className="flex items-center gap-1 rounded-lg bg-primary/10 px-2 py-1 text-[11px] font-medium text-primary transition-colors hover:bg-primary/20"
+                    className="flex items-center gap-1.5 rounded-[8px] bg-primary/15 px-2.5 py-1 text-[12px] font-medium text-primary transition-all duration-200 hover:bg-primary/25 hover:shadow-[0_0_8px_rgba(var(--primary),0.3)]"
                   >
-                    <Pen size={10} />
+                    <Pen size={12} />
                     {t("continueWriting")}
                   </button>
                   <button
                     type="button"
                     onClick={handleNudgeSearch}
-                    className="flex items-center gap-1 rounded-lg bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground/80"
+                    className="flex items-center gap-1.5 rounded-[8px] bg-white/[0.04] px-2.5 py-1 text-[12px] font-medium text-foreground/70 transition-all duration-200 hover:bg-white/[0.08] hover:text-foreground"
                   >
-                    <Search size={10} />
+                    <Search size={12} className="text-muted-foreground/70" />
                     {t("searchMaterial")}
                   </button>
                 </m.div>

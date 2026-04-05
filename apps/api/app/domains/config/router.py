@@ -13,6 +13,7 @@ from app.dependencies import CurrentUser, DbDep
 from app.exceptions import BadRequestError
 from app.models import AppConfig
 from app.schemas.response import ApiResponse, success
+from app.domains.setup.router import apply_runtime_settings, normalize_runtime_config_key
 
 from .schemas import ConfigOut, ConfigPatchRequest, TestEmailResult, TestEmbeddingResult, TestLlmResult, TestRerankerResult
 
@@ -80,77 +81,64 @@ _SENSITIVE_KEYS = {
     "smtp_password",
 }
 
+_QUERYABLE_KEYS = (EDITABLE_KEYS - {"storage_region"}) | {"storage_s3_region"}
+
 
 @router.get("/config", response_model=ApiResponse[ConfigOut])
 async def get_config(_current_user: CurrentUser, db: DbDep):
     """Return all editable runtime config values. Sensitive keys are masked."""
     result = await db.execute(
-        select(AppConfig).where(AppConfig.key.in_(EDITABLE_KEYS))
+        select(AppConfig).where(AppConfig.key.in_(_QUERYABLE_KEYS))
     )
     rows = result.scalars().all()
-    config: dict[str, str | None] = {key: None for key in EDITABLE_KEYS}
+    stored_values: dict[str, str | None] = {}
     for row in rows:
         if row.key in _SENSITIVE_KEYS and row.value:
-            config[row.key] = "••••••••"
+            stored_values[row.key] = "••••••••"
         else:
-            config[row.key] = row.value
+            stored_values[row.key] = row.value
+
+    config: dict[str, str | None] = {key: None for key in EDITABLE_KEYS}
+    for key in EDITABLE_KEYS:
+        normalized_key = normalize_runtime_config_key(key)
+        config[key] = stored_values.get(normalized_key)
+        if config[key] is None and normalized_key != key:
+            config[key] = stored_values.get(key)
     return success(ConfigOut(data=config))
 
 
 @router.patch("/config", status_code=status.HTTP_204_NO_CONTENT)
 async def update_config(body: ConfigPatchRequest, _current_user: CurrentUser, db: DbDep):
     """Batch-update runtime config. Only keys in EDITABLE_KEYS are accepted."""
-    from app.config import settings
-
     unknown = set(body.data.keys()) - EDITABLE_KEYS
     if unknown:
         raise BadRequestError(f"未知的配置键：{', '.join(sorted(unknown))}")
 
+    runtime_updates: dict[str, str] = {}
     for key, value in body.data.items():
         str_value = str(value) if value is not None else ""
         # Skip masked placeholder — don't overwrite with the mask string
         if str_value == "••••••••":
             continue
 
-        result = await db.execute(select(AppConfig).where(AppConfig.key == key))
+        normalized_key = normalize_runtime_config_key(key)
+        result = await db.execute(select(AppConfig).where(AppConfig.key == normalized_key))
         row = result.scalar_one_or_none()
         if row:
             row.value = str_value
         else:
-            db.add(AppConfig(key=key, value=str_value))
+            db.add(AppConfig(key=normalized_key, value=str_value))
 
-        # Sync to in-memory settings immediately (non-critical)
-        if str_value:
-            try:
-                setattr(settings, key, str_value)
-            except Exception:
-                pass
+        if normalized_key != key:
+            legacy_result = await db.execute(select(AppConfig).where(AppConfig.key == key))
+            legacy_row = legacy_result.scalar_one_or_none()
+            if legacy_row is not None:
+                await db.delete(legacy_row)
+
+        runtime_updates[normalized_key] = str_value
 
     await db.commit()
-
-    # Reset LLM provider singleton when provider-related keys change
-    provider_keys = {"openai_api_key", "openai_base_url", "llm_model", "llm_provider"}
-    if provider_keys & set(body.data.keys()):
-        from app.providers.provider_factory import reset_provider
-        reset_provider()
-
-    # Reset embedding client when embedding-related keys change
-    embedding_keys = {"openai_api_key", "openai_base_url", "embedding_api_key", "embedding_base_url", "embedding_model"}
-    if embedding_keys & set(body.data.keys()):
-        try:
-            from app.providers import embedding
-            embedding._client = None
-        except Exception:
-            pass
-
-    # Reset reranker client when reranker-related keys change
-    reranker_keys = {"reranker_api_key", "reranker_model", "reranker_base_url"}
-    if reranker_keys & set(body.data.keys()):
-        try:
-            from app.providers import reranker
-            reranker._client = None  # type: ignore[attr-defined]
-        except Exception:
-            pass
+    apply_runtime_settings(runtime_updates)
 
 
 @router.post("/config/test-email", response_model=ApiResponse[TestEmailResult])

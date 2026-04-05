@@ -44,4 +44,17 @@ describe("dedupeSourcesByLatest", () => {
 
     expect(dedupeSourcesByLatest(sources)).toHaveLength(2);
   });
+
+  it("keeps only one record when the same source id appears multiple times", () => {
+    const duplicated = makeSource({
+      id: "duplicate-id",
+      title: "重复来源.md",
+      status: "indexed",
+      updatedAt: "2026-04-05T09:15:00Z",
+    });
+
+    const sources = [duplicated, duplicated];
+
+    expect(dedupeSourcesByLatest(sources)).toEqual([duplicated]);
+  });
 });

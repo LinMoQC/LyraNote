@@ -20,6 +20,13 @@ import { useEffect, useRef } from "react";
 
 import { http } from "@/lib/http-client";
 import { EVENTS } from "@/lib/api-routes";
+import {
+  createSuggestionFingerprint,
+  rememberThoughtSurface,
+  shouldAutoSurfaceSource,
+  shouldAutoSurfaceThought,
+} from "@/features/copilot/proactive-surface-policy";
+import { useNotebookStore } from "@/store/use-notebook-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import type { ProactiveSuggestion } from "@/store/use-proactive-store";
 import { authHeaderFromCookie } from "@/lib/request-error";
@@ -121,19 +128,53 @@ export function useGlobalEvents() {
 
 function handleEvent(
   event: LyraSoulEvent,
-  addSuggestion: (suggestion: Omit<ProactiveSuggestion, "id" | "createdAt" | "read">) => void,
+  addSuggestion: (suggestion: Omit<ProactiveSuggestion, "id" | "createdAt" | "read">) => string | null,
 ) {
+  const isMobile = window.matchMedia("(max-width: 767px)").matches;
+  const notebookState = useNotebookStore.getState();
+  const proactiveState = useProactiveStore.getState();
+  const hasActiveSurface = proactiveState.suggestions.some(
+    (suggestion) => suggestion.delivery === "surface" && !suggestion.read && !suggestion.hiddenAt,
+  );
+
   switch (event.type) {
-    case "lyra_thought":
+    case "lyra_thought": {
+      const message = event.content ?? event.message;
+      const fingerprint = createSuggestionFingerprint("lyra_thought", { message });
+      const delivery = shouldAutoSurfaceThought({
+        fingerprint,
+        isMobile,
+        copilotOpen: notebookState.copilotPanelOpen,
+        streaming: notebookState.copilotStreaming,
+        hasActiveSurface,
+        lastInteractionAt: notebookState.lastInteractionAt,
+      })
+        ? "surface"
+        : "inbox";
+
       addSuggestion({
         type: "insight",
-        message: event.content ?? event.message,
+        origin: "lyra_thought",
+        delivery,
+        fingerprint,
+        message,
       });
+      if (delivery === "surface") {
+        rememberThoughtSurface(fingerprint);
+      }
       break;
+    }
 
     case "proactive_insight":
       addSuggestion({
         type: "insight",
+        origin: "proactive_insight",
+        delivery: "inbox",
+        fingerprint: createSuggestionFingerprint("proactive_insight", {
+          summary: event.summary ?? event.insight,
+          questions: event.questions,
+          message: event.message,
+        }),
         summary: event.summary ?? event.insight,
         questions: event.questions,
         message: event.message,
@@ -143,6 +184,13 @@ function handleEvent(
     case "source_indexed":
       addSuggestion({
         type: "source_indexed",
+        origin: "source_indexed",
+        delivery: shouldAutoSurfaceSource(isMobile) ? "surface" : "inbox",
+        fingerprint: createSuggestionFingerprint("source_indexed", {
+          sourceId: event.source_id,
+          sourceName: event.source_name,
+          summary: event.summary,
+        }),
         sourceId: event.source_id,
         sourceName: event.source_name,
         summary: event.summary,

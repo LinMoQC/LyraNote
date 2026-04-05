@@ -85,6 +85,12 @@ vi.mock("@/store/use-proactive-store", () => ({
   }),
 }));
 
+vi.mock("@/store/use-notebook-store", () => ({
+  useNotebookStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
+    setCopilotStreaming: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/use-agent-stream-events", () => ({
   useAgentStreamEvents: () => ({
     agentSteps: [],
