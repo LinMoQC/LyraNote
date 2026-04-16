@@ -43,7 +43,7 @@ function PaperCardBlockInner({ code, isStreaming }: { code: string; isStreaming?
 
       {data.authors && data.authors.length > 0 && (
         <p className="mt-1 text-xs text-muted-foreground/60">
-          {data.authors.join(", ")}
+          {Array.isArray(data.authors) ? data.authors.join(", ") : data.authors}
         </p>
       )}
 

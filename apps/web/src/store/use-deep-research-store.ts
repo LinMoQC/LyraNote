@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import type { DrProgress, DrDeliverable } from "@/components/deep-research/dr-types";
+import type { DrProgress, DrDeliverable, DrPlanData } from "@/components/deep-research/dr-types";
 import {
   createDeepResearch,
   subscribeDeepResearch,
@@ -25,10 +25,14 @@ interface DeepResearchState {
   eventIndex: number;
   /** Set to true when the floating indicator is clicked on the chat page */
   focusRequested: boolean;
+  /** Plan pending user confirmation */
+  planData: DrPlanData | null;
+  isPlanLoading: boolean;
+  drawerOpen: boolean;
 }
 
 interface DeepResearchActions {
-  start(query: string, notebookId: string | undefined, mode: "quick" | "deep", clarificationContext?: Array<{ question: string; answer: string }>): Promise<void>;
+  start(query: string, notebookId: string | undefined, mode: "quick" | "deep", clarificationContext?: Array<{ question: string; answer: string }>, planOverride?: DrPlanData): Promise<void>;
   reconnect(taskId: string): Promise<void>;
   finishFromDB(status: {
     report: string | null;
@@ -39,6 +43,9 @@ interface DeepResearchActions {
   requestFocus(): void;
   abort(): void;
   clear(): void;
+  setPlanData(plan: DrPlanData | null): void;
+  setPlanLoading(loading: boolean): void;
+  setDrawerOpen(open: boolean): void;
 }
 
 type DeepResearchStore = DeepResearchState & DeepResearchActions;
@@ -210,8 +217,11 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
       isActive: false,
       eventIndex: 0,
       focusRequested: false,
+      planData: null,
+      isPlanLoading: false,
+      drawerOpen: false,
 
-      async start(query, notebookId, mode, clarificationContext) {
+      async start(query, notebookId, mode, clarificationContext, planOverride) {
         _abortController?.abort();
 
         set({
@@ -231,6 +241,7 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
           notebookId,
           mode,
           clarificationContext,
+          planOverride,
         });
         set({ taskId, conversationId });
 
@@ -314,6 +325,18 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
         set({ focusRequested: true });
       },
 
+      setPlanData(plan) {
+        set({ planData: plan });
+      },
+
+      setPlanLoading(loading) {
+        set({ isPlanLoading: loading });
+      },
+
+      setDrawerOpen(open) {
+        set({ drawerOpen: open });
+      },
+
       abort() {
         _abortController?.abort();
         _abortController = null;
@@ -340,6 +363,8 @@ export const useDeepResearchStore = create<DeepResearchStore>()(
           webSources: [],
           isActive: false,
           eventIndex: 0,
+          planData: null,
+          isPlanLoading: false,
         });
       },
     }),

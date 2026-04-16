@@ -32,7 +32,7 @@ export function ReadOnlyNote({
     editable: false,
     editorProps: {
       attributes: {
-        class: "tiptap prose-sm max-w-none focus:outline-none",
+        class: "tiptap prose-sm max-w-none font-normal focus:outline-none",
       },
     },
   });

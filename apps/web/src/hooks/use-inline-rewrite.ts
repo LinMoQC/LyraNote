@@ -4,9 +4,11 @@ import type { Editor } from "@tiptap/react";
 import type { InlineRewriteAction } from "@/features/editor/editor-actions";
 import { rewriteSelection } from "@/services/ai-service";
 
-interface RewritePreview {
+export interface AppliedEdit {
   action: InlineRewriteAction;
+  /** Start of the applied result in the document */
   from: number;
+  /** End of the applied result in the document (from + result.length) */
   to: number;
   originalText: string;
   result: string;
@@ -14,63 +16,87 @@ interface RewritePreview {
 
 export function useInlineRewrite(editor: Editor | null) {
   const [isRewriting, setIsRewriting] = useState(false);
-  const [preview, setPreview] = useState<RewritePreview | null>(null);
-  const requestRef = useRef<{ action: InlineRewriteAction; originalText: string } | null>(null);
+  const [appliedEdit, setAppliedEdit] = useState<AppliedEdit | null>(null);
+  const isRewritingRef = useRef(false);
 
-  const runRewrite = useCallback(async (action: InlineRewriteAction) => {
-    if (!editor || isRewriting) return;
+  const runRewrite = useCallback(
+    async (
+      action: InlineRewriteAction,
+      fromOverride?: number,
+      toOverride?: number,
+      originalTextOverride?: string,
+    ) => {
+      if (!editor || isRewritingRef.current) return;
 
-    const { from, to } = editor.state.selection;
-    const originalText = editor.state.doc.textBetween(from, to, "\n");
-    if (!originalText.trim()) return;
+      const from = fromOverride ?? editor.state.selection.from;
+      const to = toOverride ?? editor.state.selection.to;
+      const originalText =
+        originalTextOverride ?? editor.state.doc.textBetween(from, to, "\n");
+      if (!originalText.trim()) return;
 
-    setIsRewriting(true);
-    requestRef.current = { action, originalText };
+      isRewritingRef.current = true;
+      setIsRewriting(true);
 
-    try {
-      const result = await rewriteSelection(originalText, action, editor.getText());
-      setPreview({
-        action,
-        from,
-        to,
-        originalText,
-        result,
-      });
-    } finally {
-      setIsRewriting(false);
-    }
-  }, [editor, isRewriting]);
+      try {
+        const result = await rewriteSelection(originalText, action, editor.getText());
 
-  const applyPreview = useCallback(() => {
-    if (!editor || !preview) return;
+        // Auto-apply to the editor immediately
+        editor
+          .chain()
+          .focus()
+          .deleteRange({ from, to })
+          .insertContentAt(from, result)
+          .run();
 
+        setAppliedEdit({ action, from, to: from + result.length, originalText, result });
+      } finally {
+        isRewritingRef.current = false;
+        setIsRewriting(false);
+      }
+    },
+    [editor],
+  );
+
+  /** Keep the applied change — just dismiss the action bar */
+  const acceptEdit = useCallback(() => {
+    setAppliedEdit(null);
+  }, []);
+
+  /** Restore the original text and dismiss */
+  const rejectEdit = useCallback(() => {
+    if (!editor || !appliedEdit) return;
     editor
       .chain()
       .focus()
-      .deleteRange({ from: preview.from, to: preview.to })
-      .insertContentAt(preview.from, preview.result)
-      .setTextSelection(preview.from + preview.result.length)
+      .deleteRange({ from: appliedEdit.from, to: appliedEdit.to })
+      .insertContentAt(appliedEdit.from, appliedEdit.originalText)
+      .run();
+    setAppliedEdit(null);
+  }, [editor, appliedEdit]);
+
+  /** Restore original and run the same action again */
+  const retry = useCallback(async () => {
+    if (!appliedEdit || !editor) return;
+    // Restore original text first
+    editor
+      .chain()
+      .focus()
+      .deleteRange({ from: appliedEdit.from, to: appliedEdit.to })
+      .insertContentAt(appliedEdit.from, appliedEdit.originalText)
       .run();
 
-    setPreview(null);
-  }, [editor, preview]);
-
-  const retry = useCallback(async () => {
-    if (!preview) return;
-    await runRewrite(preview.action);
-  }, [preview, runRewrite]);
-
-  const cancel = useCallback(() => {
-    setPreview(null);
-  }, []);
+    const { action, from, originalText } = appliedEdit;
+    setAppliedEdit(null);
+    await runRewrite(action, from, from + originalText.length, originalText);
+  }, [appliedEdit, editor, runRewrite]);
 
   return {
     isRewriting,
-    preview,
+    appliedEdit,
     runRewrite,
-    applyPreview,
+    acceptEdit,
+    rejectEdit,
     retry,
-    cancel,
-    lastAction: requestRef.current?.action ?? null,
+    lastAction: appliedEdit?.action ?? null,
   };
 }

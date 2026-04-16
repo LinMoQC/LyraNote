@@ -39,7 +39,6 @@ type NoteEditorProps = {
   refreshKey?: number;
   onToggleSources?: () => void;
   sourcesOpen?: boolean;
-  wideLayout?: boolean;
   isMobileLayout?: boolean;
 };
 
@@ -53,12 +52,12 @@ export function NoteEditor({
   onActiveNoteTitleChange,
   onNoteSaved,
   refreshKey = 0,
-  wideLayout = false,
   isMobileLayout = false,
 }: NoteEditorProps) {
   const t = useTranslations("editor")
   const tNotebook = useTranslations("notebook")
   const [title, setTitle] = useState("")
+  const titleFieldRef = useRef<HTMLTextAreaElement | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
   const onSaveStatusChangeRef = useRef(onSaveStatusChange);
   onSaveStatusChangeRef.current = onSaveStatusChange;
@@ -77,7 +76,7 @@ export function NoteEditor({
   const editor = useEditor({
     editorProps: {
       attributes: {
-        class: "tiptap outline-none text-[16px] leading-[1.85] text-foreground/90 min-h-[60vh] [&_p]:mb-[0.8em]"
+        class: "tiptap outline-none text-[var(--editor-font-size,16px)] font-medium leading-[var(--editor-line-height,1.85)] text-foreground min-h-[60vh] [&_p]:mb-[var(--editor-paragraph-spacing,0.8em)]"
       }
     },
     extensions: tiptapExtensions,
@@ -306,24 +305,40 @@ export function NoteEditor({
     });
   }, [notebookId, onEditorAction]);
 
+  const resizeTitleField = useCallback(() => {
+    const field = titleFieldRef.current;
+    if (!field) return;
+    field.style.height = "0px";
+    field.style.height = `${field.scrollHeight}px`;
+  }, []);
+
+  useEffect(() => {
+    resizeTitleField();
+  }, [resizeTitleField, title, isMobileLayout]);
+
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* ── Editor body ──────────────────────────────────────── */}
       <div className="hide-scrollbar flex-1 overflow-y-auto" data-testid="note-editor-scroll">
         <div
           className={[
-            "mx-auto",
-            isMobileLayout ? "max-w-[680px] px-4 py-4 sm:px-6 sm:py-5" : "px-10 py-8",
-            wideLayout
-              ? "max-w-[980px] xl:max-w-[1200px] 2xl:max-w-[1500px]"
-              : "max-w-[680px] xl:max-w-[800px] 2xl:max-w-[960px]",
+            "mx-auto w-full max-w-[min(100%,var(--editor-content-width,48rem))] tracking-[0.01em]",
+            isMobileLayout ? "px-4 pt-10 pb-5 sm:px-6 sm:pt-12 sm:pb-6" : "px-10 pt-20 pb-8",
           ].join(" ")}
+          style={{ fontFamily: "var(--editor-font-family, inherit)" }}
+          data-testid="note-editor-content-shell"
         >
-          <input
+          <textarea
+            ref={titleFieldRef}
+            rows={1}
+            data-testid="note-title-field"
             className={[
-              "w-full bg-transparent font-bold leading-tight tracking-tight text-foreground outline-none placeholder:text-muted-foreground/30 transition-colors focus:placeholder:text-muted-foreground/20",
-              isMobileLayout ? "mb-6 text-[26px]" : "mb-10 text-[32px]",
+              "w-full resize-none overflow-hidden bg-transparent font-bold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/35 transition-colors focus:placeholder:text-muted-foreground/25",
+              isMobileLayout
+                ? "mb-5 leading-[1.2]"
+                : "mb-6 leading-[1.18]",
             ].join(" ")}
+            style={{ fontSize: isMobileLayout ? "2rem" : "var(--editor-title-size, 2.5rem)" }}
             value={title}
             placeholder={t("titlePlaceholder")}
             onChange={(e) => {
@@ -331,6 +346,11 @@ export function NoteEditor({
               setTitle(v)
               onActiveNoteTitleChangeRef.current?.(v)
               triggerSave()
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault()
+              }
             }}
           />
           <SelectionActionMenu editor={editor} onEditorAction={handleEditorAction} />

@@ -1,3 +1,18 @@
 {
-    "git.ignoreLimitWarning": true
+  "git.ignoreLimitWarning": true,
+  "terminal.integrated.env.osx": {
+    "ANTHROPIC_AUTH_TOKEN": "",
+    "ANTHROPIC_BASE_URL": "",
+    "ANTHROPIC_API_KEY": ""
+  },
+  "terminal.integrated.env.linux": {
+    "ANTHROPIC_AUTH_TOKEN": "",
+    "ANTHROPIC_BASE_URL": "",
+    "ANTHROPIC_API_KEY": ""
+  },
+  "terminal.integrated.env.windows": {
+    "ANTHROPIC_AUTH_TOKEN": "",
+    "ANTHROPIC_BASE_URL": "",
+    "ANTHROPIC_API_KEY": ""
+  }
 }

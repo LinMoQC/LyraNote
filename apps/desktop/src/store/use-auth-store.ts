@@ -1,36 +1,22 @@
-import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import type { AuthUser } from "@lyranote/types";
+import { create } from "zustand"
+import { persist } from "zustand/middleware"
+import type { AuthUser } from "@lyranote/types"
 
-interface AuthState {
-  user: AuthUser | null;
-  token: string | null;
-  isAuthenticated: boolean;
-  setAuth: (user: AuthUser, token: string) => void;
-  clearAuth: () => void;
+interface AuthStore {
+  token: string | null
+  user: AuthUser | null
+  setAuth: (token: string, user: AuthUser) => void
+  clearAuth: () => void
 }
 
-export const useAuthStore = create<AuthState>()(
+export const useAuthStore = create<AuthStore>()(
   persist(
     (set) => ({
-      user: null,
       token: null,
-      isAuthenticated: false,
-      setAuth: (user, token) => {
-        localStorage.setItem("lyranote_token", token);
-        set({ user, token, isAuthenticated: true });
-      },
-      clearAuth: () => {
-        localStorage.removeItem("lyranote_token");
-        set({ user: null, token: null, isAuthenticated: false });
-      },
+      user: null,
+      setAuth: (token, user) => set({ token, user }),
+      clearAuth: () => set({ token: null, user: null }),
     }),
-    {
-      name: "lyranote-auth",
-      partialize: (state) => ({ user: state.user, token: state.token }),
-      onRehydrateStorage: () => (state) => {
-        if (state?.token) state.isAuthenticated = true;
-      },
-    }
+    { name: "lyranote-auth" }
   )
-);
+)

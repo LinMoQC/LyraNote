@@ -194,6 +194,19 @@ export function buildMarkdownComponents(opts: MarkdownComponentsOpts) {
       if (lang === "language-mermaid") return <MermaidBlock code={text} isStreaming={isMermaidStreaming} />
       if (lang === "language-choices") return null;
 
+      // Fallback: json blocks that look like GenUI data
+      if (lang === "language-json") {
+        const jsonParsed = safeParseJSON<Record<string, unknown>>(text)
+        if (jsonParsed && !Array.isArray(jsonParsed)) {
+          if ((jsonParsed.columns || jsonParsed.headers) && (jsonParsed.rows || jsonParsed.data)) {
+            return <TableBlock code={text} />
+          }
+          if (jsonParsed.type && typeof jsonParsed.type === "string" && jsonParsed.props) {
+            return renderGenUIComponent(jsonParsed as unknown as GenUIPayload, { onArtifact })
+          }
+        }
+      }
+
       return <RenderCodeBlock code={text} language={className} />
     },
     pre: ({ children }: React.HTMLAttributes<HTMLPreElement>) => <>{children}</>,

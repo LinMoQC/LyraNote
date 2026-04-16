@@ -39,8 +39,49 @@ async def lifespan(app: FastAPI):
         await load_settings_from_db(db)
 
     # Bootstrap built-in skills (and optionally load workspace/user skills)
-    from app.skills.registry import bootstrap_builtin_skills
+    from app.skills.registry import bootstrap_builtin_skills, skill_registry
     bootstrap_builtin_skills()
+
+    # Sync in-memory skill registry → skill_installs table (upsert metadata, preserve is_enabled/config)
+    try:
+        from sqlalchemy import select as _select
+        from app.models import SkillInstall
+        import uuid as _uuid
+        async with AsyncSessionLocal() as _db:
+            for _skill in skill_registry.all_skills():
+                _m = _skill.meta
+                _existing = (
+                    await _db.execute(
+                        _select(SkillInstall).where(SkillInstall.name == _m.name)
+                    )
+                ).scalar_one_or_none()
+                if _existing is None:
+                    _db.add(SkillInstall(
+                        id=_uuid.uuid4(),
+                        name=_m.name,
+                        display_name=_m.display_name,
+                        description=_m.description,
+                        category=_m.category,
+                        version=_m.version,
+                        is_builtin=True,
+                        is_enabled=True,
+                        always=_m.always,
+                        requires_env=_m.requires_env or None,
+                        config_schema=_m.config_schema,
+                    ))
+                else:
+                    # Update metadata only; preserve is_enabled / config set by admin/user
+                    _existing.display_name = _m.display_name
+                    _existing.description = _m.description
+                    _existing.category = _m.category
+                    _existing.version = _m.version
+                    _existing.always = _m.always
+                    _existing.requires_env = _m.requires_env or None
+                    _existing.config_schema = _m.config_schema
+            await _db.commit()
+            logger.info("skill_installs synced: %d skills", len(skill_registry.all_skills()))
+    except Exception:
+        logger.exception("startup: failed to sync skill_installs (non-fatal)")
 
     # On startup, immediately expire any sources left stuck in 'processing' / 'pending'
     # from a previous process crash or restart (belt-and-suspenders alongside the beat task).

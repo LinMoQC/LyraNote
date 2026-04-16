@@ -10,7 +10,7 @@ import type { Editor } from "@tiptap/react";
 import { AnimatePresence, m } from "framer-motion";
 import { Library, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -29,6 +29,11 @@ import { ProactiveToaster } from "@/features/copilot/proactive-toaster";
 import { ImportSourceDialog } from "@/features/source/import-source-dialog";
 import { SourceDetailDrawer } from "@/features/source/source-detail-drawer";
 import { SourcesPanel } from "@/features/source/sources-panel";
+import {
+  buildNotebookAppearanceStyle,
+  resolveNotebookAppearance,
+  type NotebookAppearanceSettings,
+} from "@/features/notebook/notebook-appearance";
 import { useNotebookStore } from "@/store/use-notebook-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
@@ -46,11 +51,13 @@ export type CopilotMode = "docked" | "floating";
 export function NotebookWorkspace({
   notebookId,
   title,
+  updatedAt,
   initialMessages,
   isNew = false,
 }: {
   notebookId: string;
   title: string;
+  updatedAt?: string;
   initialMessages: Message[];
   isNew?: boolean;
 }) {
@@ -70,6 +77,12 @@ export function NotebookWorkspace({
   const [notebookTitle, setNotebookTitle] = useState(title);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [appearance, setAppearance] = useState<NotebookAppearanceSettings>({});
+
+  const resolvedAppearance = useMemo(
+    () => resolveNotebookAppearance({}, appearance),
+    [appearance]
+  );
 
   // Hydrate copilot state from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
@@ -147,12 +160,15 @@ export function NotebookWorkspace({
   const queryClient = useQueryClient();
 
   // On mount, load the first note to populate the picker
+  const [activeNoteUpdatedAt, setActiveNoteUpdatedAt] = useState<string | null>(null);
+
   useEffect(() => {
     if (activeNoteId !== null) return;
     listNotes(notebookId).then((notes) => {
       if (notes[0]) {
         setActiveNoteId(notes[0].id);
         setActiveNoteTitle(notes[0].title ?? null);
+        setActiveNoteUpdatedAt(notes[0].updatedAt ?? null);
       }
     });
   }, [notebookId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -160,11 +176,13 @@ export function NotebookWorkspace({
   const handleNoteSelect = useCallback((note: NoteRecord) => {
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title ?? null);
+    setActiveNoteUpdatedAt(note.updatedAt ?? null);
   }, []);
 
   const handleNoteCreated = useCallback((note: NoteRecord) => {
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title ?? null);
+    setActiveNoteUpdatedAt(note.updatedAt ?? null);
     void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
   }, [notebookId, queryClient]);
 
@@ -176,6 +194,7 @@ export function NotebookWorkspace({
         const next = notes.find((n) => n.id !== deletedNoteId) ?? null;
         setActiveNoteId(next?.id ?? null);
         setActiveNoteTitle(next?.title ?? null);
+        setActiveNoteUpdatedAt(next?.updatedAt ?? null);
       });
     }
   }, [notebookId, activeNoteId, queryClient]);
@@ -186,6 +205,7 @@ export function NotebookWorkspace({
 
   const handleNoteSaved = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    setActiveNoteUpdatedAt(new Date().toISOString());
   }, [notebookId, queryClient]);
 
   const handleEditorReady = useCallback((editor: Editor) => {
@@ -326,6 +346,7 @@ export function NotebookWorkspace({
       ref={containerRef}
       className="flex h-full flex-col overflow-hidden dark:border border-border/40"
       data-testid="notebook-workspace"
+      style={buildNotebookAppearanceStyle(resolvedAppearance)}
     >
       <ImportSourceDialog notebookId={notebookId} />
       
@@ -339,6 +360,7 @@ export function NotebookWorkspace({
       <NotebookTopBar
         notebookId={notebookId}
         title={notebookTitle}
+        updatedAt={activeNoteUpdatedAt ?? updatedAt}
         saveStatus={saveStatus}
         onTitleChange={setNotebookTitle}
         isFullscreen={isFullscreen}
@@ -352,6 +374,11 @@ export function NotebookWorkspace({
         mobileActiveSheet={mobileActiveSheet}
         onMobileSheetChange={handleMobileSheetChange}
         charCount={charCount}
+        onToggleSources={() => setSourcesOpen((v) => !v)}
+        sourcesOpen={sourcesOpen}
+        sourceCount={sources.length}
+        appearance={appearance}
+        onAppearanceChange={setAppearance}
       />
 
       <div className="relative flex flex-1 overflow-hidden" data-testid="notebook-workspace-main">
@@ -389,7 +416,6 @@ export function NotebookWorkspace({
             refreshKey={noteRefreshKey}
             onToggleSources={() => setSourcesOpen((v) => !v)}
             sourcesOpen={sourcesOpen}
-            wideLayout={isFullscreen}
             isMobileLayout={isMobile}
           />
 
@@ -422,6 +448,7 @@ export function NotebookWorkspace({
             onNoteCreated={(noteId, noteTitle) => {
               setActiveNoteId(noteId);
               setActiveNoteTitle(noteTitle);
+              setActiveNoteUpdatedAt(new Date().toISOString());
               void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
               setNoteRefreshKey((k) => k + 1);
             }}
@@ -449,7 +476,7 @@ export function NotebookWorkspace({
                 width: { type: "spring", stiffness: 320, damping: 32, mass: 0.8 },
                 opacity: { duration: 0.22, ease: "easeInOut" },
               }}
-              className="h-full flex-shrink-0 overflow-hidden"
+              className="h-full flex-shrink-0 overflow-hidden px-2"
             >
               <NotebookTOC editor={editorInstance} />
             </m.div>
@@ -462,41 +489,6 @@ export function NotebookWorkspace({
           )}
         </AnimatePresence>
 
-        {/* Floating sources toggle */}
-        {!isMobile && !isFullscreen && (
-          <m.button
-            key="sources-toggle"
-            type="button"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setSourcesOpen((v) => !v)}
-            title={tNotebook("tabSources")}
-            className={cn(
-              "absolute bottom-6 left-6 z-20 flex h-10 w-10 items-center justify-center rounded-full border shadow-xl backdrop-blur-md transition-all duration-300",
-              sourcesOpen
-                ? "border-primary/40 bg-primary/10 text-primary ring-4 ring-primary/5"
-                : "border-border/30 bg-card/60 text-muted-foreground/50 hover:border-border/60 hover:text-foreground hover:shadow-primary/5",
-            )}
-          >
-            <m.div
-              animate={{ rotate: sourcesOpen ? 90 : 0 }}
-              transition={{ type: "spring", stiffness: 260, damping: 20 }}
-            >
-              <Library size={18} strokeWidth={2.2} />
-            </m.div>
-
-            {/* Numeric Badge */}
-            {sources.length > 0 && (
-              <m.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -right-0.5 -top-0.5 flex h-4.5 min-w-[18px] items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground shadow-sm ring-2 ring-background/50"
-              >
-                {sources.length > 9 ? "9+" : sources.length}
-              </m.div>
-            )}
-          </m.button>
-        )}
 
         {isMobile && (
           <MobileWorkspaceSheet
@@ -526,6 +518,7 @@ export function NotebookWorkspace({
                 onNoteCreated={(noteId, noteTitle) => {
                   setActiveNoteId(noteId);
                   setActiveNoteTitle(noteTitle);
+                  setActiveNoteUpdatedAt(new Date().toISOString());
                   void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
                   setNoteRefreshKey((k) => k + 1);
                 }}

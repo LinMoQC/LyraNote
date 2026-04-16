@@ -16,7 +16,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
@@ -116,6 +116,7 @@ async def run_research_task(
     tavily_api_key: str | None,
     user_memories: list[dict],
     clarification_context: list[dict] | None = None,
+    plan_override: dict | None = None,
     trace_id: str | None = None,
 ) -> None:
     """Background coroutine: run LangGraph, push events to buffer, save to DB."""
@@ -149,11 +150,13 @@ async def run_research_task(
                     "query_snapshot": build_text_snapshot(query),
                 },
             )
+            await db.commit()
             trace_token, run_token = bind_trace_and_run(trace_id or task_id, run.id)
             graph = create_research_graph(
                 db=db,
                 client=client,
                 tavily_api_key=tavily_api_key,
+                db_session_factory=AsyncSessionLocal,
             )
 
             input_state = {
@@ -165,6 +168,7 @@ async def run_research_task(
                 "user_memories": user_memories,
                 "mode": mode,
                 "clarification_context": clarification_context,
+                "plan_override": plan_override,
                 "research_goal": "",
                 "evaluation_criteria": [],
                 "search_matrix": {},
@@ -192,6 +196,7 @@ async def run_research_task(
                         "query_snapshot": build_text_snapshot(query),
                     },
                 )
+            await db.commit()
 
             async for event in graph.astream_events(input_state, version="v2"):
                 if event["event"] != "on_custom_event":

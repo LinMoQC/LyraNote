@@ -10,11 +10,7 @@ import {
   Italic,
   Link2,
   Loader2,
-  MessageSquare,
   MoreHorizontal,
-  PencilLine,
-  Sigma,
-  SmilePlus,
   Sparkles,
   Strikethrough,
   Underline,
@@ -24,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { EditorActionRequest, InlineRewriteAction } from "@/features/editor/editor-actions";
 import { useInlineRewrite } from "@/hooks/use-inline-rewrite";
+import { InlineRewriteOverlay, type SelectionAnchor } from "@/features/editor/inline-rewrite-overlay";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -37,8 +34,9 @@ export function SelectionActionMenu({ editor, onEditorAction }: Props) {
   const t = useTranslations("editor");
   const [customIntent, setCustomIntent] = useState("");
   const [showMore, setShowMore] = useState(false);
-  const { isRewriting, preview, runRewrite, applyPreview, retry, cancel } = useInlineRewrite(editor);
+  const { isRewriting, appliedEdit, runRewrite, acceptEdit, rejectEdit, retry, lastAction } = useInlineRewrite(editor);
   const selectionSnapshotRef = useRef<{ from: number; to: number; text: string } | null>(null);
+  const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
 
   function getSelectedRange() {
     if (!editor) return null;
@@ -64,6 +62,16 @@ export function SelectionActionMenu({ editor, onEditorAction }: Props) {
   const activeEditor = editor;
   const selectionText = liveSelection?.text ?? selectionSnapshotRef.current?.text ?? "";
   const hasSelection = selectionText.trim().length > 0;
+
+  function captureSelectionAnchor() {
+    const { from } = activeEditor.state.selection
+    const domSel = window.getSelection()
+    let width = 300
+    if (domSel && domSel.rangeCount > 0) {
+      width = domSel.getRangeAt(0).getBoundingClientRect().width
+    }
+    setSelectionAnchor({ from, width })
+  }
 
   function dispatchExternalAction(action: EditorActionRequest["action"], intent?: string) {
     const selectedRange = getSelectedRange() ?? selectionSnapshotRef.current;
@@ -104,6 +112,7 @@ export function SelectionActionMenu({ editor, onEditorAction }: Props) {
   }
 
   return (
+    <>
     <BubbleMenu
       editor={activeEditor}
       tippyOptions={{
@@ -134,13 +143,13 @@ export function SelectionActionMenu({ editor, onEditorAction }: Props) {
           box.style.opacity = "0";
         },
       }}
-      shouldShow={({ editor: activeEditor, state }) => {
+      shouldShow={({ editor: ae, state }) => {
         const { selection } = state;
         if (selection instanceof NodeSelection) return false;
         const nodeType = state.doc.nodeAt(selection.from)?.type;
         if (nodeType?.name === "mindMap") return false;
         if (selection.empty) return false;
-        return activeEditor.isEditable;
+        return ae.isEditable;
       }}
       className="overflow-hidden rounded-[12px] border border-white/10 bg-[#252525] p-2 text-foreground shadow-[0_4px_20px_rgba(0,0,0,0.6)]"
     >
@@ -148,204 +157,186 @@ export function SelectionActionMenu({ editor, onEditorAction }: Props) {
         className="flex w-[192px] flex-col"
         data-testid="selection-action-menu"
       >
-        {/* 链接输入面板 */}
-        {showLinkInput ? (
-          <div className="flex flex-col gap-2 py-0.5">
-            {/* 标题行 */}
-            <div className="flex items-center justify-between px-1">
-              <span className="text-[11px] font-medium text-muted-foreground/50">{t("selectionLink")}</span>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  activeEditor.chain().focus().extendMarkRange("link").unsetLink().run();
-                  setShowLinkInput(false);
-                  setLinkUrl("");
-                }}
-                className="rounded-[4px] px-1.5 py-0.5 text-[11px] text-red-400/60 transition-colors hover:bg-red-500/10 hover:text-red-400"
-              >
-                {t("selectionLinkRemove")}
-              </button>
+          {/* 链接输入面板 */}
+          {showLinkInput ? (
+            <div className="flex flex-col gap-2 py-0.5">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[11px] font-medium text-muted-foreground/50">{t("selectionLink")}</span>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    activeEditor.chain().focus().extendMarkRange("link").unsetLink().run();
+                    setShowLinkInput(false);
+                    setLinkUrl("");
+                  }}
+                  className="rounded-[4px] px-1.5 py-0.5 text-[11px] text-red-400/60 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  {t("selectionLinkRemove")}
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1.5 rounded-[8px] border border-white/10 bg-white/[0.04] px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:bg-white/[0.06]">
+                <Link2 size={13} className="shrink-0 text-muted-foreground/40" />
+                <input
+                  ref={linkInputRef}
+                  value={linkUrl}
+                  onChange={(e) => setLinkUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); commitLink(); }
+                    if (e.key === "Escape") { e.preventDefault(); setShowLinkInput(false); setLinkUrl(""); }
+                  }}
+                  placeholder="https://"
+                  className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/30"
+                  data-testid="selection-link-input"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={commitLink}
+                  className="flex-1 rounded-[6px] bg-primary/15 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/25"
+                >
+                  {t("selectionLinkConfirm")}
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}
+                  className="flex-1 rounded-[6px] border border-white/8 py-1.5 text-[12px] text-foreground/50 transition-colors hover:bg-white/[0.05]"
+                >
+                  {t("selectionLinkCancel")}
+                </button>
+              </div>
             </div>
+          ) : (
+            <>
+              {/* 第一行：T A B I U */}
+              <div className="flex gap-[2px]">
+                <FormatButton label={t("blockTypeText")} onClick={() => activeEditor.chain().focus().setParagraph().run()} active={false}>
+                  <span className="text-[13px] font-semibold leading-none">T</span>
+                </FormatButton>
+                <FormatButton label={t("selectionHighlight")} onClick={() => activeEditor.chain().focus().toggleHighlight().run()} active={activeEditor.isActive("highlight")}>
+                  <span className="rounded-[4px] px-[5px] py-[3px] text-[11px] font-semibold leading-none shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]">A</span>
+                </FormatButton>
+                <FormatButton label={t("selectionBold")} onClick={() => activeEditor.chain().focus().toggleBold().run()} active={activeEditor.isActive("bold")}>
+                  <Bold size={15} strokeWidth={2.4} />
+                </FormatButton>
+                <FormatButton label={t("selectionItalic")} onClick={() => activeEditor.chain().focus().toggleItalic().run()} active={activeEditor.isActive("italic")}>
+                  <Italic size={15} />
+                </FormatButton>
+                <FormatButton label={t("selectionUnderline")} onClick={() => activeEditor.chain().focus().toggleUnderline().run()} active={activeEditor.isActive("underline")}>
+                  <Underline size={15} />
+                </FormatButton>
+              </div>
 
-            {/* URL 输入框 */}
-            <div className="flex items-center gap-1.5 rounded-[8px] border border-white/10 bg-white/[0.04] px-2.5 py-1.5 transition-colors focus-within:border-white/20 focus-within:bg-white/[0.06]">
-              <Link2 size={13} className="shrink-0 text-muted-foreground/40" />
-              <input
-                ref={linkInputRef}
-                value={linkUrl}
-                onChange={(e) => setLinkUrl(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); commitLink(); }
-                  if (e.key === "Escape") { e.preventDefault(); setShowLinkInput(false); setLinkUrl(""); }
-                }}
-                placeholder="https://"
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-muted-foreground/30"
-                data-testid="selection-link-input"
-              />
-            </div>
+              {/* 第二行：链接 删除线 代码 清除标记 更多 */}
+              <div className="flex gap-[2px]">
+                <FormatButton label={t("selectionLink")} onClick={openLinkInput} active={activeEditor.isActive("link")}>
+                  <Link2 size={15} />
+                </FormatButton>
+                <FormatButton label={t("selectionStrike")} onClick={() => activeEditor.chain().focus().toggleStrike().run()} active={activeEditor.isActive("strike")}>
+                  <Strikethrough size={15} />
+                </FormatButton>
+                <FormatButton label={t("selectionCode")} onClick={() => activeEditor.chain().focus().toggleCode().run()} active={activeEditor.isActive("code")}>
+                  <Code size={15} />
+                </FormatButton>
+                <FormatButton label={t("selectionClearMarks")} onClick={() => activeEditor.chain().focus().unsetAllMarks().run()}>
+                  <Eraser size={15} />
+                </FormatButton>
+                <FormatButton label={t("more")} onClick={() => setShowMore((v) => !v)} active={showMore}>
+                  <MoreHorizontal size={15} />
+                </FormatButton>
+              </div>
 
-            {/* 操作按钮 */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={commitLink}
-                className="flex-1 rounded-[6px] bg-primary/15 py-1.5 text-[12px] font-medium text-primary transition-colors hover:bg-primary/25"
-              >
-                {t("selectionLinkConfirm")}
-              </button>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => { setShowLinkInput(false); setLinkUrl(""); }}
-                className="flex-1 rounded-[6px] border border-white/8 py-1.5 text-[12px] text-foreground/50 transition-colors hover:bg-white/[0.05]"
-              >
-                {t("selectionLinkCancel")}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* 第一行：T A B I U */}
-            <div className="flex gap-[2px]">
-              <FormatButton label={t("blockTypeText")} onClick={() => activeEditor.chain().focus().setParagraph().run()} active={false}>
-                <span className="text-[13px] font-semibold leading-none">T</span>
-              </FormatButton>
-              <FormatButton label={t("selectionHighlight")} onClick={() => activeEditor.chain().focus().toggleHighlight().run()} active={activeEditor.isActive("highlight")}>
-                <span className="rounded-[4px] px-[5px] py-[3px] text-[11px] font-semibold leading-none shadow-[inset_0_0_0_1px_rgba(255,255,255,0.15)]">A</span>
-              </FormatButton>
-              <FormatButton label={t("selectionBold")} onClick={() => activeEditor.chain().focus().toggleBold().run()} active={activeEditor.isActive("bold")}>
-                <Bold size={15} strokeWidth={2.4} />
-              </FormatButton>
-              <FormatButton label={t("selectionItalic")} onClick={() => activeEditor.chain().focus().toggleItalic().run()} active={activeEditor.isActive("italic")}>
-                <Italic size={15} />
-              </FormatButton>
-              <FormatButton label={t("selectionUnderline")} onClick={() => activeEditor.chain().focus().toggleUnderline().run()} active={activeEditor.isActive("underline")}>
-                <Underline size={15} />
-              </FormatButton>
-            </div>
+              {/* 分割线 */}
+              <div className="my-1 h-px bg-white/[0.08]" />
 
-            {/* 第二行：链接 删除线 代码 清除标记 更多 */}
-            <div className="flex gap-[2px]">
-              <FormatButton label={t("selectionLink")} onClick={openLinkInput} active={activeEditor.isActive("link")}>
-                <Link2 size={15} />
-              </FormatButton>
-              <FormatButton label={t("selectionStrike")} onClick={() => activeEditor.chain().focus().toggleStrike().run()} active={activeEditor.isActive("strike")}>
-                <Strikethrough size={15} />
-              </FormatButton>
-              <FormatButton label={t("selectionCode")} onClick={() => activeEditor.chain().focus().toggleCode().run()} active={activeEditor.isActive("code")}>
-                <Code size={15} />
-              </FormatButton>
-              <FormatButton label={t("selectionClearMarks")} onClick={() => activeEditor.chain().focus().unsetAllMarks().run()}>
-                <Eraser size={15} />
-              </FormatButton>
-              <FormatButton label={t("more")} onClick={() => setShowMore((v) => !v)} active={showMore}>
-                <MoreHorizontal size={15} />
-              </FormatButton>
-            </div>
+              {/* AI 技能列表区域（可滚动 + 底部模糊） */}
+              <div className="relative">
+                <div
+                  className="max-h-[134px] overflow-y-auto"
+                  style={{ maskImage: "linear-gradient(to bottom, black 75%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 75%, transparent 100%)" }}
+                >
+                  {/* 技能标签行 */}
+                  <div className="flex h-7 items-center justify-between px-2 text-[12px] text-foreground/40">
+                    <span>{t("selectionSkillLabel")}</span>
+                  </div>
 
-            {/* 分割线 */}
-            <div className="my-1 h-px bg-white/[0.08]" />
-
-            {/* AI 技能列表区域 */}
-            <div className="relative">
-              <div
-                className="max-h-[134px] overflow-y-auto"
-                style={{ maskImage: "linear-gradient(to bottom, black 75%, transparent 100%)", WebkitMaskImage: "linear-gradient(to bottom, black 75%, transparent 100%)" }}
-              >
-                {/* 技能标签行 */}
-                <div className="flex h-7 items-center justify-between px-2 text-[12px] text-foreground/40">
-                  <span>{t("selectionSkillLabel")}</span>
-                </div>
-
-                {/* 技能列表 */}
-                <div data-testid="selection-ai-skills">
-                  {INLINE_ACTIONS.map((action) => (
+                  {/* 技能列表 */}
+                  <div data-testid="selection-ai-skills">
+                    {INLINE_ACTIONS.map((action) => (
+                      <button
+                        key={action}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => { captureSelectionAnchor(); void runRewrite(action); }}
+                        disabled={!hasSelection}
+                        data-testid={`selection-ai-skill-${action}`}
+                        className={cn(
+                          "group flex h-7 w-full items-center justify-start gap-1.5 rounded-[6px] px-2 text-left text-[14px] transition-colors duration-75",
+                          "text-foreground/90 hover:bg-white/[0.06]",
+                          "disabled:cursor-not-allowed disabled:opacity-50",
+                        )}
+                      >
+                        <span className="flex-1 truncate">{t(`selectionSkill.${action}`)}</span>
+                        <span className="shrink-0 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
+                          <Sparkles size={12} className="text-foreground/30" />
+                        </span>
+                      </button>
+                    ))}
                     <button
-                      key={action}
                       type="button"
                       onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => void runRewrite(action)}
-                      disabled={isRewriting || !hasSelection}
-                      data-testid={`selection-ai-skill-${action}`}
-                      className={cn(
-                        "group flex h-7 w-full items-center justify-start gap-1.5 rounded-[6px] px-2 text-left text-[14px] transition-colors duration-75",
-                        "text-foreground/90 hover:bg-white/[0.06]",
-                        "disabled:cursor-not-allowed disabled:opacity-50",
-                      )}
+                      onClick={() => dispatchExternalAction("explain")}
+                      disabled={!hasSelection}
+                      data-testid="selection-ai-skill-explain"
+                      className="group flex h-7 w-full items-center gap-1.5 rounded-[6px] px-2 text-left text-[14px] text-foreground/90 transition-colors duration-75 hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <span className="flex-1 truncate">{t(`selectionSkill.${action}`)}</span>
-                      <span className="shrink-0 opacity-0 transition-opacity duration-100 group-hover:opacity-100">
-                        {isRewriting ? <Loader2 size={12} className="animate-spin text-foreground/40" /> : <Sparkles size={12} className="text-foreground/30" />}
-                      </span>
+                      <span className="flex-1 truncate">{t("selectionSkill.explain")}</span>
                     </button>
-                  ))}
-                  <button
-                    type="button"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => dispatchExternalAction("explain")}
-                    disabled={!hasSelection}
-                    data-testid="selection-ai-skill-explain"
-                    className="group flex h-7 w-full items-center gap-1.5 rounded-[6px] px-2 text-left text-[14px] text-foreground/90 transition-colors duration-75 hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span className="flex-1 truncate">{t("selectionSkill.explain")}</span>
-                  </button>
+                  </div>
                 </div>
               </div>
 
-              {/* AI 预览覆盖层 */}
-              {preview && (
-                <div
-                  className="absolute inset-0 z-10 flex flex-col rounded-[10px] bg-[#252525] p-3"
-                  data-testid="selection-rewrite-preview"
-                >
-                  <div className="mb-2 flex items-center gap-1.5 text-[12px] text-primary/80">
-                    <Sparkles size={13} />
-                    <span>{t("selectionPreviewTitle", { action: t(`selectionSkill.${preview.action}`) })}</span>
-                  </div>
-                  <div className="mb-3 flex-1 overflow-y-auto">
-                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground/90">{preview.result}</p>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={applyPreview} className="rounded-[6px] bg-primary/20 px-2.5 py-1 text-[12px] font-medium text-primary transition-colors hover:bg-primary/30">
-                      {t("selectionApply")}
-                    </button>
-                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => void retry()} className="rounded-[6px] border border-white/10 px-2.5 py-1 text-[12px] text-foreground/70 transition-colors hover:bg-white/[0.06]">
-                      {t("selectionRetry")}
-                    </button>
-                    <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={cancel} className="rounded-[6px] border border-white/10 px-2.5 py-1 text-[12px] text-foreground/50 transition-colors hover:bg-white/[0.06]">
-                      {t("selectionCancel")}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+              {/* 分割线 */}
+              <div className="mb-1 h-px bg-white/[0.08]" />
 
-            {/* 分割线 */}
-            <div className="mb-1 h-px bg-white/[0.08]" />
-
-            {/* AI 输入框 — 同 Notion 样式 */}
-            <div className="flex min-h-[32px] items-center gap-1.5 rounded-[6px] border border-white/10 px-2 py-1 text-[14px] leading-snug transition-colors focus-within:border-white/20">
-              <input
-                value={customIntent}
-                onChange={(e) => setCustomIntent(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    if (customIntent.trim() && hasSelection) handleSubmitCustomIntent();
-                  }
-                }}
-                placeholder={t("selectionAiInputPlaceholder")}
-                className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-foreground/30"
-                data-testid="selection-ai-input"
-              />
-              <span className="shrink-0 text-[11px] text-foreground/30 font-mono">⌘↵</span>
-            </div>
-          </>
-        )}
-      </div>
+              {/* AI 输入框 */}
+              <div className="flex min-h-[32px] items-center gap-1.5 rounded-[6px] border border-white/10 px-2 py-1 text-[14px] leading-snug transition-colors focus-within:border-white/20">
+                <input
+                  value={customIntent}
+                  onChange={(e) => setCustomIntent(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      if (customIntent.trim() && hasSelection) handleSubmitCustomIntent();
+                    }
+                  }}
+                  placeholder={t("selectionAiInputPlaceholder")}
+                  className="flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-foreground/30"
+                  data-testid="selection-ai-input"
+                />
+                <span className="shrink-0 font-mono text-[11px] text-foreground/30">⌘↵</span>
+              </div>
+            </>
+          )}
+        </div>
     </BubbleMenu>
+
+    <InlineRewriteOverlay
+      editor={editor}
+      anchor={selectionAnchor}
+      isLoading={isRewriting}
+      loadingLabel={lastAction ? t(`selectionSkill.${lastAction}`) : t("selectionSkillLabel")}
+      appliedEdit={appliedEdit}
+      onAccept={() => { acceptEdit(); setSelectionAnchor(null); }}
+      onRetry={() => void retry()}
+      onReject={() => { rejectEdit(); setSelectionAnchor(null); }}
+    />
+    </>
   );
 }
 
@@ -364,7 +355,7 @@ function FormatButton({
   onClick: () => void;
 }) {
   return (
-    <div className="relative flex-1 group/btn">
+    <div className="group/btn relative flex-1">
       <button
         type="button"
         aria-label={label}
@@ -380,7 +371,7 @@ function FormatButton({
         {children}
       </button>
       {/* Notion 风格 tooltip */}
-      <div className="pointer-events-none absolute left-1/2 bottom-[calc(100%+6px)] z-[999] -translate-x-1/2 opacity-0 transition-opacity duration-150 delay-500 group-hover/btn:opacity-100">
+      <div className="pointer-events-none absolute bottom-[calc(100%+6px)] left-1/2 z-[999] -translate-x-1/2 opacity-0 transition-opacity delay-500 duration-150 group-hover/btn:opacity-100">
         <div className="whitespace-nowrap rounded-[6px] bg-[#111] px-2 py-1 text-[11px] font-medium text-white/90 shadow-lg">
           {label}
         </div>
@@ -389,5 +380,3 @@ function FormatButton({
     </div>
   );
 }
-
-

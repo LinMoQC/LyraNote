@@ -7,15 +7,18 @@
  */
 
 import { AnimatePresence, m } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { ChatInput, ChatToolbar } from "@/components/chat-input";
 import { AttachmentPreviewBar } from "@/components/chat-input/attachment-preview-bar";
 import { cn } from "@/lib/utils";
 import { DeepResearchProgress } from "@/components/deep-research/deep-research-progress";
+import { DrPlanCard } from "@/components/deep-research/dr-plan-card";
+import { DrProgressCard } from "@/components/deep-research/dr-progress-card";
+import { DrResearchDrawer } from "@/components/deep-research/dr-research-drawer";
 import { ChatInputContainer, ChatMessageList } from "@/features/chat/chat-layout";
 import { ArtifactPanel } from "@/components/genui";
-import { ClarifyingPanel, ClarifyingLoading } from "@/components/deep-research/clarifying-panel";
 import { ApprovalCard } from "@/components/message-render/approval-card";
 import { approveToolCall } from "@/services/ai-service";
 
@@ -28,6 +31,7 @@ export function ChatView() {
   const p = useChatPage();
   const t = useTranslations("chat");
   const tc = useTranslations("common");
+  const tDr = useTranslations("deepResearch");
 
   return (
     <div className="flex h-full dark:border border-border/40">
@@ -98,22 +102,33 @@ export function ChatView() {
             )}
 
             <AnimatePresence>
-              {p.dr.drProgress && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
-                <m.div
-                  key="dr-progress-live"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="px-4 pb-4"
-                >
-                  <DeepResearchProgress
+              {/* Plan loading indicator */}
+              {p.dr.isPlanLoading && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
+                <m.div key="dr-plan-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 px-5 pb-4 text-[12px] text-muted-foreground/50">
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>{tDr("planLoading")}</span>
+                </m.div>
+              )}
+
+              {/* Plan confirmation card */}
+              {p.dr.planData && !p.dr.isPlanLoading && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
+                <m.div key="dr-plan-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pb-4">
+                  <DrPlanCard
+                    plan={p.dr.planData}
+                    mode={p.drMode}
+                    onConfirm={p.dr.confirmPlan}
+                    onCancel={p.dr.cancelPlan}
+                  />
+                </m.div>
+              )}
+
+              {/* Compact progress card while researching */}
+              {p.dr.drProgress && !p.dr.planData && !p.dr.isPlanLoading && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
+                <m.div key="dr-progress-live" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pb-4">
+                  <DrProgressCard
                     progress={p.dr.drProgress}
-                    onSaveNote={p.dr.handleSaveAsNote}
-                    onSaveSources={p.dr.handleSaveSources}
-                    onFollowUp={(q) => p.chat.handleSend(q)}
-                    onRate={p.dr.handleDrRate}
-                    onCopy={p.copy}
-                    savedMessageId={p.dr.deliverableMessageIdRef.current}
+                    mode={p.drMode}
+                    onOpenDrawer={() => p.dr.setDrawerOpen(true)}
                   />
                 </m.div>
               )}
@@ -129,17 +144,6 @@ export function ChatView() {
           />
         )}
 
-        <AnimatePresence>
-          {p.dr.isFetchingClarifications && <ClarifyingLoading />}
-          {p.dr.clarifyingState && (
-            <ClarifyingPanel
-              questions={p.dr.clarifyingState.questions}
-              onSubmit={p.dr.submitClarifications}
-              onSkip={() => p.dr.submitClarifications({})}
-            />
-          )}
-        </AnimatePresence>
-
         <ChatInputContainer>
           <ChatInput
             ref={p.chatInputRef}
@@ -147,7 +151,7 @@ export function ChatView() {
             onChange={p.setInput}
             onSubmit={p.handleSubmit}
             placeholder={p.isDeepResearch ? t("deepResearchPlaceholder") : t("placeholder")}
-            disabled={p.fileAttachments.isUploading || !!p.dr.clarifyingState || p.dr.isFetchingClarifications}
+            disabled={p.fileAttachments.isUploading}
             streaming={p.streaming}
             onCancel={p.chat.handleCancelStreaming}
             variant="default"
@@ -233,6 +237,21 @@ export function ChatView() {
       />
 
       <ArtifactPanel artifact={p.artifactState} onClose={() => p.setArtifactState(null)} />
+
+      {/* Deep research right-side drawer */}
+      <DrResearchDrawer
+        open={p.dr.drawerOpen}
+        progress={p.dr.drProgress}
+        mode={p.drMode}
+        isActive={!!p.dr.drProgress && p.dr.drProgress.status !== "done"}
+        onClose={() => p.dr.setDrawerOpen(false)}
+        onSaveNote={p.dr.handleSaveAsNote}
+        onSaveSources={p.dr.handleSaveSources}
+        onFollowUp={(q) => p.chat.handleSend(q)}
+        onRate={p.dr.handleDrRate}
+        onCopy={p.copy}
+        savedMessageId={p.dr.deliverableMessageIdRef.current}
+      />
     </div>
   );
 }

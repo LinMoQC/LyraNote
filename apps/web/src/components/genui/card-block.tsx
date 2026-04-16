@@ -48,14 +48,19 @@ function SingleCard({ card }: { card: CardData }) {
       <div className="mt-3 divide-y divide-border/20">
         {card.items.map((item, i) => {
           const accent = ACCENT_COLORS[i % ACCENT_COLORS.length]
+          const isString = typeof item === "string"
+          const label = isString ? undefined : (item as CardItem).label
+          const value = isString ? (item as unknown as string) : (item as CardItem).value
           return (
             <div key={i} className="flex items-start gap-2.5 py-2 first:pt-0 last:pb-0">
               <span className={`mt-[7px] h-1.5 w-1.5 flex-shrink-0 rounded-full ${accent.dot}`} />
               <div className="min-w-0 flex-1">
-                <span className={`inline-block rounded-full border px-1.5 py-px text-[9px] font-medium leading-normal ${accent.pill}`}>
-                  {item.label}
-                </span>
-                <p className="mt-0.5 text-xs leading-relaxed text-foreground/75">{item.value}</p>
+                {label && (
+                  <span className={`inline-block rounded-full border px-1.5 py-px text-[9px] font-medium leading-normal ${accent.pill}`}>
+                    {label}
+                  </span>
+                )}
+                <p className={`text-xs leading-relaxed text-foreground/75 ${label ? "mt-0.5" : ""}`}>{value}</p>
               </div>
             </div>
           )

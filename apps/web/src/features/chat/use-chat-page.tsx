@@ -388,7 +388,7 @@ export function useChatPage() {
       return;
     }
     const hasDeepResearchMessages = messages.some((m) => Boolean(m.deepResearch));
-    if (!isDeepResearch && !hasDeepResearchMessages && !dr.clarifyingState && !dr.isFetchingClarifications) {
+    if (!isDeepResearch && !hasDeepResearchMessages) {
       try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
       return;
     }
@@ -396,7 +396,7 @@ export function useChatPage() {
       localStorage.setItem(DR_MESSAGES_KEY, JSON.stringify(messages));
     } catch { /* ignore quota */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, activeConvId, isDeepResearch, dr.clarifyingState, dr.isFetchingClarifications]);
+  }, [messages, activeConvId, isDeepResearch]);
 
   useEffect(() => {
     if (!activeConvId) return;

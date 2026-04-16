@@ -162,7 +162,7 @@ export function FloatingTOC({ editor }: { editor: Editor | null }) {
             animate={{ opacity: 1, scale: 1, x: 0 }}
             exit={{ opacity: 0, scale: 0.96, x: 8 }}
             transition={{ duration: 0.15, ease: "easeOut" }}
-            className="absolute right-2 w-52 rounded-xl border border-border/40 bg-card/95 shadow-xl shadow-black/20 backdrop-blur-md"
+            className="absolute right-2 w-52 rounded-xl border border-border/40 bg-card/95 font-notebook-ui shadow-xl shadow-black/20 backdrop-blur-md"
             onMouseEnter={show}
             onMouseLeave={hide}
           >
@@ -174,7 +174,7 @@ export function FloatingTOC({ editor }: { editor: Editor | null }) {
                     type="button"
                     onClick={() => scrollTo(item)}
                     className={cn(
-                      "block w-full cursor-pointer truncate rounded-md px-2 py-1.5 text-left text-[12px] leading-snug transition-colors",
+                      "block w-full cursor-pointer truncate rounded-md px-2 py-1.5 text-left text-[12px] font-normal leading-snug transition-colors",
                       item.level === 1 && "font-medium",
                       item.level === 2 && "pl-4",
                       item.level === 3 && "pl-6 text-[11px]",

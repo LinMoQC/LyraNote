@@ -731,6 +731,7 @@ export function CopilotPanel({
                       liveAgentSteps={agentSteps}
                       onInsert={message.role === "assistant" ? onInsertToEditor : undefined}
                       onInsertMindMap={message.role === "assistant" ? onInsertMindMap : undefined}
+                      onFollowUp={message.role === "assistant" ? (q) => void submit(q) : undefined}
                     />
                   </div>
                 );

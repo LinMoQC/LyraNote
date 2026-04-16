@@ -6,10 +6,9 @@ import { useDeepResearchStore } from "@/store/use-deep-research-store";
 import { submitMessageFeedback } from "@/services/feedback-service";
 import { saveNote } from "@/services/note-service";
 import { getMessages } from "@/services/conversation-service";
-import { getClarifyingQuestions, saveDeepResearchSources } from "@/services/ai-service";
+import { saveDeepResearchSources, planDeepResearch } from "@/services/ai-service";
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
-import type { DrProgress } from "@/components/deep-research/deep-research-progress";
-import type { ClarifyQuestion } from "@/components/deep-research/dr-types";
+import type { DrProgress, DrPlanData } from "@/components/deep-research/deep-research-progress";
 import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
@@ -19,11 +18,6 @@ import { mapRecord, sortMessagesByTime } from "@/features/chat/chat-helpers";
 import type { Dispatch, SetStateAction } from "react";
 
 export const DR_MESSAGES_KEY = "lyranote-dr-messages";
-
-export interface ClarifyingState {
-  questions: ClarifyQuestion[];
-  query: string;
-}
 
 interface UseDeepResearchOpts {
   activeConvId: string | null;
@@ -60,9 +54,6 @@ export function useDeepResearch({
   const deliverableMessageIdRef = useRef<string | null>(null);
   const drPersistedRef = useRef(false);
   const drQueryRef = useRef<string>("");
-
-  const [clarifyingState, setClarifyingState] = useState<ClarifyingState | null>(null);
-  const [isFetchingClarifications, setIsFetchingClarifications] = useState(false);
 
   // Watch store: when isActive transitions false → handle completion
   const prevIsActiveRef = useRef(drStore.isActive);
@@ -154,6 +145,7 @@ export function useDeepResearch({
   const _startResearch = useCallback(async (
     text: string,
     clarificationContext: Array<{ question: string; answer: string }> | null,
+    planOverride?: DrPlanData,
   ) => {
     setStreaming(true);
     streamLifecycle.start();
@@ -161,7 +153,8 @@ export function useDeepResearch({
     deliverableMessageIdRef.current = null;
 
     try {
-      await getDrState().start(text, undefined, drMode, clarificationContext ?? undefined);
+      await getDrState().start(text, undefined, drMode, clarificationContext ?? undefined, planOverride);
+      getDrState().setDrawerOpen(true);
 
       const { conversationId } = getDrState();
       if (conversationId) {
@@ -190,34 +183,33 @@ export function useDeepResearch({
     const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: "user", content: text, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
 
-    if (drMode === "deep") {
-      setIsFetchingClarifications(true);
-      try {
-        const { questions } = await getClarifyingQuestions(text);
-        setClarifyingState({ questions, query: text });
-      } catch {
-        await _startResearch(text, null);
-      } finally {
-        setIsFetchingClarifications(false);
-      }
-      return;
-    }
+    const clarificationContext: Array<{ question: string; answer: string }> | null = null;
 
-    await _startResearch(text, null);
+    // Generate plan for user confirmation
+    getDrState().setPlanLoading(true);
+    try {
+      const plan = await planDeepResearch(text, { mode: drMode, clarificationContext: clarificationContext ?? undefined });
+      getDrState().setPlanData(plan);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      // Plan generation failed: fall back to direct research start
+      await _startResearch(text, clarificationContext);
+    } finally {
+      getDrState().setPlanLoading(false);
+    }
   }, [streaming, drMode, _startResearch, setMessages, setInput]);
 
-  const submitClarifications = useCallback(async (answers: Record<number, string>) => {
-    if (!clarifyingState) return;
-    const { questions, query } = clarifyingState;
-    const clarificationContext = Object.entries(answers)
-      .filter(([, answer]) => answer)
-      .map(([idx, answer]) => ({
-        question: questions[Number(idx)]?.question ?? "",
-        answer,
-      }));
-    setClarifyingState(null);
-    await _startResearch(query, clarificationContext.length > 0 ? clarificationContext : null);
-  }, [clarifyingState, _startResearch]);
+  const confirmPlan = useCallback(async (editedPlan: DrPlanData) => {
+    const text = drQueryRef.current;
+    if (!text) return;
+    getDrState().setPlanData(null);
+    await _startResearch(text, null, editedPlan);
+  }, [_startResearch]);
+
+  const cancelPlan = useCallback(() => {
+    getDrState().setPlanData(null);
+    getDrState().setPlanLoading(false);
+  }, []);
 
   const handleSaveAsNote = useCallback(async (reportOverride?: string, titleOverride?: string) => {
     const state = getDrState();
@@ -286,8 +278,11 @@ export function useDeepResearch({
     handleSaveSources,
     handleDrRate,
     setDrProgress,
-    clarifyingState,
-    isFetchingClarifications,
-    submitClarifications,
+    confirmPlan,
+    cancelPlan,
+    planData: drStore.planData,
+    isPlanLoading: drStore.isPlanLoading,
+    drawerOpen: drStore.drawerOpen,
+    setDrawerOpen: (open: boolean) => getDrState().setDrawerOpen(open),
   };
 }

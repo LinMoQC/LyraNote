@@ -1,29 +1,38 @@
 "use client";
 
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlignLeft,
+  Archive,
+  CheckCircle2,
   ChevronDown,
   ChevronLeft,
+  Circle,
+  Clock,
   Copy,
   Expand,
+  FileText,
+  History,
+  Languages,
   Library,
+  Maximize2,
+  MessageSquareQuote,
   MoreHorizontal,
   Pencil,
-  Search,
   Sparkles,
-  Trash2,
   Type,
+  Undo2,
 } from "lucide-react";
 import Link from "next/link";
-import { useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useFormatter, useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { AnimatePresence, m } from "framer-motion";
 
-import { deleteNotebook, renameNotebook } from "@/services/notebook-service";
+import { renameNotebook } from "@/services/notebook-service";
 import { NotePickerDropdown } from "@/features/notebook/note-picker-dropdown";
 import { useUiStore } from "@/store/use-ui-store";
+import { cn } from "@/lib/utils";
+import type { NotebookAppearanceSettings } from "@/features/notebook/notebook-appearance";
 import type { MobileWorkspaceSheetKey } from "@/features/notebook/mobile-workspace-sheet";
 import type { NoteRecord } from "@/services/note-service";
 
@@ -37,6 +46,8 @@ type MenuItem = {
   danger?: boolean;
   toggle?: boolean;
   checked?: boolean;
+  shortcut?: string;
+  badge?: string;
 };
 
 export function NotebookTopBar({
@@ -55,6 +66,12 @@ export function NotebookTopBar({
   mobileActiveSheet = "none",
   onMobileSheetChange,
   charCount,
+  onToggleSources,
+  sourcesOpen = false,
+  sourceCount = 0,
+  updatedAt,
+  appearance,
+  onAppearanceChange,
 }: {
   notebookId: string;
   title: string;
@@ -71,20 +88,23 @@ export function NotebookTopBar({
   mobileActiveSheet?: MobileWorkspaceSheetKey;
   onMobileSheetChange?: (sheet: MobileWorkspaceSheetKey) => void;
   charCount?: number;
+  onToggleSources?: () => void;
+  sourcesOpen?: boolean;
+  sourceCount?: number;
+  updatedAt?: string;
+  appearance?: NotebookAppearanceSettings;
+  onAppearanceChange?: (appearance: NotebookAppearanceSettings) => void;
 }) {
   const t = useTranslations("notebook");
   const tc = useTranslations("common");
-  const router = useRouter();
+  const format = useFormatter();
   const [title, setTitle] = useState(externalTitle);
   const [isRenaming, setIsRenaming] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [smallText, setSmallText] = useState(false);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const titleBtnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
   const [renamePos, setRenamePos] = useState<{ top: number; left: number; width: number } | null>(null);
 
@@ -100,12 +120,6 @@ export function NotebookTopBar({
     }
   }, [isRenaming]);
 
-  useEffect(() => {
-    if (menuOpen) {
-      setSearch("");
-      setTimeout(() => searchRef.current?.focus(), 50);
-    }
-  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -132,86 +146,105 @@ export function NotebookTopBar({
     }
   };
 
-  const handleDelete = async () => {
-    setMenuOpen(false);
-    if (confirm(t("trashConfirm"))) {
-      await deleteNotebook(notebookId);
-      router.push("/app/notebooks");
-    }
-  };
-
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(window.location.href);
-    setMenuOpen(false);
-  };
-
   const { setSettingsOpen } = useUiStore();
 
-  const menuItems: MenuItem[] = [
-    {
-      id: "aiSkills",
-      label: "AI 技能",
-      icon: Sparkles,
-      action: () => {
-        setSettingsOpen(true, "skills");
-        setMenuOpen(false);
-      },
-    },
-    {
-      id: "smallText",
-      label: t("smallText"),
-      icon: Type,
-      toggle: true,
-      checked: smallText,
-      action: () => {
-        setSmallText((v) => !v);
-        setMenuOpen(false);
-      },
-    },
-    {
-      id: "copyLink",
-      label: t("copyLink"),
-      icon: Copy,
-      action: handleCopyLink,
-    },
-    {
-      id: "rename",
-      label: t("rename"),
-      icon: Pencil,
-      action: () => {
-        setIsRenaming(true);
-        setMenuOpen(false);
-      },
-    },
-    {
-      id: "fullscreen",
-      label: t("fullscreen"),
-      icon: Expand,
-      toggle: true,
-      checked: isFullscreen,
-      action: () => {
-        onToggleFullscreen?.();
-        setMenuOpen(false);
-      },
-    },
-    {
-      id: "delete",
-      label: t("moveToTrash"),
-      icon: Trash2,
-      danger: true,
-      action: handleDelete,
-    },
-  ];
+  const isSmallText = appearance?.fontSize === "sm";
+  const isWideWidth = appearance?.contentWidth === "wide";
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return menuItems;
-    return menuItems.filter((item) =>
-      item.label.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [search, smallText, isFullscreen]);
+  const toggleAppearance = (key: keyof NotebookAppearanceSettings, value: any) => {
+    onAppearanceChange?.({ ...appearance, [key]: value });
+  };
 
-  const nonDanger = filtered.filter((i) => !i.danger);
-  const danger = filtered.filter((i) => i.danger);
+  const menuSections = useMemo(() => {
+    const style: MenuItem[] = [
+      {
+        id: "smallText",
+        label: t("smallText"),
+        icon: Type,
+        toggle: true,
+        checked: isSmallText,
+        action: () => toggleAppearance("fontSize", isSmallText ? "md" : "sm"),
+      },
+      {
+        id: "fullscreen",
+        label: t("fullscreen"),
+        icon: Expand,
+        toggle: true,
+        checked: isFullscreen,
+        action: () => onToggleFullscreen?.(),
+      },
+      {
+        id: "wideContent",
+        label: t("wideContent"),
+        icon: Maximize2,
+        toggle: true,
+        checked: isWideWidth,
+        action: () => toggleAppearance("contentWidth", isWideWidth ? "standard" : "wide"),
+      },
+    ];
+
+    const actions: MenuItem[] = [
+      {
+        id: "rename",
+        label: t("rename"),
+        icon: Pencil,
+        action: () => {
+          setIsRenaming(true);
+          setMenuOpen(false);
+        },
+      },
+    ];
+
+    const ai: MenuItem[] = [
+      {
+        id: "aiSkills",
+        label: "AI 技能",
+        icon: Sparkles,
+        action: () => {
+          setSettingsOpen(true, "skills");
+          setMenuOpen(false);
+        },
+      },
+      {
+        id: "aiEdit",
+        label: "与 AI 一起使用",
+        icon: Languages,
+        action: () => setMenuOpen(false),
+      },
+    ];
+
+    const extra: MenuItem[] = [
+      {
+        id: "undo",
+        label: "撤销",
+        icon: Undo2,
+        shortcut: "⌘Z",
+        action: () => setMenuOpen(false),
+      },
+      {
+        id: "history",
+        label: "版本历史",
+        icon: History,
+        action: () => setMenuOpen(false),
+      },
+    ];
+
+    return [
+      { id: "style", items: style },
+      { id: "actions", items: actions },
+      { id: "ai", items: ai },
+      { id: "extra", items: extra },
+    ];
+  }, [
+    appearance,
+    isSmallText,
+    isWideWidth,
+    isFullscreen,
+    onToggleFullscreen,
+    setSettingsOpen,
+    t,
+  ]);
+
 
   const toggleMobileSheet = (sheet: Exclude<MobileWorkspaceSheetKey, "none">) => {
     onMobileSheetChange?.(mobileActiveSheet === sheet ? "none" : sheet);
@@ -306,85 +339,122 @@ export function NotebookTopBar({
             {menuPos && createPortal(
               <AnimatePresence>
                 {menuOpen && (
-                  <m.div
-                    key="header-menu-mobile"
-                    ref={menuRef}
-                    initial={{ opacity: 0, scale: 0.95, y: -6 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95, y: -6 }}
-                    transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-                    className="fixed z-[9999] w-60 overflow-hidden rounded-xl border border-border/40 bg-card shadow-2xl shadow-black/30"
-                    style={{ top: menuPos.top, right: menuPos.right }}
-                  >
-                    <div className="px-2 pt-2 pb-1.5">
-                      <div className="flex h-8 items-center gap-2 rounded-lg bg-muted/40 px-2.5">
-                        <Search size={12} className="flex-shrink-0 text-muted-foreground/50" />
-                        <input
-                          ref={searchRef}
-                          className="flex-1 bg-transparent text-[12px] text-foreground/80 outline-none placeholder:text-muted-foreground/40"
-                          placeholder={t("commandSearch")}
-                          value={search}
-                          onChange={(e) => setSearch(e.target.value)}
-                          onKeyDown={(e) => e.key === "Escape" && setMenuOpen(false)}
-                        />
-                      </div>
-                    </div>
-
-                    {nonDanger.length > 0 && (
-                      <>
-                        <div className="mx-2 h-px bg-border/30" />
-                        <div className="px-1 py-1">
-                          {nonDanger.map((item) => (
+                    <m.div
+                      key="header-menu-mobile"
+                      ref={menuRef}
+                      initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                      transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+                      className="fixed z-[9999] w-64 overflow-hidden rounded-xl border border-border/40 bg-card shadow-2xl shadow-black/30"
+                      style={{ top: menuPos.top, right: menuPos.right }}
+                    >
+                      <div className="px-1 py-1 pt-2">
+                        <div className="flex gap-1 px-1.5 pb-1.5">
+                          {(["sans", "serif", "mono"] as const).map((font) => (
                             <button
-                              key={item.id}
+                              key={font}
                               type="button"
-                              onClick={item.action}
-                              className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13px] text-foreground/80 transition-colors hover:bg-accent/60"
-                            >
-                              <span className="flex items-center gap-2.5">
-                                <item.icon size={13} className="text-muted-foreground/60" />
-                                {item.label}
-                              </span>
-                              {item.toggle && (
-                                <div
-                                  className={`relative h-4 w-8 rounded-full transition-colors ${item.checked ? "bg-blue-500" : "bg-muted/60"}`}
-                                >
-                                  <div
-                                    className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${item.checked ? "translate-x-4" : "translate-x-0.5"}`}
-                                  />
-                                </div>
+                              onClick={() => toggleAppearance("fontFamily", font)}
+                              className={cn(
+                                "flex flex-1 flex-col items-center gap-1 rounded-lg py-3 transition-all",
+                                appearance?.fontFamily === font
+                                  ? "bg-primary/10 text-primary shadow-sm"
+                                  : "text-muted-foreground/50 hover:bg-accent/60 hover:text-foreground/80"
                               )}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-
-                    {danger.length > 0 && (
-                      <>
-                        <div className="mx-2 h-px bg-border/30" />
-                        <div className="px-1 py-1 pb-2">
-                          {danger.map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={item.action}
-                              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-red-400/80 transition-colors hover:bg-red-500/10 hover:text-red-400"
                             >
-                              <item.icon size={13} />
-                              {item.label}
+                              <span className={cn(
+                                "text-[18px] font-medium leading-none",
+                                font === "serif" && "font-serif",
+                                font === "mono" && "font-mono"
+                              )}>Ag</span>
+                              <span className="text-[10px] font-medium opacity-80">
+                                {font === "sans" && t("fontSans")}
+                                {font === "serif" && t("fontSerif")}
+                                {font === "mono" && t("fontMono")}
+                              </span>
                             </button>
                           ))}
                         </div>
-                      </>
-                    )}
+                        <div className="mx-2 mb-1 h-px bg-border/25" />
+                      </div>
 
-                    {filtered.length === 0 && (
-                      <p className="px-4 py-4 text-center text-[12px] text-muted-foreground/40">
-                        {t("commandNoResults")}
-                      </p>
-                    )}
-                  </m.div>
+                      <div className="max-h-[50vh] overflow-y-auto overflow-x-hidden px-1 py-1 hide-scrollbar">
+                        {menuSections.map((section, sidx) => (
+                          <React.Fragment key={section.id}>
+                            {sidx > 0 && <div className="mx-2 my-1 h-px bg-border/15" />}
+                            <div className="space-y-0.5">
+                              {section.items.map((item) => (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={item.action}
+                                  className={cn(
+                                    "group flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-[13.5px] transition-colors",
+                                    item.danger
+                                      ? "text-red-400/80 hover:bg-red-500/10 hover:text-red-400"
+                                      : "text-foreground/80 hover:bg-accent/60"
+                                  )}
+                                >
+                                  <div className="flex min-w-0 items-center gap-2.5">
+                                    <item.icon
+                                      size={15}
+                                      className={cn(
+                                        "flex-shrink-0 opacity-60 transition-opacity group-hover:opacity-100",
+                                        item.danger && "opacity-80"
+                                      )}
+                                    />
+                                    <span className="truncate">{item.label}</span>
+                                  </div>
+
+                                  <div className="flex flex-shrink-0 items-center gap-2">
+                                    {item.shortcut && (
+                                      <span className="text-[10.5px] font-medium text-muted-foreground/35 transition-colors group-hover:text-muted-foreground/50">
+                                        {item.shortcut}
+                                      </span>
+                                    )}
+                                    {item.toggle && (
+                                      <div
+                                        className={cn(
+                                          "relative h-[18px] w-[34px] rounded-full transition-all duration-200",
+                                          item.checked ? "bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]" : "bg-muted/60"
+                                        )}
+                                      >
+                                        <div
+                                          className={cn(
+                                            "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                                            item.checked ? "translate-x-4" : "translate-x-0.5"
+                                          )}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          </React.Fragment>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-border/15 bg-muted/[0.08] px-3.5 py-3">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/45">
+                            <span className="flex w-[11px] text-[16px] items-center justify-center font-mono opacity-70">#</span>
+                            <span>{t("wordCountDetailed", { count: charCount || 0 })}</span>
+                          </div>
+                          {updatedAt && (
+                          <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/45">
+                            <Clock size={11} className="opacity-70" />
+                            <span>
+                              {t("lastEditedAt", {
+                                time: format.dateTime(new Date(updatedAt), { hour: "2-digit", minute: "2-digit" }),
+                              })}
+                            </span>
+                          </div>
+                          )}
+                        </div>
+                      </div>
+                    </m.div>
                 )}
               </AnimatePresence>,
               document.body,
@@ -493,9 +563,9 @@ export function NotebookTopBar({
   }
 
   return (
-    <div className="flex h-10 flex-shrink-0 items-center bg-card/10 px-3 backdrop-blur-sm">
+    <div className="flex h-10 flex-shrink-0 items-center bg-card/10 px-3 font-notebook-ui backdrop-blur-sm">
       {/* Left: back + breadcrumb */}
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 text-[13px] text-muted-foreground/50">
+      <div className="flex min-w-0 flex-1 items-center gap-0.5 text-[13px] font-normal text-muted-foreground/50">
         <Link
           href="/app/notebooks"
           className="flex items-center gap-0.5 rounded-sm px-1.5 py-1 transition-colors hover:bg-accent/60 hover:text-foreground/80"
@@ -586,11 +656,6 @@ export function NotebookTopBar({
 
       {/* Right: char count + save status + menu */}
       <div className="flex flex-shrink-0 items-center gap-2.5">
-        {charCount !== undefined && charCount > 0 && (
-          <span className="text-[11px] tabular-nums text-muted-foreground/30">
-            {charCount} 字符
-          </span>
-        )}
         {saveStatus === "saving" && (
           <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/50">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-muted-foreground/40" />
@@ -606,7 +671,38 @@ export function NotebookTopBar({
         {saveStatus === "error" && (
           <span className="text-[11px] text-red-400/70">{t("saveFailedShort")}</span>
         )}
-        {/* ... menu */}
+
+        {!isMobile && onToggleSources && (
+          <div className="flex items-center gap-1.5 pl-1">
+            <button
+              type="button"
+              onClick={onToggleSources}
+              className={cn(
+                "group flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium transition-all duration-200",
+                sourcesOpen
+                  ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_rgba(var(--primary-rgb),0.1)]"
+                  : "text-muted-foreground/55 hover:bg-accent/60 hover:text-foreground"
+              )}
+              title={t("tabSources")}
+            >
+              <Library
+                size={14}
+                className={cn("transition-transform duration-200", sourcesOpen ? "scale-105" : "group-hover:scale-105")}
+                strokeWidth={sourcesOpen ? 2.5 : 2}
+              />
+              {sourceCount >= 0 && (
+                <span className={cn(
+                  "text-[11px] tabular-nums transition-colors",
+                  sourcesOpen ? "text-primary/90" : "text-muted-foreground/35 group-hover:text-foreground/60"
+                )}>
+                  {sourceCount}
+                </span>
+              )}
+            </button>
+            <div className="mx-0.5 h-3.5 w-px bg-border/20" />
+          </div>
+        )}
+
         <div className="relative">
           <button
             ref={btnRef}
@@ -642,78 +738,114 @@ export function NotebookTopBar({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -6 }}
               transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className="fixed z-[9999] w-60 overflow-hidden rounded-xl border border-border/40 bg-card shadow-2xl shadow-black/30"
+              className="fixed z-[9999] w-64 overflow-hidden rounded-xl border border-border/40 bg-card shadow-2xl shadow-black/30"
               style={{ top: menuPos.top, right: menuPos.right }}
             >
-              {/* Search */}
-              <div className="px-2 pt-2 pb-1.5">
-                <div className="flex h-8 items-center gap-2 rounded-lg bg-muted/40 px-2.5">
-                  <Search size={12} className="flex-shrink-0 text-muted-foreground/50" />
-                  <input
-                    ref={searchRef}
-                    className="flex-1 bg-transparent text-[12px] text-foreground/80 outline-none placeholder:text-muted-foreground/40"
-                    placeholder={t("commandSearch")}
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    onKeyDown={(e) => e.key === "Escape" && setMenuOpen(false)}
-                  />
+              <div className="px-1 py-1 pt-2">
+                <div className="flex gap-1 px-1.5 pb-1.5">
+                  {(["sans", "serif", "mono"] as const).map((font) => (
+                    <button
+                      key={font}
+                      type="button"
+                      onClick={() => toggleAppearance("fontFamily", font)}
+                      className={cn(
+                        "flex flex-1 flex-col items-center gap-1 rounded-lg py-3 transition-all",
+                        appearance?.fontFamily === font
+                          ? "bg-primary/10 text-primary shadow-sm"
+                          : "text-muted-foreground/50 hover:bg-accent/60 hover:text-foreground/80"
+                      )}
+                    >
+                      <span className={cn(
+                        "text-[18px] font-medium leading-none",
+                        font === "serif" && "font-serif",
+                        font === "mono" && "font-mono"
+                      )}>Ag</span>
+                      <span className="text-[10px] font-medium opacity-80">
+                        {font === "sans" && t("fontSans")}
+                        {font === "serif" && t("fontSerif")}
+                        {font === "mono" && t("fontMono")}
+                      </span>
+                    </button>
+                  ))}
                 </div>
+                <div className="mx-2 mb-1 h-px bg-border/25" />
               </div>
 
-              {nonDanger.length > 0 && (
-                <>
-                  <div className="mx-2 h-px bg-border/30" />
-                  <div className="px-1 py-1">
-                    {nonDanger.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={item.action}
-                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-[13px] text-foreground/80 transition-colors hover:bg-accent/60"
-                      >
-                        <span className="flex items-center gap-2.5">
-                          <item.icon size={13} className="text-muted-foreground/60" />
-                          {item.label}
-                        </span>
-                        {item.toggle && (
-                          <div
-                            className={`relative h-4 w-8 rounded-full transition-colors ${item.checked ? "bg-blue-500" : "bg-muted/60"}`}
-                          >
-                            <div
-                              className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform ${item.checked ? "translate-x-4" : "translate-x-0.5"}`}
+              <div className="max-h-[60vh] overflow-y-auto overflow-x-hidden px-1 py-1 hide-scrollbar">
+                {menuSections.map((section, sidx) => (
+                  <React.Fragment key={section.id}>
+                    {sidx > 0 && <div className="mx-2 my-1 h-px bg-border/15" />}
+                    <div className="space-y-0.5">
+                      {section.items.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={item.action}
+                          className={cn(
+                            "group flex w-full items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-[13.5px] transition-colors",
+                            item.danger
+                              ? "text-red-400/80 hover:bg-red-500/10 hover:text-red-400"
+                              : "text-foreground/80 hover:bg-accent/60"
+                          )}
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <item.icon
+                              size={15}
+                              className={cn(
+                                "flex-shrink-0 opacity-60 transition-opacity group-hover:opacity-100",
+                                item.danger && "opacity-80"
+                              )}
                             />
+                            <span className="truncate">{item.label}</span>
                           </div>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
 
-              {danger.length > 0 && (
-                <>
-                  <div className="mx-2 h-px bg-border/30" />
-                  <div className="px-1 py-1 pb-2">
-                    {danger.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={item.action}
-                        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-red-400/80 transition-colors hover:bg-red-500/10 hover:text-red-400"
-                      >
-                        <item.icon size={13} />
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
+                          <div className="flex flex-shrink-0 items-center gap-2">
+                            {item.shortcut && (
+                              <span className="text-[10.5px] font-medium text-muted-foreground/35 transition-colors group-hover:text-muted-foreground/50">
+                                {item.shortcut}
+                              </span>
+                            )}
+                            {item.toggle && (
+                              <div
+                                className={cn(
+                                  "relative h-[18px] w-[34px] rounded-full transition-all duration-200",
+                                  item.checked ? "bg-primary shadow-[0_0_8px_rgba(var(--primary-rgb),0.3)]" : "bg-muted/60"
+                                )}
+                              >
+                                <div
+                                  className={cn(
+                                    "absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200",
+                                    item.checked ? "translate-x-4" : "translate-x-0.5"
+                                  )}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </React.Fragment>
+                ))}
+              </div>
 
-              {filtered.length === 0 && (
-                <p className="px-4 py-4 text-center text-[12px] text-muted-foreground/40">
-                  {t("commandNoResults")}
-                </p>
-              )}
+              <div className="border-t border-border/15 bg-muted/[0.08] px-3.5 py-3">
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/45">
+                    <span className="flex w-[11px] items-center justify-center font-mono opacity-70 font-[14px]">#</span>
+                    <span>{t("wordCountDetailed", { count: charCount || 0 })}</span>
+                  </div>
+                  {updatedAt && (
+                  <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground/45">
+                    <Clock size={11} className="opacity-70" />
+                    <span>
+                      {t("lastEditedAt", {
+                        time: format.dateTime(new Date(updatedAt), { hour: "2-digit", minute: "2-digit" }),
+                      })}
+                    </span>
+                  </div>
+                  )}
+                </div>
+              </div>
             </m.div>
               )}
             </AnimatePresence>,

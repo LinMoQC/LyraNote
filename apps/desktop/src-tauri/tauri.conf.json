@@ -1,5 +1,5 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "LyraNote",
   "version": "0.1.0",
   "identifier": "com.lyranote.desktop",
@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "withGlobalTauri": true,
     "windows": [
       {
         "title": "LyraNote",
@@ -19,19 +18,15 @@
         "minWidth": 900,
         "minHeight": 600,
         "decorations": false,
-        "transparent": false,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "transparent": true,
+        "center": true,
+        "dragDropEnabled": true
       }
     ],
     "security": {
       "csp": null
     },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": false
-    }
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -43,11 +38,5 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
-  },
-  "plugins": {
-    "notification": {},
-    "store": {
-      "filename": "lyranote-store.json"
-    }
   }
 }

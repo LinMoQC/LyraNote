@@ -76,8 +76,8 @@ function SourceItem({ source }: { source: Source }) {
         <div className="min-w-0 flex-1">
           <p
             className={cn(
-              "truncate text-[13px] font-medium leading-tight",
-              isActive ? "text-foreground" : "text-foreground/80"
+              "truncate text-[13px] leading-snug",
+              isActive ? "font-medium text-foreground" : "font-normal text-muted-foreground/85"
             )}
           >
             {source.title}
@@ -186,16 +186,14 @@ export function SourcesPanel({
   return (
     <aside
       className={cn(
-        "flex h-full flex-col overflow-hidden bg-card/20",
-        isSheet
-          ? "w-full"
-          : "w-[260px] flex-shrink-0 border-r border-border/25",
+        "font-notebook-ui flex h-full flex-col overflow-hidden text-[13px] font-normal leading-normal antialiased",
+        isSheet ? "w-full bg-card/20" : "w-[260px] flex-shrink-0 border-r border-border/25 bg-sidebar/45",
       )}
       data-testid={`sources-panel-${variant}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
-          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/55">
             {t("sourcesHeader", { count: visibleSources.length })}
           </span>
           <div className="flex items-center gap-1">

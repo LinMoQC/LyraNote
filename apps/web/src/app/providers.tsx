@@ -19,8 +19,9 @@ import { useState } from "react";
 import { Toaster } from "sileo";
 import { AuthProvider } from "@/features/auth/auth-provider";
 import { setI18nMessages } from "@/lib/i18n";
+import { LocatorDevtools } from "@/lib/locator-devtools";
 import { ThemeProvider, type ColorTheme } from "@/lib/theme";
-import { ThemePresetProvider } from "@/lib/theme-preset";
+import { ThemePresetProvider, type ThemePreset } from "@/lib/theme-preset";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -28,6 +29,7 @@ interface ProvidersProps {
   locale: string;
   timeZone: string;
   defaultTheme: ColorTheme;
+  defaultThemePreset: ThemePreset;
 }
 
 /**
@@ -36,8 +38,16 @@ interface ProvidersProps {
  * @param messages - 国际化消息对象（从服务端注入）
  * @param locale - 当前语言环境（"zh" | "en"）
  * @param defaultTheme - 服务端从 Cookie 读取的初始主题
+ * @param defaultThemePreset - 服务端从 Cookie 读取的主题套装（与 RootLayout 一致）
  */
-export function Providers({ children, messages, locale, timeZone, defaultTheme }: ProvidersProps) {
+export function Providers({
+  children,
+  messages,
+  locale,
+  timeZone,
+  defaultTheme,
+  defaultThemePreset,
+}: ProvidersProps) {
   setI18nMessages(messages as Record<string, unknown>);
 
   const [queryClient] = useState(
@@ -59,7 +69,8 @@ export function Providers({ children, messages, locale, timeZone, defaultTheme }
         <QueryClientProvider client={queryClient}>
           <LazyMotion features={domAnimation}>
             <ThemeProvider defaultTheme={defaultTheme}>
-              <ThemePresetProvider>
+              <ThemePresetProvider defaultPreset={defaultThemePreset}>
+                {process.env.NODE_ENV === "development" ? <LocatorDevtools /> : null}
                 {children}
                 <Toaster position="top-right" />
               </ThemePresetProvider>

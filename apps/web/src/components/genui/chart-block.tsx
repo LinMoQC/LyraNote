@@ -16,6 +16,7 @@ interface RawChartData {
   title?: string
   xKey?: string
   yKey?: string
+  yKeys?: string[]
   data?: Record<string, unknown>[]
   items?: Record<string, unknown>[]
 }
@@ -34,7 +35,15 @@ function ChartBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
   const chartItems = raw?.data ?? raw?.items
   if (!raw || !Array.isArray(chartItems)) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
 
-  const { type = "bar", title, xKey = "name", yKey = "value" } = raw
+  const { type = "bar", title, xKey = "name" } = raw
+
+  // Detect y-keys: explicit yKeys array > explicit yKey > auto-detect numeric keys
+  const autoYKeys = raw.yKeys ??
+    (raw.yKey
+      ? [raw.yKey]
+      : Object.keys(chartItems[0] ?? {}).filter((k) => k !== xKey && typeof chartItems[0][k] === "number"))
+  const yKeys = autoYKeys.length > 0 ? autoYKeys : ["value"]
+  const yKey = yKeys[0]
   const data = { type, title, xKey, yKey, data: chartItems }
 
   return (
@@ -55,7 +64,10 @@ function ChartBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
             <XAxis dataKey={xKey} tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 11 }} />
             <YAxis tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 11 }} />
             <Tooltip contentStyle={{ background: "#1e1e2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-            <Area type="monotone" dataKey={yKey} fill="#6366f1" fillOpacity={0.3} stroke="#6366f1" />
+            {yKeys.length > 1 && <Legend />}
+            {yKeys.map((k, i) => (
+              <Area key={k} type="monotone" dataKey={k} fill={COLORS[i % COLORS.length]} fillOpacity={0.3} stroke={COLORS[i % COLORS.length]} />
+            ))}
           </AreaChart>
         ) : type === "line" ? (
           <LineChart data={data.data}>
@@ -63,7 +75,10 @@ function ChartBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
             <XAxis dataKey={xKey} tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 11 }} />
             <YAxis tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 11 }} />
             <Tooltip contentStyle={{ background: "#1e1e2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-            <Line type="monotone" dataKey={yKey} stroke="#6366f1" strokeWidth={2} dot={{ fill: "#6366f1" }} />
+            {yKeys.length > 1 && <Legend />}
+            {yKeys.map((k, i) => (
+              <Line key={k} type="monotone" dataKey={k} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ fill: COLORS[i % COLORS.length] }} />
+            ))}
           </LineChart>
         ) : (
           <BarChart data={data.data}>
@@ -71,9 +86,17 @@ function ChartBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
             <XAxis dataKey={xKey} tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 11 }} />
             <YAxis tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 11 }} />
             <Tooltip contentStyle={{ background: "#1e1e2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-            <Bar dataKey={yKey} radius={[4, 4, 0, 0]}>
-              {data.data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-            </Bar>
+            {yKeys.length > 1 && <Legend />}
+            {yKeys.length > 1
+              ? yKeys.map((k, i) => (
+                  <Bar key={k} dataKey={k} fill={COLORS[i % COLORS.length]} radius={[4, 4, 0, 0]} />
+                ))
+              : (
+                  <Bar dataKey={yKey} radius={[4, 4, 0, 0]}>
+                    {data.data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Bar>
+                )
+            }
           </BarChart>
         )}
       </ResponsiveContainer>

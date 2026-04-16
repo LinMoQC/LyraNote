@@ -30,6 +30,7 @@ type Props = {
   liveAgentSteps?: AgentEvent[];
   onInsert?: (content: string) => void | Promise<void>;
   onInsertMindMap?: (data: MindMapData) => void;
+  onFollowUp?: (q: string) => void;
 };
 
 function buildReferencesBlock(citations: NonNullable<Message["citations"]>): string {
@@ -67,6 +68,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({
   liveAgentSteps = [],
   onInsert,
   onInsertMindMap,
+  onFollowUp,
 }: Props) {
   const t = useTranslations("copilot");
   const { user } = useAuth();
@@ -172,7 +174,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({
                   ) : (
                     <MarkdownContent content={textContent} citations={message.citations} />
                   )}
-                  {choices && <ChoiceCards choices={choices} onSelect={(q) => onInsert?.(q)} />}
+                  {choices && <ChoiceCards choices={choices} onSelect={(q) => onFollowUp?.(q)} />}
                   {isStreaming && <StreamingEllipsis />}
                 </div>
               )}

@@ -4,49 +4,82 @@ export default function NotebookLoading() {
       {/* ── TopBar skeleton (breadcrumb + ... menu) ──────────────── */}
       <div className="flex h-10 flex-shrink-0 items-center border-b border-border/20 bg-card/10 px-3">
         <div className="flex flex-1 items-center gap-1.5">
-          <div className="h-6 w-16 animate-pulse rounded-md bg-muted/40" />
+          <div className="h-5 w-10 animate-pulse rounded-md bg-muted/40" />
           <span className="text-muted-foreground/20 text-xs">/</span>
-          <div className="h-5 w-32 animate-pulse rounded-md bg-muted/40" />
+          <div className="h-5 w-16 animate-pulse rounded-md bg-muted/40" />
+          <span className="text-muted-foreground/20 text-xs">/</span>
+          <div className="h-5 w-36 animate-pulse rounded-md bg-muted/40" />
         </div>
         <div className="h-7 w-7 animate-pulse rounded-md bg-accent/40" />
       </div>
 
       {/* ── Body ─────────────────────────────────────────────────── */}
       <div className="relative flex flex-1 overflow-hidden">
-        {/* Editor area — full width (matches floating-mode layout) */}
-        <div className="flex flex-1 flex-col items-center overflow-hidden px-8 py-10">
-          <div className="w-full max-w-3xl space-y-5">
-            {/* Title */}
-            <div className="h-9 w-2/3 animate-pulse rounded-lg bg-muted/50" />
-            <div className="h-px w-full bg-muted/40" />
-            {/* Paragraphs */}
-            {[100, 88, 95, 72, 90, 65, 80, 55, 78].map((w, i) => (
+        {/* Editor area */}
+        <div className="flex flex-1 flex-col items-center overflow-hidden px-8 pt-20 pb-10">
+          <div className="w-full max-w-3xl space-y-4">
+            {/* Large title — two lines like the actual h1 */}
+            <div className="h-10 w-full animate-pulse rounded-lg bg-muted/50" />
+            <div className="h-10 w-3/4 animate-pulse rounded-lg bg-muted/50" style={{ animationDelay: "60ms" }} />
+
+            <div className="h-6" />
+
+            {/* Section heading */}
+            <div className="h-6 w-2/5 animate-pulse rounded-md bg-muted/45" style={{ animationDelay: "120ms" }} />
+
+            {/* Paragraph lines */}
+            {[100, 92, 88, 96].map((w, i) => (
               <div
                 key={i}
-                className="animate-pulse rounded bg-muted/50"
-                style={{
-                  height: 14,
-                  width: `${w}%`,
-                  animationDelay: `${i * 60}ms`,
-                }}
+                className="animate-pulse rounded bg-muted/40"
+                style={{ height: 13, width: `${w}%`, animationDelay: `${(i + 3) * 60}ms` }}
               />
             ))}
+
             <div className="h-4" />
-            {[92, 80, 70, 85, 60].map((w, i) => (
+
+            {/* Section heading */}
+            <div className="h-6 w-1/2 animate-pulse rounded-md bg-muted/45" style={{ animationDelay: "360ms" }} />
+
+            {/* Paragraph lines */}
+            {[100, 95, 82, 90, 70].map((w, i) => (
               <div
                 key={i + 10}
-                className="animate-pulse rounded bg-muted/50"
-                style={{
-                  height: 14,
-                  width: `${w}%`,
-                  animationDelay: `${(i + 9) * 60}ms`,
-                }}
+                className="animate-pulse rounded bg-muted/40"
+                style={{ height: 13, width: `${w}%`, animationDelay: `${(i + 7) * 60}ms` }}
+              />
+            ))}
+
+            <div className="h-4" />
+
+            {/* Section heading */}
+            <div className="h-6 w-2/5 animate-pulse rounded-md bg-muted/45" style={{ animationDelay: "720ms" }} />
+
+            {/* Paragraph lines */}
+            {[100, 88, 95, 78, 85, 60].map((w, i) => (
+              <div
+                key={i + 20}
+                className="animate-pulse rounded bg-muted/40"
+                style={{ height: 13, width: `${w}%`, animationDelay: `${(i + 13) * 60}ms` }}
               />
             ))}
           </div>
         </div>
 
-        {/* Floating Copilot orb skeleton — keeps the loading state calm */}
+        {/* ── Right TOC panel skeleton ──────────────────────────── */}
+        <div className="hidden w-44 flex-shrink-0 border-l border-border/15 px-3 py-4 xl:flex xl:flex-col">
+          <div className="space-y-2.5">
+            {[80, 90, 75, 85, 65].map((w, i) => (
+              <div
+                key={i}
+                className="animate-pulse rounded bg-muted/40"
+                style={{ height: 11, width: `${w}%`, animationDelay: `${i * 80}ms` }}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Floating Copilot orb skeleton */}
         <div
           data-testid="notebook-loading-orb"
           className="pointer-events-none fixed bottom-6 right-6 z-10 flex h-12 w-12 items-center justify-center"
@@ -64,5 +97,5 @@ export default function NotebookLoading() {
         </div>
       </div>
     </div>
-  );
+  )
 }

@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import { setLocale } from "@/i18n/actions";
 import type { Locale } from "@/i18n/request";
@@ -13,12 +13,15 @@ export function GeneralSection() {
   const locale = useLocale();
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const [fontSize, setFontSize] = useState(() =>
-    typeof window !== "undefined" ? localStorage.getItem("editor-font-size") ?? "14" : "14"
-  );
-  const [autoSave, setAutoSave] = useState(() =>
-    typeof window !== "undefined" ? localStorage.getItem("auto-save") !== "false" : true
-  );
+  const [fontSize, setFontSize] = useState("14");
+  const [autoSave, setAutoSave] = useState(true);
+
+  useEffect(() => {
+    const fs = localStorage.getItem("editor-font-size");
+    if (fs != null && fs !== "") setFontSize(fs);
+    const raw = localStorage.getItem("auto-save");
+    if (raw !== null) setAutoSave(raw !== "false");
+  }, []);
 
   function handleLangChange(v: string) {
     startTransition(async () => {

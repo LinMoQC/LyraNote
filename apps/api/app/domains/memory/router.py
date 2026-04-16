@@ -8,6 +8,7 @@ Endpoints:
   PUT    /memory/{id}         Correct a memory value
   DELETE /memory/{id}         Delete a memory entry
   POST   /memory/reset        Delete all memories (GDPR-friendly)
+  POST   /memory/backfill     Re-extract memories from all existing conversations
 """
 
 from uuid import UUID
@@ -230,6 +231,41 @@ async def reset_memories(db: DbDep, current_user: CurrentUser) -> None:
     )
     for memory in result.scalars().all():
         await db.delete(memory)
+
+
+@router.post("/memory/backfill", response_model=ApiResponse[dict])
+async def backfill_memories(db: DbDep, current_user: CurrentUser) -> ApiResponse[dict]:
+    """Re-run memory extraction over all existing conversations for the current user.
+
+    Useful when a user's conversation history predates the extraction pipeline,
+    or when extraction silently failed for earlier conversations.
+    """
+    import asyncio
+
+    from app.models import Conversation
+
+    result = await db.execute(
+        select(Conversation.id).where(Conversation.user_id == current_user.id)
+    )
+    conversation_ids = [row[0] for row in result.all()]
+
+    if not conversation_ids:
+        return success({"queued": 0, "message": "没有可处理的对话"})
+
+    async def _run_backfill() -> None:
+        from app.agents.memory import extract_memories
+        from app.database import AsyncSessionLocal
+
+        for conv_id in conversation_ids:
+            try:
+                async with AsyncSessionLocal() as session:
+                    await extract_memories(conv_id, current_user.id, session)
+                    await session.commit()
+            except Exception:
+                pass
+
+    asyncio.create_task(_run_backfill())
+    return success({"queued": len(conversation_ids), "message": f"已开始处理 {len(conversation_ids)} 条对话"})
 
 
 # ---------------------------------------------------------------------------

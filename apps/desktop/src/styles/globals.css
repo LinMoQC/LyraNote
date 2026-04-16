@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables */
+:root {
+  --color-bg-base: #111113;
+  --color-bg-elevated: #1a1a1f;
+  --color-bg-overlay: #222228;
+  --color-bg-subtle: #2a2a32;
+  --color-bg-hover: #303038;
+
+  --color-border: rgba(255, 255, 255, 0.06);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
+
+  --color-text-primary: rgba(255, 255, 255, 0.92);
+  --color-text-secondary: rgba(255, 255, 255, 0.55);
+  --color-text-tertiary: rgba(255, 255, 255, 0.32);
+
+  --color-accent: #3b82f6;
+  --color-accent-hover: #60a5fa;
+  --color-accent-muted: rgba(59, 130, 246, 0.15);
+
+  --color-green: #4ade80;
+  --color-red: #f87171;
+  --color-yellow: #fbbf24;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: "SF Mono", "Fira Code", monospace;
+}
+
+/* Utilities */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Base */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: transparent;
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+/* App root — vibrancy background */
+#root {
+  background: transparent;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
+
+/* Drag regions */
+.drag-region  { -webkit-app-region: drag; }
+.no-drag      { -webkit-app-region: no-drag; }
+
+/* ── Tiptap Editor ───────────────────────────────── */
+.tiptap { outline: none; font-size: 16px; line-height: 1.8; color: var(--color-text-primary); }
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+.tiptap h1 { font-size: 2em; font-weight: 700; margin: 1.2em 0 0.4em; }
+.tiptap h2 { font-size: 1.5em; font-weight: 600; margin: 1em 0 0.4em; }
+.tiptap h3 { font-size: 1.25em; font-weight: 600; margin: 0.8em 0 0.3em; }
+.tiptap ul, .tiptap ol { padding-left: 1.5em; margin: 0.5em 0; }
+.tiptap li { margin: 0.2em 0; }
+.tiptap blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 1em;
+  margin: 1em 0;
+  color: var(--color-text-secondary);
+}
+.tiptap code {
+  background: var(--color-bg-subtle);
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.tiptap pre {
+  background: var(--color-bg-subtle);
+  border-radius: var(--radius-md);
+  padding: 1em 1.2em;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+.tiptap pre code { background: none; padding: 0; font-size: 0.9em; }
+.tiptap hr { border: none; border-top: 1px solid var(--color-border); margin: 1.5em 0; }
+.tiptap mark { background: rgba(59,130,246,0.25); color: inherit; border-radius: 2px; padding: 0 2px; }
+.tiptap a { color: var(--color-accent); text-decoration: underline; text-underline-offset: 2px; }
+.tiptap ul[data-type="taskList"] { list-style: none; padding: 0; }
+.tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 8px; }
+.tiptap ul[data-type="taskList"] li > label { flex-shrink: 0; margin-top: 4px; }
+.tiptap ul[data-type="taskList"] li > div { flex: 1; }
+
+/* ── Select (override native chrome) ─────────────────── */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='rgba(255,255,255,0.35)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px !important;
+  cursor: pointer;
+}
+select option {
+  background: var(--color-bg-overlay);
+  color: var(--color-text-primary);
+}

@@ -73,7 +73,7 @@ function NotebookMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute right-2.5 top-2.5 z-10"
+      className="absolute right-1.5 top-1.5 z-10 sm:right-2 sm:top-2"
       onMouseEnter={show}
       onMouseLeave={hide}
     >
@@ -84,14 +84,14 @@ function NotebookMenu({
           e.stopPropagation();
           setOpen((prev) => !prev);
         }}
-        className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground/70 opacity-100 transition-all hover:bg-accent hover:text-foreground sm:h-7 sm:w-7 sm:opacity-0 sm:group-hover:opacity-100"
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/60 opacity-100 transition-all hover:bg-accent/80 hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100"
       >
-        <MoreHorizontal size={14} />
+        <MoreHorizontal size={16} />
       </button>
 
       {open && (
         <div
-          className="absolute right-0 top-9 w-36 overflow-hidden rounded-2xl border border-border/50 bg-card p-1 shadow-2xl shadow-black/60 backdrop-blur-xl"
+          className="absolute right-0 top-8 w-36 overflow-hidden rounded-lg border border-border/40 bg-card p-1 shadow-md shadow-black/10"
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -302,7 +302,7 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block h-full">
-        <article className="group relative flex min-h-[180px] max-h-[280px] cursor-pointer flex-col overflow-hidden rounded-[24px] border border-border/50 bg-card shadow-sm transition-all duration-200 hover:border-border/80 hover:shadow-lg sm:min-h-0 sm:h-[200px] sm:max-h-[200px] sm:rounded-2xl">
+        <article className="group relative flex h-full min-h-[160px] cursor-pointer flex-col overflow-hidden rounded-xl border border-border/40 bg-card shadow-sm transition-all duration-150 hover:bg-accent/30 hover:border-border/60 sm:min-h-[180px] sm:rounded-lg">
           <NotebookMenu
             isPublic={notebook.isPublic}
             onRename={() => setEditOpen(true)}
@@ -311,48 +311,50 @@ export const NotebookCard = memo(function NotebookCard({ notebook }: { notebook:
           />
 
           {/* Top area with icon */}
-          <div className="flex items-center gap-3 px-4 pb-1.5 pt-4 sm:pt-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted/60 sm:h-10 sm:w-10">
-              <Icon size={22} />
+          <div className="flex items-center gap-3 px-4 pb-1 pt-4 sm:pt-3">
+            <div className="flex h-8 w-8 items-center justify-center">
+              <Icon size={28} className="text-foreground/90" />
             </div>
-            {notebook.isPublic && (
-              <div className="ml-auto flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
-                <Globe size={9} />
-                {t("publishedBadge")}
-              </div>
-            )}
           </div>
 
           {/* Body */}
-          <div className="flex flex-1 flex-col px-4 pb-3 pt-1.5 min-h-0">
-            <h3 className="line-clamp-1 text-base font-semibold text-foreground sm:text-sm">
-              {notebook.title}
-            </h3>
+          <div className="flex flex-1 flex-col px-4 pb-3.5 pt-1 min-h-0">
+            <div className="flex items-center gap-2 pr-6">
+              <h3 className="line-clamp-1 text-[15px] font-medium text-foreground sm:text-[14px]">
+                {notebook.title}
+              </h3>
+              {notebook.isPublic && (
+                <div className="flex flex-shrink-0 items-center gap-1 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                  <Globe size={10} />
+                  {t("publishedBadge")}
+                </div>
+              )}
+            </div>
 
             {notebook.summary ? (
-              <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground/70 sm:line-clamp-2 sm:text-xs">
+              <p className="mt-1.5 line-clamp-2 shrink-0 text-[13px] leading-[1.5] text-muted-foreground/80 sm:text-xs">
                 {notebook.summary}
               </p>
             ) : (
-              <p className="mt-1 line-clamp-1 text-xs italic text-muted-foreground/35 sm:text-[11px]">{t("noSummary")}</p>
+              <p className="mt-1.5 line-clamp-1 shrink-0 text-xs italic text-muted-foreground/40 sm:text-[11px]">{t("noSummary")}</p>
             )}
 
-            {/* Footer stats */}
-            <div className="mt-auto flex items-center gap-2.5 border-t border-border/20 pt-2.5">
-              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/50">
-                <FileText size={10} className="opacity-60" />
+            {/* Properties */}
+            <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-3 pb-0.5">
+              <div className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/60">
+                <FileText size={12} className="opacity-70" />
                 {t("sourceCount", { count: notebook.sourceCount })}
-              </span>
-              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/50">
-                <BookOpen size={10} className="opacity-60" />
+              </div>
+              <div className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/60">
+                <BookOpen size={12} className="opacity-70" />
                 {t("noteCount", { count: notebook.noteCount })}
-              </span>
-              <span className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-muted-foreground/50">
-                <Hash size={10} className="opacity-60" />
+              </div>
+              <div className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground/60">
+                <Hash size={12} className="opacity-70" />
                 {notebook.wordCount >= 1000
                   ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
                   : t("wordCount", { count: notebook.wordCount })}
-              </span>
+              </div>
             </div>
           </div>
         </article>
@@ -396,40 +398,45 @@ export const NotebookListRow = memo(function NotebookListRow({ notebook }: { not
   return (
     <>
       <Link href={`/app/notebooks/${notebook.id}`} className="block">
-        <article className="group relative flex min-h-[144px] cursor-pointer items-start gap-4 rounded-[28px] border border-border/40 bg-card/80 px-5 py-5 shadow-sm transition-colors hover:border-border/60 hover:bg-card sm:min-h-0 sm:items-center sm:rounded-xl sm:border-transparent sm:bg-transparent sm:px-3 sm:py-2.5 sm:shadow-none sm:hover:bg-accent sm:hover:border-border/40">
-          <div className="mt-0.5 flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-2xl bg-muted/50 sm:mt-0 sm:h-9 sm:w-9 sm:rounded-xl">
-            <Icon size={24} className="sm:hidden" />
-            <Icon size={20} className="hidden sm:block" />
+        <article className="group relative flex min-h-[120px] cursor-pointer items-start gap-3.5 rounded-xl border border-border/40 bg-card px-4 py-4 shadow-sm transition-colors hover:bg-accent/30 hover:border-border/60 sm:min-h-0 sm:items-center sm:rounded-md sm:border-transparent sm:bg-transparent sm:px-2.5 sm:py-2.5 sm:shadow-none sm:hover:bg-accent/60 sm:hover:border-transparent">
+          <div className="mt-0.5 flex h-9 w-9 flex-shrink-0 items-center justify-center sm:mt-0 sm:h-8 sm:w-8">
+            <Icon size={28} className="sm:hidden text-foreground/90" />
+            <Icon size={24} className="hidden sm:block text-foreground/90" />
           </div>
           <div className="min-w-0 flex-1 pr-10 sm:pr-0">
             <div className="flex items-center gap-2">
-              <p className="truncate text-[15px] font-semibold text-foreground sm:text-sm sm:font-medium">{notebook.title}</p>
+              <p className="truncate text-[15px] font-medium text-foreground sm:text-[14px]">{notebook.title}</p>
               {notebook.isPublic && (
-                <Globe size={11} className="flex-shrink-0 text-primary/60" />
+                <div className="flex items-center gap-1 rounded bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400">
+                  <Globe size={10} />
+                  <span className="hidden sm:inline">{t("publishedBadge")}</span>
+                </div>
               )}
             </div>
             {notebook.summary ? (
-              <p className="mt-2 line-clamp-2 text-[13px] leading-6 text-muted-foreground/65 sm:hidden">
+              <p className="mt-1 line-clamp-1 text-[13px] text-muted-foreground/80 sm:hidden">
                 {notebook.summary}
               </p>
             ) : (
-              <p className="mt-2 text-[13px] italic text-muted-foreground/35 sm:hidden">{t("noSummary")}</p>
+              <p className="mt-1 text-[13px] italic text-muted-foreground/40 sm:hidden">{t("noSummary")}</p>
             )}
-            <div className="mt-4 flex items-center gap-2.5 text-[11px] text-muted-foreground/55 sm:mt-0">
-              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-                <FileText size={10} className="opacity-60" />
+            
+            {/* Properties row */}
+            <div className="mt-3 flex items-center gap-4 overflow-hidden sm:mt-0.5 sm:gap-4">
+              <div className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground/70 sm:text-[11px]">
+                <FileText size={12} className="opacity-60" />
                 {t("sourceCount", { count: notebook.sourceCount })}
-              </span>
-              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-                <BookOpen size={10} className="opacity-60" />
+              </div>
+              <div className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground/70 sm:text-[11px]">
+                <BookOpen size={12} className="opacity-60" />
                 {t("noteCount", { count: notebook.noteCount })}
-              </span>
-              <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
-                <Hash size={10} className="opacity-60" />
+              </div>
+              <div className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground/70 sm:text-[11px]">
+                <Hash size={12} className="opacity-60" />
                 {notebook.wordCount >= 1000
                   ? t("wordCountK", { count: (notebook.wordCount / 1000).toFixed(1) })
                   : t("wordCount", { count: notebook.wordCount })}
-              </span>
+              </div>
             </div>
           </div>
           <NotebookMenu
@@ -464,12 +471,12 @@ export function NewNotebookCard({ onClick }: { onClick?: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex min-h-[180px] max-h-[280px] w-full cursor-pointer flex-col items-center justify-center gap-2.5 rounded-[24px] border border-dashed border-border/50 bg-muted/20 transition-all duration-200 hover:border-border/80 hover:bg-muted/50 sm:min-h-0 sm:h-[200px] sm:max-h-[200px] sm:rounded-2xl"
+      className="group flex h-full min-h-[160px] w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/50 bg-transparent transition-all hover:bg-accent/30 sm:min-h-[180px] sm:rounded-lg"
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/15 text-primary transition-all duration-200 group-hover:scale-110 group-hover:bg-primary/25">
-        <Plus size={20} />
+      <div className="flex h-8 w-8 items-center justify-center text-muted-foreground transition-all group-hover:text-foreground">
+        <Plus size={24} />
       </div>
-      <span className="text-xs text-muted-foreground/70 transition-colors group-hover:text-muted-foreground">
+      <span className="text-[13px] font-medium text-muted-foreground transition-colors group-hover:text-foreground">
         {tc("newNotebook")}
       </span>
     </button>

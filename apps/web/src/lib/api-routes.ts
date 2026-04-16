@@ -151,6 +151,8 @@ export const AI = {
   POLISH: "/ai/polish",
   /** POST - 创建深度研究任务 */
   DEEP_RESEARCH: "/ai/deep-research",
+  /** POST - 生成研究计划（同步，不创建任务） */
+  DEEP_RESEARCH_PLAN: "/ai/deep-research/plan",
   /** POST - 深度研究前置澄清问题 */
   DEEP_RESEARCH_CLARIFY: "/ai/deep-research/clarify",
   /** GET - 深度研究任务状态 */

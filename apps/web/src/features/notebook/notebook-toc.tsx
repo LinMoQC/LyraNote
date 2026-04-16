@@ -165,14 +165,14 @@ export function NotebookTOC({
   };
 
   // Auto-scroll TOC container to keep active item in view
+  // Use manual scrollTop instead of scrollIntoView to avoid bubbling up to parent scroll containers
   useEffect(() => {
     if (!activeId || !containerRef.current) return;
-    const activeEl = containerRef.current.querySelector(`[data-active="true"]`);
+    const activeEl = containerRef.current.querySelector(`[data-active="true"]`) as HTMLElement | null;
     if (activeEl) {
-      activeEl.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+      const container = containerRef.current;
+      const targetScrollTop = activeEl.offsetTop - container.clientHeight / 2 + activeEl.offsetHeight / 2;
+      container.scrollTop = Math.max(0, targetScrollTop);
     }
   }, [activeId]);
 
@@ -180,7 +180,7 @@ export function NotebookTOC({
     return (
       <div
         className={cn(
-          "flex flex-col items-center justify-center gap-3 px-4",
+          "font-notebook-ui flex flex-col items-center justify-center gap-3 px-4",
           isSheet ? "w-full" : "w-[200px] h-[200px] border-l border-border/20",
         )}
         data-testid={`notebook-toc-${variant}`}
@@ -188,7 +188,7 @@ export function NotebookTOC({
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/30">
           <AlignLeft size={16} className="text-muted-foreground/30" />
         </div>
-        <p className="text-center text-[12px] font-medium text-muted-foreground/40">
+        <p className="text-center text-[12px] font-normal text-muted-foreground/45">
           {t("tocEmpty")}
         </p>
       </div>
@@ -198,10 +198,10 @@ export function NotebookTOC({
   return (
     <div
       className={cn(
-        "relative flex flex-col transition-all overflow-hidden bg-muted/5 rounded-2xl",
+        "font-notebook-ui relative flex flex-col overflow-hidden rounded-2xl bg-sidebar/30 transition-all",
         isSheet
           ? "w-full max-h-[60vh] px-2"
-          : "w-[200px] border border-border/20 max-h-[45vh] my-12",
+          : "my-12 max-h-[45vh] w-full border border-border/20",
       )}
       data-testid={`notebook-toc-${variant}`}
     >
@@ -211,10 +211,7 @@ export function NotebookTOC({
         className="sidebar-scroll flex-1 overflow-y-auto px-1 pt-4 pb-2"
       >
         <nav className="relative flex flex-col">
-          {/* Hierarchy Trace Line */}
-          {!isSheet && (
-            <div className="absolute left-4.5 top-2 bottom-4 w-[1px] bg-border/20" />
-          )}
+
 
           {headings.map((h) => {
             const isActive = activeId === h.id;
@@ -229,7 +226,7 @@ export function NotebookTOC({
                   h.level === 1 && "pl-5",
                   h.level === 2 && "pl-8",
                   h.level === 3 && "pl-11",
-                  isActive && "bg-violet-400/5",
+                  isActive && "bg-violet-400/10 rounded-sm",
                 )}
               >
                 {/* Active Marker on Line */}
@@ -239,13 +236,13 @@ export function NotebookTOC({
 
                 <span
                   className={cn(
-                    "line-clamp-2 leading-[1.5] transition-all duration-200",
-                    h.level === 1 && "text-[12.5px] font-semibold tracking-tight",
-                    h.level === 2 && "text-[12px] font-medium",
-                    h.level === 3 && "text-[11.5px]",
+                    "line-clamp-2 leading-[1.45] transition-all duration-200",
+                    h.level === 1 && "text-[12px] font-medium tracking-tight",
+                    h.level === 2 && "text-[12px] font-normal",
+                    h.level === 3 && "text-[11.5px] font-normal",
                     isActive
-                      ? "text-foreground translate-x-1"
-                      : "text-muted-foreground/50 group-hover:text-muted-foreground/80 group-hover:translate-x-0.5",
+                      ? "translate-x-1 font-medium text-foreground"
+                      : "text-muted-foreground/55 group-hover:translate-x-0.5 group-hover:text-muted-foreground/85",
                   )}
                 >
                   {h.text}
@@ -257,8 +254,8 @@ export function NotebookTOC({
       </div>
 
       {/* Footer: Progress & Back to Top — Stable Left Alignment */}
-      <div className="flex items-center px-6 pt-4 pb-5 bg-muted/5 border-t border-border/10">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center px-4 pt-4 pb-5 bg-muted/5 border-t border-border/10">
+        <div className="flex items-center gap-1">
           <div className="relative h-4 w-4 flex-shrink-0">
             <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
               <circle cx="8" cy="8" r="6" fill="none" strokeWidth="1.5" className="stroke-muted/15" />
@@ -273,7 +270,7 @@ export function NotebookTOC({
               />
             </svg>
           </div>
-          <span className="text-[11px] font-bold tabular-nums tracking-wider text-muted-foreground/60">
+          <span className="text-[11px] font-medium tabular-nums tracking-wider text-muted-foreground/50">
             {progress}%
           </span>
         </div>
@@ -290,7 +287,7 @@ export function NotebookTOC({
                   const scrollParent = editor?.view.dom.closest(".overflow-y-auto") as HTMLElement | null;
                   scrollParent?.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="flex items-center gap-2 text-muted-foreground/40 transition-colors hover:text-violet-400"
+                className="flex items-center gap-1 text-muted-foreground/40 transition-colors hover:text-violet-400"
               >
                 <div className="flex h-4 w-4 items-center justify-center">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">

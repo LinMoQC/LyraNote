@@ -89,6 +89,10 @@ const INSERT_MENU_WIDTH = 280;
 const HANDLE_SIZE = 30;
 const HANDLE_LEFT = -76;
 const MENU_GAP_X = 28;
+const ACTION_MENU_HEIGHT_EST = 400;
+const SUBMENU_HEIGHT_EST = 380;
+const INSERT_MENU_HEIGHT_EST = 320;
+const MENU_GAP_Y = 12;
 const BLOCK_HIGHLIGHT_PAD_X = 12;
 const BLOCK_HIGHLIGHT_PAD_Y = 4;
 const LIST_MARKER_PAD_X = 18;
@@ -163,17 +167,34 @@ function clampLeft(left: number, width: number) {
   return Math.max(12, Math.min(left, window.innerWidth - width - 12));
 }
 
-function getMenuPositionFromBlockRect(rect: DOMRect, width: number) {
+function clampTop(top: number, height: number) {
+  if (typeof window === "undefined") return top;
+  return Math.max(12, Math.min(top, window.innerHeight - height - 12));
+}
+
+function getMenuPositionFromBlockRect(rect: DOMRect, width: number, height: number = ACTION_MENU_HEIGHT_EST) {
   return {
-    top: Math.max(16, rect.top - 10),
+    top: clampTop(rect.top - 10, height),
     left: clampLeft(rect.left - width - MENU_GAP_X, width),
   };
 }
 
 function getInsertMenuPositionBelowBlock(rect: DOMRect) {
   // Position below the block, left-aligned with the block content
-  const top = rect.bottom + 4;
+  let top = rect.bottom + 4;
   const left = clampLeft(rect.left, INSERT_MENU_WIDTH);
+
+  if (typeof window !== "undefined" && top + INSERT_MENU_HEIGHT_EST > window.innerHeight - MENU_GAP_Y) {
+    // If not enough space below, try above the block
+    const spaceAbove = rect.top - 12;
+    if (spaceAbove > INSERT_MENU_HEIGHT_EST) {
+      top = rect.top - INSERT_MENU_HEIGHT_EST - 4;
+    } else {
+      // If still not enough, just clamp to the bottom
+      top = Math.max(12, window.innerHeight - INSERT_MENU_HEIGHT_EST - MENU_GAP_Y);
+    }
+  }
+
   return { top, left };
 }
 
@@ -238,8 +259,11 @@ export function BlockHandle({ editor, onEditorAction }: Props) {
     setAnchoredBlock({ ...nextBlock });
     const currentDom = resolveBlockDom(nextBlock);
     if (currentDom) {
-      const width = nextMode === "insert" ? INSERT_MENU_WIDTH : ACTION_MENU_WIDTH;
-      setMenuPos(getMenuPositionFromBlockRect(currentDom.getBoundingClientRect(), width));
+      if (nextMode === "insert") {
+        setMenuPos(getInsertMenuPositionBelowBlock(currentDom.getBoundingClientRect()));
+      } else {
+        setMenuPos(getMenuPositionFromBlockRect(currentDom.getBoundingClientRect(), ACTION_MENU_WIDTH));
+      }
     }
     setMenuMode(nextMode);
     setSubmenuMode(null);
@@ -326,8 +350,7 @@ export function BlockHandle({ editor, onEditorAction }: Props) {
       if (menuMode === "insert") {
         setMenuPos(getInsertMenuPositionBelowBlock(anchoredDom.getBoundingClientRect()));
       } else {
-        const width = ACTION_MENU_WIDTH;
-        setMenuPos(getMenuPositionFromBlockRect(anchoredDom.getBoundingClientRect(), width));
+        setMenuPos(getMenuPositionFromBlockRect(anchoredDom.getBoundingClientRect(), ACTION_MENU_WIDTH));
       }
     };
 
@@ -777,7 +800,10 @@ export function BlockHandle({ editor, onEditorAction }: Props) {
               <MenuPanel
                 ref={submenuRef}
                 width={SUBMENU_WIDTH}
-                position={{ top: menuPos.top, left: clampLeft(menuPos.left + ACTION_MENU_WIDTH + 8, SUBMENU_WIDTH) }}
+                position={{
+                  top: clampTop(menuPos.top, SUBMENU_HEIGHT_EST),
+                  left: clampLeft(menuPos.left + ACTION_MENU_WIDTH + 8, SUBMENU_WIDTH),
+                }}
                 data-testid={`block-submenu-${submenuMode}`}
                 motionVariant="fromRight"
               >
