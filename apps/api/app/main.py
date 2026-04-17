@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import json
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,8 +32,9 @@ async def lifespan(app: FastAPI):
     from app.database import engine, AsyncSessionLocal
     from sqlalchemy import text
 
-    async with engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    if settings.database_url.startswith("postgresql"):
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
     # Load persisted config from app_config table into in-memory settings
     from app.domains.setup.router import load_settings_from_db
@@ -112,6 +115,24 @@ async def lifespan(app: FastAPI):
         heartbeat_task = asyncio.create_task(heartbeat_loop("api", heartbeat_stop))
         app.state.api_heartbeat_stop = heartbeat_stop
         app.state.api_heartbeat_task = heartbeat_task
+
+    if settings.is_desktop_runtime and settings.desktop_stdout_events:
+        print(
+            json.dumps(
+                {
+                    "type": "runtime.ready",
+                    "payload": {
+                        "profile": settings.runtime_profile,
+                        "database_url": settings.database_url,
+                        "memory_mode": settings.memory_mode,
+                        "version": app.version,
+                    },
+                    "occurred_at": datetime.now(timezone.utc).isoformat(),
+                },
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
 
     yield
 
@@ -229,6 +250,7 @@ from app.domains.events.router import router as events_router
 from app.domains.monitoring.router import router as monitoring_router
 from app.domains.portrait.router import router as portrait_router
 from app.domains.public_home.router import router as public_home_router
+from app.domains.desktop.router import router as desktop_router
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(setup_router, prefix="/api/v1")
@@ -253,6 +275,7 @@ app.include_router(events_router, prefix="/api/v1")
 app.include_router(monitoring_router, prefix="/api/v1")
 app.include_router(portrait_router, prefix="/api/v1")
 app.include_router(public_home_router, prefix="/api/v1")
+app.include_router(desktop_router, prefix="/api/v1")
 
 
 @app.get("/health")
