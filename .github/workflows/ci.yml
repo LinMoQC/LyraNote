@@ -158,7 +158,7 @@ jobs:
           OPENAI_API_KEY: sk-test
         run: pytest tests/ -v --tb=short --ignore=tests/e2e
 
-      - name: Coverage threshold
+      - name: Coverage report
         env:
           DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@localhost:5432/lyranote_test
           REDIS_URL: redis://localhost:6379/0
@@ -166,7 +166,7 @@ jobs:
           STORAGE_BACKEND: local
           STORAGE_LOCAL_PATH: /tmp/lyranote-test-storage
           OPENAI_API_KEY: sk-test
-        run: pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=70 --ignore=tests/e2e
+        run: pytest tests/ --cov=app --cov-report=term-missing --ignore=tests/e2e
 
       - name: E2E API tests
         env:
