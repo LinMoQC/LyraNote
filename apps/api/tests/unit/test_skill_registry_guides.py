@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from app.agents.memory import build_prompt_context_bundle
 from app.agents.writing.composer import build_system_prompt
 from app.skills.base import MarkdownSkill, SkillBase, SkillMeta
 from app.skills.builtin.read_skill_guide import ReadSkillGuideSkill
@@ -87,22 +88,12 @@ async def test_read_skill_guide_returns_markdown_body(tmp_path: Path, monkeypatc
 @pytest.mark.asyncio
 async def test_build_system_prompt_uses_guide_manifest_instead_of_body(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tool_skill = _DummyToolSkill()
     guide_skill = MarkdownSkill.from_file(_write_skill_file(tmp_path))
 
-    monkeypatch.setattr("app.agents.memory.get_memory_doc_content", lambda: "")
-
-    async def _empty_diary(limit: int = 3) -> str:
-        return ""
-
-    monkeypatch.setattr("app.agents.memory.get_recent_diary_notes", _empty_diary)
-
     prompt = await build_system_prompt(
-        user_memories=[],
-        notebook_summary=None,
-        db=None,
+        build_prompt_context_bundle(scene="chat"),
         active_skills=[tool_skill, guide_skill],
     )
 
@@ -117,29 +108,23 @@ async def test_build_system_prompt_uses_guide_manifest_instead_of_body(
     assert "LyraNote 风格执行纪律" in prompt
     assert "简单问题直接回答" in prompt
     assert "不要把结构化 UI payload、原始 JSON 或工具内部格式直接暴露给用户" in prompt
+    assert "## 额外指导" not in prompt
 
 
 @pytest.mark.asyncio
 async def test_build_system_prompt_groups_user_memories_by_kind(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("app.agents.memory.get_memory_doc_content", lambda: "")
-
-    async def _empty_diary(limit: int = 3) -> str:
-        return ""
-
-    monkeypatch.setattr("app.agents.memory.get_recent_diary_notes", _empty_diary)
-
     prompt = await build_system_prompt(
-        user_memories=[
-            {"key": "preferred_ai_name", "value": "Lyra", "confidence": 0.9, "memory_type": "preference", "memory_kind": "preference"},
-            {"key": "writing_style", "value": "简洁", "confidence": 0.9, "memory_type": "preference", "memory_kind": "preference"},
-            {"key": "professional_background", "value": "AI infra engineer", "confidence": 0.8, "memory_type": "fact", "memory_kind": "profile"},
-            {"key": "current_research_topic", "value": "Agent runtime", "confidence": 0.8, "memory_type": "fact", "memory_kind": "project_state"},
-            {"key": "project_docs_url", "value": "https://example.com/spec", "confidence": 0.8, "memory_type": "fact", "memory_kind": "reference"},
-        ],
-        notebook_summary=None,
-        db=None,
+        build_prompt_context_bundle(
+            scene="chat",
+            user_memories=[
+                {"key": "preferred_ai_name", "value": "Lyra", "confidence": 0.9, "memory_type": "preference", "memory_kind": "preference"},
+                {"key": "writing_style", "value": "简洁", "confidence": 0.9, "memory_type": "preference", "memory_kind": "preference"},
+                {"key": "professional_background", "value": "AI infra engineer", "confidence": 0.8, "memory_type": "fact", "memory_kind": "profile"},
+                {"key": "current_research_topic", "value": "Agent runtime", "confidence": 0.8, "memory_type": "fact", "memory_kind": "project_state"},
+                {"key": "project_docs_url", "value": "https://example.com/spec", "confidence": 0.8, "memory_type": "fact", "memory_kind": "reference"},
+            ],
+        ),
         active_skills=[],
     )
 

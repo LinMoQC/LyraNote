@@ -8,12 +8,13 @@ Pattern:
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import logging
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
@@ -22,8 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import enqueue_after_commit
-from app.exceptions import ConflictError, NotFoundError
+from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models import Chunk, Notebook, Source
+from app.utils.async_tasks import create_logged_task
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +141,11 @@ class SourceService:
         ))
 
     def _dispatch_refresh_summary(self, notebook_id: UUID) -> None:
-        asyncio.create_task(self._refresh_summary_safe(notebook_id))
+        create_logged_task(
+            self._refresh_summary_safe(notebook_id),
+            logger=logger,
+            description=f"refresh notebook summary after source change {notebook_id}",
+        )
 
     async def _refresh_summary_safe(self, notebook_id: UUID) -> None:
         from app.agents.memory import refresh_notebook_summary
@@ -161,15 +167,33 @@ class SourceService:
         self,
         source_id: UUID,
         *,
+        job_kind: str = "import",
+        job_label: str | None = None,
         chunk_size: int | None = None,
         chunk_overlap: int | None = None,
         splitter_type: str | None = None,
         separators: list[str] | None = None,
         min_chunk_size: int | None = None,
     ) -> None:
-        from app.workers.tasks import ingest_source
-
         def _dispatch() -> None:
+            if settings.is_desktop_runtime:
+                from app.services.desktop_runtime_service import desktop_job_manager
+
+                desktop_job_manager.enqueue_source_ingest(
+                    user_id=str(self.user_id),
+                    source_id=str(source_id),
+                    kind=job_kind,
+                    label=job_label or f"索引任务 {source_id}",
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    splitter_type=splitter_type,
+                    separators=separators,
+                    min_chunk_size=min_chunk_size,
+                )
+                return
+
+            from app.workers.tasks import ingest_source
+
             logger.info(
                 "Dispatching ingest_source for source %s (chunk_size=%s, chunk_overlap=%s, splitter_type=%s)",
                 source_id,
@@ -230,7 +254,11 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        self._enqueue_ingestion(source.id)
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="import",
+            job_label=f"索引资料：{filename or '未命名文件'}",
+        )
         await self.db.commit()
 
         return source
@@ -251,7 +279,11 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        self._enqueue_ingestion(source.id)
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="import",
+            job_label=f"索引网页：{title or url}",
+        )
         await self.db.commit()
 
         return source
@@ -305,7 +337,11 @@ class SourceService:
             await self.db.flush()
             await self.db.refresh(source)
 
-            self._enqueue_ingestion(source.id)
+            self._enqueue_ingestion(
+                source.id,
+                job_kind="import",
+                job_label=f"索引网页：{source.title or normalized_url}",
+            )
 
             existing_urls.add(normalized_url)
             created_count += 1
@@ -424,6 +460,8 @@ class SourceService:
 
         self._enqueue_ingestion(
             source.id,
+            job_kind="rechunk",
+            job_label=f"重建索引：{source.title or source.id}",
             chunk_size=size,
             chunk_overlap=overlap,
             splitter_type=splitter_type,
@@ -529,7 +567,11 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        self._enqueue_ingestion(source.id)
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="import",
+            job_label=f"索引资料：{filename or '未命名文件'}",
+        )
         await self.db.commit()
 
         return source
@@ -548,7 +590,71 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        self._enqueue_ingestion(source.id)
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="import",
+            job_label=f"索引网页：{title or url}",
+        )
         await self.db.commit()
+
+        return source
+
+    async def import_global_source_path(
+        self,
+        path: str,
+        *,
+        sha256: str | None = None,
+    ) -> Source:
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            raise NotFoundError("文件不存在")
+        if not file_path.is_file():
+            raise BadRequestError("暂不支持导入目录")
+
+        try:
+            content = file_path.read_bytes()
+        except OSError as exc:
+            raise BadRequestError("无法读取所选文件") from exc
+
+        content_sha256 = sha256
+        if settings.is_desktop_runtime and not content_sha256:
+            content_sha256 = hashlib.sha256(content).hexdigest()
+
+        if settings.is_desktop_runtime:
+            from app.services.desktop_runtime_service import desktop_state_store
+
+            inspection = desktop_state_store.inspect_local_file(
+                user_id=str(self.user_id),
+                path=str(file_path.resolve()),
+                sha256=content_sha256,
+            )
+            existing_source_id = inspection.get("source_id")
+            if inspection["state"] in {"unchanged", "duplicate"} and existing_source_id:
+                try:
+                    existing_source = await self._get_owned_source(UUID(str(existing_source_id)))
+                except (NotFoundError, ValueError):
+                    existing_source = None
+                if existing_source is not None:
+                    desktop_state_store.record_import(
+                        user_id=str(self.user_id),
+                        path=str(file_path.resolve()),
+                        source_id=str(existing_source.id),
+                        title=existing_source.title or file_path.name,
+                        sha256=content_sha256,
+                    )
+                    return existing_source
+
+        source = await self.upload_global_source(file_path.name, content)
+
+        if settings.is_desktop_runtime:
+            from app.services.desktop_runtime_service import desktop_state_store
+
+            desktop_state_store.record_import(
+                user_id=str(self.user_id),
+                path=str(file_path.resolve()),
+                source_id=str(source.id),
+                title=source.title or file_path.name,
+                sha256=content_sha256,
+            )
 
         return source

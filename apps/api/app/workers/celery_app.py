@@ -117,7 +117,7 @@ def _start_heartbeat_thread(component: str) -> None:
 def _on_setup_logger(**_kwargs):
     """Override Celery's default logging with our unified formatter."""
     from app.logging_config import setup_logging
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
 
 
 @worker_process_init.connect
@@ -125,7 +125,7 @@ def _on_worker_init(**_kwargs):
     """Runs in each forked worker process: load DB config (API keys etc.)."""
     from app.logging_config import setup_logging
     from app.workers._helpers import _load_db_settings_sync
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
     _load_db_settings_sync()
     _start_heartbeat_thread("worker")
 
@@ -135,6 +135,6 @@ def _on_beat_init(**_kwargs):
     from app.logging_config import setup_logging
     from app.workers._helpers import _load_db_settings_sync
 
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
     _load_db_settings_sync()
     _start_heartbeat_thread("beat")

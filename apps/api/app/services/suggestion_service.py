@@ -45,12 +45,25 @@ class SuggestionService:
 
     async def get_user_suggestions(self, user_id: UUID) -> list[str]:
         """
-        Read precomputed suggestions from cache.
-        This path never triggers LLM generation.
+        Read cached suggestions, and opportunistically warm the cache on miss.
+        Falls back to static prompts only when no context is available or
+        generation fails.
         """
         payload = await self._read_cached_payload(str(user_id))
         if payload and payload.get("suggestions"):
             return payload["suggestions"]
+
+        try:
+            refreshed = await self.refresh_user_suggestions(user_id)
+        except Exception:
+            logger.exception("Failed to warm suggestions cache for user=%s", user_id)
+            refreshed = False
+
+        if refreshed:
+            payload = await self._read_cached_payload(str(user_id))
+            if payload and payload.get("suggestions"):
+                return payload["suggestions"]
+
         return list(FALLBACK_SUGGESTIONS)
 
     async def refresh_active_user_suggestions(self) -> dict[str, int]:

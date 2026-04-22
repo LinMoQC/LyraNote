@@ -26,6 +26,7 @@ class Notebook(Base):
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cover_emoji: Mapped[str | None] = mapped_column(String(10), nullable=True)
     cover_gradient: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    appearance_settings: Mapped[dict | None] = mapped_column(json_type)
     created_at: Mapped[datetime] = now_col()
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

@@ -95,6 +95,9 @@ async def synthesize_portrait(
     from app.models import AgentReflection, UserMemory, UserPortrait
     from app.providers.llm import chat
     from app.providers.llm import get_utility_model
+    from app.services.memory_service import MemoryService
+
+    await MemoryService(db, user_id).cleanup_runtime_memories()
 
     # ── 1. 加载记忆碎片 ──────────────────────────────────────────────────────
     mem_rows = (

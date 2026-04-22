@@ -5,7 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from app.services.conversation_service import _load_user_memories_safely
+from app.agents.memory import build_prompt_context_bundle
+from app.services.conversation_service import _load_prompt_context_safely
 
 
 class _FakeSession:
@@ -15,29 +16,45 @@ class _FakeSession:
 
 
 @pytest.mark.asyncio
-async def test_load_user_memories_safely_falls_back_to_empty_on_context_error(monkeypatch):
+async def test_load_prompt_context_safely_falls_back_to_empty_bundle_on_error(monkeypatch):
     async def _boom(*_args, **_kwargs):
-        raise RuntimeError("column user_memories.memory_kind does not exist")
+        raise RuntimeError("prompt context exploded")
 
-    monkeypatch.setattr("app.agents.memory.build_memory_context", _boom)
+    monkeypatch.setattr("app.agents.memory.load_prompt_context", _boom)
 
-    result = await _load_user_memories_safely(
+    result = await _load_prompt_context_safely(
+        _FakeSession(),
+        uuid4(),
+        current_query="继续",
+        scene="chat",
+    )
+
+    assert result.scene == "chat"
+    assert result.all_memories == []
+    assert result.portrait is None
+
+
+@pytest.mark.asyncio
+async def test_load_prompt_context_safely_returns_loaded_bundle(monkeypatch):
+    expected = build_prompt_context_bundle(
+        scene="research",
+        user_memories=[{"key": "writing_style", "value": "简洁", "confidence": 0.9}],
+        conversation_summary="older summary",
+    )
+
+    async def _fake_loader(*_args, **_kwargs):
+        return expected
+
+    monkeypatch.setattr("app.agents.memory.load_prompt_context", _fake_loader)
+
+    result = await _load_prompt_context_safely(
         _FakeSession(),
         uuid4(),
         current_query="继续",
         scene="research",
+        include_portrait=True,
     )
 
-    assert result == []
-
-
-@pytest.mark.asyncio
-async def test_load_user_memories_safely_uses_legacy_loader_when_query_missing(monkeypatch):
-    async def _fake_get_user_memories(*_args, **_kwargs):
-        return [{"key": "writing_style", "value": "简洁", "confidence": 0.9}]
-
-    monkeypatch.setattr("app.agents.memory.get_user_memories", _fake_get_user_memories)
-
-    result = await _load_user_memories_safely(_FakeSession(), uuid4())
-
-    assert result == [{"key": "writing_style", "value": "简洁", "confidence": 0.9}]
+    assert result is expected
+    assert result.scene == "research"
+    assert result.all_memories == expected.all_memories

@@ -133,9 +133,19 @@ async def create_deep_research(
     db.add(task)
     await db.commit()
 
-    from app.agents.memory import build_memory_context
+    from app.agents.memory import load_prompt_context
     try:
-        user_memories = await build_memory_context(current_user.id, body.query, db, top_k=5)
+        prompt_context = await load_prompt_context(
+            user_id=current_user.id,
+            query=body.query,
+            db=db,
+            scene="research",
+            notebook_id=notebook_id_uuid,
+            conversation_id=conv.id,
+            include_portrait=False,
+            top_k=5,
+        )
+        user_memories = prompt_context.all_memories
     except Exception as exc:
         logger.warning("Memory context load failed: %s", exc)
         user_memories = []

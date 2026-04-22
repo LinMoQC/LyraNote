@@ -1,4 +1,5 @@
-import asyncio
+import logging
+import re
 from uuid import UUID
 
 from fastapi import APIRouter, status
@@ -8,17 +9,21 @@ from app.dependencies import CurrentUser, DbDep
 from app.exceptions import NotFoundError
 from app.models import Notebook, Note
 from app.schemas.response import ApiResponse, success
+from app.utils.async_tasks import create_logged_task
 from .schemas import NoteCreate, NoteOut, NoteUpdate
 
 router = APIRouter(tags=["notes"])
+logger = logging.getLogger(__name__)
+
+_CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
+_ENGLISH_TOKEN_RE = re.compile(r"[a-zA-Z0-9]+")
 
 
 def _compute_word_count(text: str | None) -> int:
     if not text:
         return 0
-    import re
-    chinese = len(re.findall(r'[\u4e00-\u9fff]', text))
-    english = len(re.findall(r'[a-zA-Z0-9]+', text))
+    chinese = len(_CHINESE_RE.findall(text))
+    english = len(_ENGLISH_TOKEN_RE.findall(text))
     return chinese + english
 
 
@@ -29,8 +34,8 @@ def _dispatch_summary(notebook_id: UUID, content_text: str | None) -> None:
     try:
         from app.workers.tasks import generate_notebook_summary
         generate_notebook_summary.delay(str(notebook_id), content_text)
-    except Exception:
-        pass  # Celery unavailable in dev — skip silently
+    except Exception as exc:
+        logger.debug("Notebook summary dispatch skipped: %s", exc)
 
 
 def _dispatch_note_indexing(note_id: UUID) -> None:
@@ -38,21 +43,21 @@ def _dispatch_note_indexing(note_id: UUID) -> None:
     try:
         from app.workers.tasks import index_note
         index_note.delay(str(note_id))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Note indexing dispatch skipped: %s", exc)
 
 
 async def _refresh_notebook_summary_safe(notebook_id: UUID) -> None:
     """Fire-and-forget: refresh notebook summary from all indexed sources."""
     from app.agents.memory import refresh_notebook_summary
     from app.database import AsyncSessionLocal
-    import logging
+
     try:
         async with AsyncSessionLocal() as session:
             await refresh_notebook_summary(notebook_id, session)
             await session.commit()
     except Exception as exc:
-        logging.getLogger(__name__).debug("Notebook summary refresh skipped: %s", exc)
+        logger.debug("Notebook summary refresh skipped: %s", exc)
 
 
 @router.get("/notebooks/{notebook_id}/notes", response_model=ApiResponse[list[NoteOut]])
@@ -83,7 +88,11 @@ async def create_note(
     await db.flush()
     await db.refresh(note)
     _dispatch_summary(notebook_id, body.content_text)
-    asyncio.create_task(_refresh_notebook_summary_safe(notebook_id))
+    create_logged_task(
+        _refresh_notebook_summary_safe(notebook_id),
+        logger=logger,
+        description=f"refresh notebook summary {notebook_id}",
+    )
     return success(note)
 
 
@@ -110,7 +119,11 @@ async def update_note(
 
     if "content_text" in updates:
         _dispatch_summary(note.notebook_id, updates["content_text"])
-        asyncio.create_task(_refresh_notebook_summary_safe(note.notebook_id))
+        create_logged_task(
+            _refresh_notebook_summary_safe(note.notebook_id),
+            logger=logger,
+            description=f"refresh notebook summary {note.notebook_id}",
+        )
         _dispatch_note_indexing(note.id)
 
     return success(note)

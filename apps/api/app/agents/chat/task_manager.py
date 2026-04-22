@@ -118,12 +118,14 @@ async def run_message_generation(
     trace_id: str | None,
 ) -> None:
     """Run the normal chat agent in the background and persist streaming progress."""
-    from app.agents.core.react_agent import run_agent
-    from app.agents.memory import get_notebook_summary
+    from app.agents.core.react_agent import (
+        classify_agent_execution_route,
+        run_agent,
+    )
     from app.services.conversation_service import (
         ConversationService,
         _extract_genui_from_content,
-        _load_user_memories_safely,
+        _load_prompt_context_safely,
     )
 
     buf = GenerationBuffer()
@@ -171,15 +173,21 @@ async def run_message_generation(
             async with traced_span(db, "chat.history_load", run=run):
                 history = await service._load_history(conversation.id)
 
-            notebook_summary = (
-                await get_notebook_summary(conversation.notebook_id, db)
-                if conversation.notebook_id else None
+            execution_route = classify_agent_execution_route(
+                query=content,
+                attachment_ids=attachment_ids,
+                tool_hint=tool_hint,
             )
+            scene = "research" if execution_route.mode == "multi" else "chat"
             async with traced_span(db, "chat.memory_load", run=run):
-                user_memories = await _load_user_memories_safely(
+                prompt_context = await _load_prompt_context_safely(
                     db,
                     user_id,
                     current_query=content,
+                    scene=scene,
+                    notebook_id=conversation.notebook_id,
+                    conversation_id=conversation.id,
+                    include_portrait=execution_route.mode == "multi",
                 )
             await update_observability_run(
                 db,
@@ -187,8 +195,9 @@ async def run_message_generation(
                 metadata={
                     "model": generation.model,
                     "history_turn_count": len(history),
-                    "memory_count": len(user_memories),
+                    "memory_count": len(prompt_context.all_memories),
                     "attachment_count": len(attachment_ids or []),
+                    "scene": scene,
                 },
             )
 
@@ -250,8 +259,7 @@ async def run_message_generation(
                     user_id=user_id,
                     history=history,
                     db=db,
-                    user_memories=user_memories,
-                    notebook_summary=notebook_summary,
+                    prompt_context=prompt_context,
                     global_search=True if conversation.notebook_id is None else global_search,
                     tool_hint=tool_hint,
                     attachment_ids=attachment_ids,
@@ -399,7 +407,7 @@ async def run_message_generation(
                                 metadata={
                                     **detail_summary,
                                     "tool_call_count": tool_call_count,
-                                    "scene": "research",
+                                    "scene": scene,
                                     "citations_count": len(citations),
                                     "execution_path": execution_path,
                                     "policy_trace": policy_trace,
@@ -415,7 +423,11 @@ async def run_message_generation(
                             )
                             await db.commit()
 
-                        service._dispatch_post_chat_tasks(conversation.id, "research", user_memories)
+                        service._dispatch_post_chat_tasks(
+                            conversation.id,
+                            scene,
+                            prompt_context.all_memories,
+                        )
                         break
 
                     await _persist_event(event)

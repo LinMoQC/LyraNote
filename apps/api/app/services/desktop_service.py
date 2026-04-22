@@ -1,104 +1,58 @@
 from __future__ import annotations
 
-import json
-import uuid
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
-from pathlib import Path
+from uuid import UUID
 
 from app.config import settings
-from app.exceptions import BadRequestError, NotFoundError
-
-
-@dataclass
-class WatchFolderRecord:
-    id: str
-    path: str
-    name: str
-    created_at: str
+from app.services.desktop_agent_service import DesktopAgentService
+from app.services.desktop_knowledge_service import DesktopKnowledgeService
+from app.services.desktop_memory_service import DesktopMemoryService
 
 
 class DesktopService:
+    def __init__(self) -> None:
+        self.agent_service = DesktopAgentService()
+        self.memory_service = DesktopMemoryService()
+
     def get_runtime_status(self) -> dict:
+        memory_status = self.memory_service.get_runtime_memory_status()
         return {
             "profile": settings.runtime_profile,
             "health": "ok",
             "database_url": settings.database_url,
-            "memory_mode": settings.memory_mode,
+            "memory_mode": memory_status["memory_mode"],
+            "memory_dir": memory_status["memory_dir"],
             "stdout_events": settings.desktop_stdout_events,
         }
 
-    def list_jobs(self) -> dict:
-        return {"items": []}
+    def list_jobs(self, *, user_id: str) -> dict:
+        return self.agent_service.list_jobs(user_id=user_id)
 
-    def cancel_job(self, job_id: str) -> dict:
-        return {
-            "cancelled": False,
-            "reason": f"Desktop job queue is not enabled for job '{job_id}' yet.",
-        }
+    def cancel_job(self, *, user_id: str, job_id: str) -> dict:
+        return self.agent_service.cancel_job(user_id=user_id, job_id=job_id)
+
+    def _knowledge_service(self, user_id: str) -> DesktopKnowledgeService:
+        return DesktopKnowledgeService(None, UUID(user_id))
 
     def list_watch_folders(self, *, user_id: str) -> dict:
-        return {"items": [asdict(item) for item in self._read_watch_folders(user_id=user_id)]}
+        return self._knowledge_service(user_id).list_watch_folders()
+
+    def list_recent_imports(self, *, user_id: str) -> dict:
+        return self._knowledge_service(user_id).list_recent_imports()
+
+    def inspect_local_file(
+        self,
+        *,
+        user_id: str,
+        path: str,
+        sha256: str | None = None,
+    ) -> dict:
+        return self._knowledge_service(user_id).inspect_local_file(path=path, sha256=sha256)
 
     def create_watch_folder(self, *, user_id: str, path: str) -> dict:
-        normalized_path = str(Path(path).expanduser().resolve())
-        folder = Path(normalized_path)
-        if not folder.exists():
-            raise BadRequestError("目录不存在")
-        if not folder.is_dir():
-            raise BadRequestError("只能注册目录，不能注册文件")
-
-        items = self._read_watch_folders(user_id=user_id)
-        if any(item.path == normalized_path for item in items):
-            raise BadRequestError("该目录已注册为监听目录")
-
-        record = WatchFolderRecord(
-            id=str(uuid.uuid4()),
-            path=normalized_path,
-            name=folder.name or normalized_path,
-            created_at=datetime.now(timezone.utc).isoformat(),
-        )
-        items.append(record)
-        self._write_watch_folders(user_id=user_id, items=items)
-        return asdict(record)
+        return self._knowledge_service(user_id).create_watch_folder(path=path)
 
     def delete_watch_folder(self, *, user_id: str, folder_id: str) -> None:
-        items = self._read_watch_folders(user_id=user_id)
-        remaining = [item for item in items if item.id != folder_id]
-        if len(remaining) == len(items):
-            raise NotFoundError("监听目录不存在")
-        self._write_watch_folders(user_id=user_id, items=remaining)
+        self._knowledge_service(user_id).delete_watch_folder(folder_id=folder_id)
 
-    def _registry_file(self, *, user_id: str) -> Path:
-        base = settings.desktop_state_dir / "watch-folders"
-        base.mkdir(parents=True, exist_ok=True)
-        return base / f"{user_id}.json"
-
-    def _read_watch_folders(self, *, user_id: str) -> list[WatchFolderRecord]:
-        path = self._registry_file(user_id=user_id)
-        if not path.exists():
-            return []
-
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        items = raw if isinstance(raw, list) else []
-        records: list[WatchFolderRecord] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            try:
-                records.append(
-                    WatchFolderRecord(
-                        id=str(item["id"]),
-                        path=str(item["path"]),
-                        name=str(item["name"]),
-                        created_at=str(item["created_at"]),
-                    )
-                )
-            except KeyError:
-                continue
-        return records
-
-    def _write_watch_folders(self, *, user_id: str, items: list[WatchFolderRecord]) -> None:
-        path = self._registry_file(user_id=user_id)
-        payload = [asdict(item) for item in items]
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    async def import_watch_folder_path(self, *, user_id: str, path: str) -> dict:
+        return await self._knowledge_service(user_id).import_watch_folder_path(path=path)

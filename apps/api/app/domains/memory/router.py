@@ -65,12 +65,13 @@ async def get_memory_doc_endpoint(_current_user: CurrentUser) -> ApiResponse[Mem
 @router.patch("/memory/doc", status_code=status.HTTP_204_NO_CONTENT)
 async def update_memory_doc_endpoint(
     body: MemoryDocUpdate,
-    _current_user: CurrentUser,
+    current_user: CurrentUser,
+    db: DbDep,
 ) -> None:
-    """Overwrite the global AI memory document (write to local file)."""
-    import asyncio
-    from app.agents.memory.file_storage import write_memory_doc
-    await asyncio.to_thread(write_memory_doc, body.content_md)
+    """Overwrite the global AI memory document and sync it to structured memory."""
+    from app.services.memory_service import MemoryService
+
+    await MemoryService(db, current_user.id).update_memory_doc(body.content_md)
 
 
 # ---------------------------------------------------------------------------

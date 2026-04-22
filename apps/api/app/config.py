@@ -91,7 +91,6 @@ class Settings(BaseSettings):
     ai_name: str = ""
     user_occupation: str = ""
     user_preferences: str = ""
-    custom_system_prompt: str = ""
 
     # Memory file storage (file-based, desktop-app friendly)
     # Default: ~/.lyranote/memory/  — override via MEMORY_DIR env var
@@ -118,6 +117,7 @@ class Settings(BaseSettings):
     runtime_profile: Literal["server", "desktop"] = "server"
     desktop_stdout_events: bool = False
     desktop_state_dir_override: str = ""
+    logs_dir_override: str = ""
 
     @property
     def oauth_base_url(self) -> str:
@@ -152,6 +152,12 @@ class Settings(BaseSettings):
         if self.desktop_state_dir_override.strip():
             return Path(self.desktop_state_dir_override).expanduser().resolve()
         return (Path.home() / ".lyranote" / "desktop").resolve()
+
+    @property
+    def logs_dir(self) -> Path:
+        if self.logs_dir_override.strip():
+            return Path(self.logs_dir_override).expanduser().resolve()
+        return (Path(__file__).resolve().parent.parent / "logs").resolve()
 
 
 settings = Settings()

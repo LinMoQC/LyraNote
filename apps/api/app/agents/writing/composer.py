@@ -9,13 +9,16 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Literal
 
+from app.agents.memory.prompt_context import (
+    IDENTITY_MEMORY_KEYS,
+    PromptContextBundle,
+    build_prompt_context_bundle,
+)
+
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
     from app.skills.base import SkillBase
 
 ArtifactType = Literal["summary", "faq", "study_guide", "briefing", "outline"]
-
-_IDENTITY_MEMORY_KEYS = {"preferred_ai_name", "user_role", "communication_tone"}
 
 _CLAUDE_CODE_INSPIRED_GUIDANCE = """## LyraNote 风格执行纪律
 ### 用户可见文本
@@ -40,14 +43,14 @@ _CLAUDE_CODE_INSPIRED_GUIDANCE = """## LyraNote 风格执行纪律
 - 已经确认成功的步骤就直接说明，不要过度防御性地弱化结果
 """
 
-_BASE_SYSTEM_PROMPT_TEMPLATE = """你是 {ai_name}，一位专属 AI 研究助手，帮助用户深入理解和研究笔记本中的资料。
+_BASE_SYSTEM_PROMPT_TEMPLATE = """{role_intro}
 
 ## 工具使用规则
 你拥有一系列真实工具，调用后会直接对用户产生效果。
 工具产生的可视化输出（思维导图、架构图等）已直接展示给用户，你只需简短确认，不要用文字重复工具已完成的输出。
 
 ## 推理规则
-当你决定调用工具时，先用一句话简要说明意图（如"我需要检索知识库确认已有研究"），再执行调用。
+当你决定调用工具时，先用一句话简要说明意图（如"我先查看相关资料"），再执行调用。
 当你决定不调用工具时，直接自然回答即可，无需说明理由。
 多步骤任务时，每一步简要说明当前进展和下一步计划。
 
@@ -91,8 +94,12 @@ _BASE_SYSTEM_PROMPT_TEMPLATE = """你是 {ai_name}，一位专属 AI 研究助�
 - 选择卡片后面不要再写其他内容
 
 不需要检索时请直接、自然地回答，无需引用。
+"""
 
-{custom_addon}"""
+_SCENE_ROLE_INTROS = {
+    "chat": "你是 {ai_name}，一位 AI 笔记助手，帮助用户处理日常问答、知识整理与写作思考。",
+    "research": "你是 {ai_name}，一位专属 AI 研究助手，帮助用户深入理解和研究笔记本中的资料。",
+}
 
 ARTIFACT_PROMPTS: dict[str, str] = {
     "summary": (
@@ -147,7 +154,7 @@ def _format_user_memory_sections(user_memories: list[dict]) -> list[str]:
             continue
         key = str(memory.get("key", "")).strip()
         value = str(memory.get("value", "")).strip()
-        if not key or not value or key in _IDENTITY_MEMORY_KEYS:
+        if not key or not value or key in IDENTITY_MEMORY_KEYS:
             continue
         grouped.setdefault(_resolve_memory_kind(memory), []).append(memory)
 
@@ -186,7 +193,7 @@ _END_OF_PROMPT_REINFORCEMENT = (
 )
 
 
-def _build_static_section(ai_name: str, custom_addon: str) -> str:
+def _build_static_section(ai_name: str, scene: str) -> str:
     """Cacheable behavioral rules — identical across all sessions for a given config.
 
     Contains: identity intro, tool/reasoning/MCP rules, execution discipline.
@@ -194,8 +201,9 @@ def _build_static_section(ai_name: str, custom_addon: str) -> str:
     """
     from app.agents.core.genui_protocol import GENUI_PROTOCOL
 
+    role_intro = _SCENE_ROLE_INTROS.get(scene, _SCENE_ROLE_INTROS["chat"]).format(ai_name=ai_name)
     return "\n".join([
-        _BASE_SYSTEM_PROMPT_TEMPLATE.format(ai_name=ai_name, custom_addon=custom_addon),
+        _BASE_SYSTEM_PROMPT_TEMPLATE.format(role_intro=role_intro),
         _CLAUDE_CODE_INSPIRED_GUIDANCE,
         GENUI_PROTOCOL,
     ])
@@ -203,19 +211,15 @@ def _build_static_section(ai_name: str, custom_addon: str) -> str:
 
 async def _build_dynamic_section(
     *,
+    prompt_context: PromptContextBundle,
     identity_lines: list[str],
     active_skills: "list[SkillBase] | None",
-    user_memories: list[dict] | None,
-    user_portrait: dict | None,
-    notebook_summary: dict | None,
 ) -> str:
     """Per-session context that changes across requests.
 
     Contains: identity overrides, skills, user memory, portrait, notebook context,
     scene instruction.  Appended after the static boundary.
     """
-    from app.config import settings
-
     parts: list[str] = []
 
     # Identity overrides from memory (e.g. preferred name, user role)
@@ -243,56 +247,36 @@ async def _build_dynamic_section(
     except Exception:
         pass
 
-    # Long-term memory (file-based)
-    try:
-        from app.agents.memory import get_memory_doc_content, get_recent_diary_notes
-        memory_content = get_memory_doc_content()
-        if memory_content.strip():
-            parts.append(f"## 关于用户的长期记忆\n{memory_content.strip()}")
-        diary_notes = await get_recent_diary_notes(limit=3)
-        if diary_notes:
-            parts.append(f"## 近期对话摘要\n{diary_notes}")
-    except Exception:
-        pass
+    if prompt_context.conversation_summary:
+        parts.append(f"## 当前会话较早期摘要\n{prompt_context.conversation_summary.strip()}")
 
     # User portrait (pre-loaded by orchestrator)
-    if user_portrait:
+    if prompt_context.portrait:
         try:
             portrait_lines: list[str] = []
-            if identity_summary := user_portrait.get("identity_summary", ""):
+            if identity_summary := prompt_context.portrait.get("identity_summary", ""):
                 portrait_lines.append(identity_summary)
-            if current_focus := user_portrait.get("research_trajectory", {}).get("current_focus", ""):
+            if current_focus := prompt_context.portrait.get("research_trajectory", {}).get("current_focus", ""):
                 portrait_lines.append(f"当前研究重心：{current_focus}")
-            if expertise := user_portrait.get("identity", {}).get("expertise_level", ""):
+            if expertise := prompt_context.portrait.get("identity", {}).get("expertise_level", ""):
                 portrait_lines.append(f"知识水平：{expertise}")
-            if answer_fmt := user_portrait.get("interaction_style", {}).get("answer_format", ""):
+            if answer_fmt := prompt_context.portrait.get("interaction_style", {}).get("answer_format", ""):
                 portrait_lines.append(f"偏好回答格式：{answer_fmt}")
-            if lyra_notes := user_portrait.get("lyra_service_notes", ""):
+            if lyra_notes := prompt_context.portrait.get("lyra_service_notes", ""):
                 portrait_lines.append(f"Lyra 注意：{lyra_notes}")
             if portrait_lines:
                 parts.append("## Lyra 对你的长期认知（用户画像）\n" + "\n".join(portrait_lines))
         except Exception:
             pass
 
-    # Basic user profile from settings
-    occupation = getattr(settings, "user_occupation", "") or ""
-    preferences = getattr(settings, "user_preferences", "") or ""
-    if occupation or preferences:
-        profile_lines = []
-        if occupation:
-            profile_lines.append(f"  - 职业：{occupation}")
-        if preferences:
-            profile_lines.append(f"  - 偏好/兴趣：{preferences}")
-        parts.append("关于用户的基本信息（来自初始化配置）：\n" + "\n".join(profile_lines))
-
     # Structured memory sections from conversation history
-    if user_memories:
-        parts.extend(_format_user_memory_sections(user_memories))
+    if prompt_context.long_term_memories:
+        parts.extend(_format_user_memory_sections(prompt_context.long_term_memories))
 
     # Notebook context
-    if notebook_summary and notebook_summary.get("summary_md"):
-        themes = "、".join(notebook_summary.get("key_themes") or [])
-        nb_ctx = f"当前笔记本研究背景：{notebook_summary['summary_md']}"
+    if prompt_context.notebook_summary and prompt_context.notebook_summary.get("summary_md"):
+        themes = "、".join(prompt_context.notebook_summary.get("key_themes") or [])
+        nb_ctx = f"当前笔记本研究背景：{prompt_context.notebook_summary['summary_md']}"
         if themes:
             nb_ctx += f"\n核心主题：{themes}"
         parts.append(nb_ctx)
@@ -304,13 +288,9 @@ async def _build_dynamic_section(
 
 
 async def build_system_prompt(
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
-    scene_instruction: str | None = None,  # kept for backward compat, unused
-    db: "AsyncSession | None" = None,
+    prompt_context: PromptContextBundle,
     tool_schemas: list[dict] | None = None,
     active_skills: list["SkillBase"] | None = None,
-    user_portrait: dict | None = None,
 ) -> str:
     """Compose a personalised system prompt.
 
@@ -319,48 +299,24 @@ async def build_system_prompt(
     that support prompt caching (Anthropic) split on this marker and apply
     ``cache_control`` to the static block.
     """
-    from app.config import settings
-
-    # Resolve ai_name
-    ai_name = (getattr(settings, "ai_name", "") or "").strip()
-    if not ai_name and db is not None:
-        try:
-            from app.models import AppConfig
-            from sqlalchemy import select as _select
-            _row = (await db.execute(
-                _select(AppConfig).where(AppConfig.key == "ai_name")
-            )).scalar_one_or_none()
-            if _row and _row.value:
-                ai_name = _row.value.strip()
-                try:
-                    settings.ai_name = ai_name
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    if not ai_name:
-        ai_name = "AI 助手"
-
-    custom_system_prompt = getattr(settings, "custom_system_prompt", "") or ""
-    custom_addon = f"\n\n## 额外指导\n{custom_system_prompt}" if custom_system_prompt.strip() else ""
+    ai_name = prompt_context.ai_name or "AI 助手"
 
     # Extract identity overrides from memories (needed by both sections)
     identity_lines: list[str] = []
     preferred_ai_name: str | None = None
     user_role: str | None = None
     communication_tone: str | None = None
-    if user_memories:
-        for mem in user_memories:
-            key = str(mem.get("key", "")).strip()
-            value = str(mem.get("value", "")).strip()
-            if not key or not value:
-                continue
-            if key == "preferred_ai_name":
-                preferred_ai_name = value
-            elif key == "user_role":
-                user_role = value
-            elif key == "communication_tone":
-                communication_tone = value
+    for mem in prompt_context.identity_memories:
+        key = str(mem.get("key", "")).strip()
+        value = str(mem.get("value", "")).strip()
+        if not key or not value:
+            continue
+        if key == "preferred_ai_name":
+            preferred_ai_name = value
+        elif key == "user_role":
+            user_role = value
+        elif key == "communication_tone":
+            communication_tone = value
     if preferred_ai_name:
         ai_name = preferred_ai_name
         identity_lines.append(f"  - 你的名字/称呼：{preferred_ai_name}（用户明确指定，必须用此名称自我介绍）")
@@ -369,13 +325,11 @@ async def build_system_prompt(
     if communication_tone:
         identity_lines.append(f"  - 语气风格：{communication_tone}（所有回复必须体现此语气）")
 
-    static = _build_static_section(ai_name, custom_addon)
+    static = _build_static_section(ai_name, prompt_context.scene)
     dynamic = await _build_dynamic_section(
+        prompt_context=prompt_context,
         identity_lines=identity_lines,
         active_skills=active_skills,
-        user_memories=user_memories,
-        user_portrait=user_portrait,
-        notebook_summary=notebook_summary,
     )
     return static + _STATIC_DYNAMIC_BOUNDARY + dynamic
 
@@ -405,9 +359,7 @@ async def compose_answer(
     query: str,
     chunks: list[dict],
     history: list[dict],
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
-    db: "AsyncSession | None" = None,
+    prompt_context: PromptContextBundle | None = None,
     *,
     extra_graph_context: str | None = None,
 ) -> tuple[str, list[dict]]:
@@ -422,7 +374,7 @@ async def compose_answer(
             if context
             else f"## 结构化知识关联（图谱）\n{eg}"
         )
-    messages = await _build_messages(query, context, history, user_memories, notebook_summary, db)
+    messages = await _build_messages(query, context, history, prompt_context)
     answer = await chat(messages)
     return answer, citations
 
@@ -431,9 +383,7 @@ async def stream_answer(
     query: str,
     chunks: list[dict],
     history: list[dict],
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
-    db: "AsyncSession | None" = None,
+    prompt_context: PromptContextBundle | None = None,
 ) -> AsyncGenerator[dict, None]:
     """
     Streaming: yield dicts of shape:
@@ -444,7 +394,7 @@ async def stream_answer(
     from app.providers.llm import chat_stream
 
     context, citations = _build_context(chunks)
-    messages = await _build_messages(query, context, history, user_memories, notebook_summary, db)
+    messages = await _build_messages(query, context, history, prompt_context)
 
     async for chunk in chat_stream(messages):
         yield chunk
@@ -477,11 +427,10 @@ async def _build_messages(
     query: str,
     context: str,
     history: list[dict],
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
-    db: "AsyncSession | None" = None,
+    prompt_context: PromptContextBundle | None = None,
 ) -> list[dict]:
-    system = await build_system_prompt(user_memories, notebook_summary, db=db)
+    prompt_context = prompt_context or build_prompt_context_bundle(scene="chat")
+    system = await build_system_prompt(prompt_context)
     messages: list[dict] = [{"role": "system", "content": system}]
 
     if context:

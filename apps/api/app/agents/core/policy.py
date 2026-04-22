@@ -9,6 +9,7 @@ scene-specific context budget table and clarification prompt text.
 from __future__ import annotations
 
 _SCENE_CONTEXT_BUDGETS = {
+    "chat": 5000,
     "research": 8000,
     "writing": 5000,
     "learning": 5500,
@@ -17,7 +18,7 @@ _SCENE_CONTEXT_BUDGETS = {
 
 
 def context_budget_for_scene(scene: str) -> int:
-    return _SCENE_CONTEXT_BUDGETS.get(scene, _SCENE_CONTEXT_BUDGETS["research"])
+    return _SCENE_CONTEXT_BUDGETS.get(scene, _SCENE_CONTEXT_BUDGETS["chat"])
 
 
 def build_clarification_prompt(query: str, scene: str) -> str:

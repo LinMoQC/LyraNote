@@ -48,23 +48,16 @@ class UpdateMemoryDocSkill(SkillBase):
         }
 
     async def execute(self, args: dict, ctx: "ToolContext") -> str:
-        import asyncio
-        from app.agents.memory.file_storage import write_memory_doc, sync_memory_doc_to_db
+        from app.services.memory_service import MemoryService
 
         content_md: str = args.get("content_md", "").strip()
         if not content_md:
             return "记忆内容不能为空。"
 
-        await asyncio.to_thread(write_memory_doc, content_md)
-
-        # Always sync MEMORY.md back to DB so the content is available via
-        # build_memory_context() in future conversations (regardless of memory_mode).
         try:
-            synced = await sync_memory_doc_to_db(ctx.user_id, ctx.db, force=True)
-            if synced:
-                await ctx.db.flush()
+            await MemoryService(ctx.db, ctx.user_id).update_memory_doc(content_md)
         except Exception:
-            pass  # File write succeeded; DB sync failure is non-fatal
+            return "记忆文档写入失败，请稍后重试。"
 
         return "已成功更新全局记忆文档。"
 

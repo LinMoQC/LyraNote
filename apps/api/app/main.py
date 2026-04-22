@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.logging_config import setup_logging
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
 
     if not settings.jwt_secret:
         logger.warning(
@@ -29,15 +29,20 @@ async def lifespan(app: FastAPI):
             "will be invalidated on every process restart. Set JWT_SECRET in .env for production."
         )
 
-    from app.database import engine, AsyncSessionLocal
+    from app.database import Base, engine, AsyncSessionLocal
     from sqlalchemy import text
 
-    if settings.database_url.startswith("postgresql"):
+    if settings.is_desktop_runtime and settings.database_url.startswith("sqlite"):
+        from app import models as _models  # noqa: F401
+
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    elif settings.database_url.startswith("postgresql"):
         async with engine.begin() as conn:
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
 
     # Load persisted config from app_config table into in-memory settings
-    from app.domains.setup.router import load_settings_from_db
+    from app.services.config_service import load_settings_from_db
     async with AsyncSessionLocal() as db:
         await load_settings_from_db(db)
 
@@ -86,25 +91,30 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("startup: failed to sync skill_installs (non-fatal)")
 
-    # On startup, immediately expire any sources left stuck in 'processing' / 'pending'
-    # from a previous process crash or restart (belt-and-suspenders alongside the beat task).
-    try:
-        from app.workers.tasks.ingestion import _expire_stuck_sources_impl
+    if not settings.is_desktop_runtime:
+        # On startup, immediately expire any sources left stuck in 'processing' / 'pending'
+        # from a previous process crash or restart (belt-and-suspenders alongside the beat task).
+        try:
+            from app.workers.tasks.ingestion import _expire_stuck_sources_impl
 
-        async with AsyncSessionLocal() as _db:
-            _expired = await _expire_stuck_sources_impl(_db)
-            if _expired:
-                logger.warning("startup: expired %d stuck source(s)", _expired)
-    except Exception:
-        logger.exception("startup: failed to expire stuck sources (non-fatal)")
+            async with AsyncSessionLocal() as _db:
+                _expired = await _expire_stuck_sources_impl(_db)
+                if _expired:
+                    logger.warning("startup: expired %d stuck source(s)", _expired)
+        except Exception:
+            logger.exception("startup: failed to expire stuck sources (non-fatal)")
 
     # Initialize file-based memory storage (create dirs + default MEMORY.md)
     from app.agents.memory.file_storage import init_memory_storage
     init_memory_storage()
 
-    # Start Lyra Soul — persistent background thinking loop
-    from app.agents.soul.soul import soul
-    await soul.start()
+    soul = None
+    if not settings.is_desktop_runtime:
+        # Start Lyra Soul — persistent background thinking loop
+        from app.agents.soul.soul import soul as agent_soul
+
+        soul = agent_soul
+        await soul.start()
 
     heartbeat_task = None
     heartbeat_stop = None
@@ -141,8 +151,9 @@ async def lifespan(app: FastAPI):
     if heartbeat_task is not None:
         await heartbeat_task
 
-    # Shutdown Lyra Soul
-    await soul.stop()
+    if soul is not None:
+        # Shutdown Lyra Soul
+        await soul.stop()
 
 
 app = FastAPI(
@@ -296,18 +307,20 @@ async def health():
         logger.warning("Health check DB failed: %s", e)
         checks["db"] = "error"
 
-    # Redis ping
-    try:
-        import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
-        await r.ping()
-        await r.aclose()
-        checks["redis"] = "ok"
-    except Exception as e:
-        logger.warning("Health check Redis failed: %s", e)
-        checks["redis"] = "error"
+    if settings.is_desktop_runtime:
+        checks["redis"] = "skipped"
+    else:
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.from_url(settings.redis_url, socket_connect_timeout=2)
+            await r.ping()
+            await r.aclose()
+            checks["redis"] = "ok"
+        except Exception as e:
+            logger.warning("Health check Redis failed: %s", e)
+            checks["redis"] = "error"
 
-    all_ok = all(v == "ok" for v in checks.values())
+    all_ok = all(v in {"ok", "skipped"} for v in checks.values())
     payload = {"status": "ok" if all_ok else "degraded", "version": "0.1.0", **checks}
 
     if not all_ok:
