@@ -68,7 +68,7 @@ Required GitHub Secrets:
 
 - `TAURI_SIGNING_PRIVATE_KEY`: content of the Tauri updater private key.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: empty for the current generated key, or the password if the key is regenerated with one.
-- `NPM_TOKEN`: npm token for publishing `@lyranote/cli`.
+- `NPM_TOKEN`: optional; only required if the same release workflow should also publish `@lyranote/cli` to npm.
 
 ## Installed App Updates
 

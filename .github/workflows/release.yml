@@ -170,6 +170,7 @@ jobs:
     name: Publish @lyranote/cli to npm
     runs-on: ubuntu-latest
     needs: prepare-release
+    if: ${{ secrets.NPM_TOKEN != '' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -198,7 +199,6 @@ jobs:
     needs:
       - prepare-release
       - desktop-macos
-      - publish-cli
 
     steps:
       - name: Publish draft release
