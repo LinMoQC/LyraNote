@@ -1,13 +1,13 @@
 "use client";
 
-import { useAuth } from "@/features/auth/auth-provider";
+import { useAuthUser } from "@/features/auth/auth-provider";
 
 export function HomeHero({
   greeting,
   tagline,
   align = "left",
 }: HomeHeroProps) {
-  const { user } = useAuth();
+  const user = useAuthUser();
   const displayName = user?.name?.trim() || user?.username?.trim() || "";
   const isCentered = align === "center";
 

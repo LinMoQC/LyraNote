@@ -2,9 +2,9 @@ import { useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Loader2, Eye, EyeOff, ArrowRight } from "lucide-react"
 import { springs } from "@/lib/animations"
+import { persistDesktopAuthSession } from "@/lib/auth-session"
 import { useAuthStore } from "@/store/use-auth-store"
-import { useServerStore } from "@/store/use-server-store"
-import { http } from "@/lib/http"
+import { getCurrentUser, login } from "@/services/auth-service"
 
 function UnderlineInput({
   value,
@@ -71,7 +71,6 @@ function UnderlineInput({
 
 export function LoginPage() {
   const { setAuth } = useAuthStore()
-  const { clearBaseUrl } = useServerStore()
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
   const [showPwd, setShowPwd] = useState(false)
@@ -83,15 +82,12 @@ export function LoginPage() {
     setError("")
     setLoading(true)
     try {
-      const res = await http.post("/api/v1/auth/login", { username: username.trim(), password })
-      const token: string = res.data.data.access_token
-      const meRes = await http.get("/api/v1/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      setAuth(token, meRes.data.data)
+      const auth = await login(username.trim(), password)
+      const user = await getCurrentUser(auth.access_token)
+      await persistDesktopAuthSession(auth.access_token, user)
+      setAuth(auth.access_token, user)
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setError(msg || "用户名或密码错误")
+      setError((err as Error)?.message || "用户名或密码错误")
     } finally {
       setLoading(false)
     }
@@ -213,18 +209,8 @@ export function LoginPage() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4, ...springs.smooth }}
-          className="flex items-center justify-between"
+          className="flex items-center justify-end"
         >
-          <button
-            onClick={clearBaseUrl}
-            className="text-[11px] transition-colors"
-            style={{ color: "rgba(255,255,255,0.2)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.45)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(255,255,255,0.2)")}
-          >
-            更换服务器
-          </button>
-
           <motion.button
             whileHover={{ scale: 1.04, boxShadow: "0 6px 24px rgba(124,110,247,0.45)" }}
             whileTap={{ scale: 0.95 }}

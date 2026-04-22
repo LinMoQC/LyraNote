@@ -78,7 +78,6 @@ export interface SetupInitPayload {
   ai_name?: string
   user_occupation?: string
   user_preferences?: string
-  custom_system_prompt?: string
 }
 
 /**

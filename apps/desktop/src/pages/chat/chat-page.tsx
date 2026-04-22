@@ -1,31 +1,27 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Plus, Sparkles, Loader2, Copy, ThumbsUp, ThumbsDown, Check, Paperclip } from "lucide-react"
+import { AlignLeft, Plus, Sparkles, Loader2, Copy, ThumbsUp, ThumbsDown, Check, Paperclip } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { DesktopChatInput, type DesktopChatInputHandle, type DesktopChatInputSubmitPayload } from "@/components/chat-input/desktop-chat-input"
+import { DesktopChatInput, type DesktopChatInputHandle } from "@/components/chat-input/desktop-chat-input"
 import { pageVariants, pageTransition, springs, staggerContainer, staggerItem } from "@/lib/animations"
-import { http } from "@/lib/http"
-import { useServerStore } from "@/store/use-server-store"
 import { useAuthStore } from "@/store/use-auth-store"
-import { useChatDraftStore } from "@/store/use-chat-draft-store"
-import { buildMarkdownComponents } from "@/components/genui"
-import { parseMessageContent } from "@/components/message-render/parse-message-content"
-import { MarkdownContent } from "@/components/message-render/markdown-content"
-import { CodeBlock } from "@/components/message-render/code-block"
-
-interface Message {
-  id: string
-  role: "user" | "assistant"
-  content: string
-  attachments?: { name: string; url?: string; isImage?: boolean }[]
-}
-
-interface ConversationItem {
-  id: string
-  title: string | null
-  created_at: string
-}
+import { buildMarkdownComponents } from "@lyranote/ui/genui"
+import {
+  AgentSteps,
+  CitationFooter,
+  CodeBlock,
+  ChoiceCards,
+  DiagramView,
+  ExcalidrawView,
+  MarkdownContent,
+  MCPHTMLView,
+  MCPResultCard,
+  MindMapView,
+  parseMessageContent,
+  ThinkingBubble,
+} from "@lyranote/ui/message-render"
+import { useChatPage } from "@/features/chat/use-chat-page"
 
 const SUGGESTIONS = [
   { icon: <Sparkles size={14} className="text-[var(--color-accent)] opacity-80" />, text: "帮我分析知识库中的核心主题" },
@@ -33,29 +29,6 @@ const SUGGESTIONS = [
   { icon: <Sparkles size={14} className="text-[var(--color-accent)] opacity-80" />, text: "对比不同来源中的相似观点" },
   { icon: <Sparkles size={14} className="text-[var(--color-accent)] opacity-80" />, text: "根据笔记内容生成学习计划" },
 ]
-
-
-
-let msgCounter = 1
-function genMsgId() { return `msg-${msgCounter++}` }
-
-// ── ThinkingDots ─────────────────────────────────────────────────────────────
-
-function ThinkingDots() {
-  return (
-    <div className="flex items-center gap-[5px] py-0.5 h-6">
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="w-[6px] h-[6px] rounded-full"
-          style={{ background: "var(--color-text-tertiary)" }}
-          animate={{ opacity: [0.25, 0.75, 0.25], scale: [0.8, 1.15, 0.8] }}
-          transition={{ duration: 1.1, repeat: Infinity, delay: i * 0.2, ease: "easeInOut" }}
-        />
-      ))}
-    </div>
-  )
-}
 
 // ── StreamingCursor ───────────────────────────────────────────────────────────
 
@@ -81,22 +54,22 @@ function StreamingCursor() {
 interface MessageBodyProps {
   content: string
   isLastStreaming: boolean
+  citations?: import("@/types").CitationData[]
+  onFollowUp?: (q: string) => void
 }
 
-function MessageBody({ content, isLastStreaming }: MessageBodyProps) {
-  const { textContent, needsRichMarkdown } = useMemo(
+function MessageBody({ content, isLastStreaming, citations, onFollowUp }: MessageBodyProps) {
+  const { textContent, choices, needsRichMarkdown } = useMemo(
     () => parseMessageContent(content),
     [content],
   )
 
   const mdComponents = useMemo(
-    () => buildMarkdownComponents({ isMermaidStreaming: isLastStreaming, CodeBlock }),
-    [isLastStreaming],
+    () => buildMarkdownComponents({ citations, isMermaidStreaming: isLastStreaming, CodeBlock }),
+    [citations, isLastStreaming],
   )
 
-  const isThinking = isLastStreaming && !content
-
-  if (isThinking) return <ThinkingDots />
+  if (isLastStreaming && !content) return null
 
   return (
     <>
@@ -107,8 +80,9 @@ function MessageBody({ content, isLastStreaming }: MessageBodyProps) {
           </ReactMarkdown>
         </div>
       ) : (
-        <MarkdownContent content={textContent} />
+        <MarkdownContent content={textContent} citations={citations} />
       )}
+      {choices && onFollowUp && <ChoiceCards choices={choices} onSelect={onFollowUp} />}
       {isLastStreaming && <StreamingCursor />}
     </>
   )
@@ -172,177 +146,35 @@ function CopyButton({ text }: { text: string }) {
 // ── ChatPage ──────────────────────────────────────────────────────────────────
 
 export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
-  const { baseUrl } = useServerStore()
-  const { token } = useAuthStore()
-  const { consumeDraft } = useChatDraftStore()
-  const [conversations, setConversations] = useState<ConversationItem[]>([])
-  const [activeConvId, setActiveConvId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [loadingConvs, setLoadingConvs] = useState(true)
-  const [loadingMsgs, setLoadingMsgs] = useState(false)
-  
+  const {
+    activeConvId,
+    conversations,
+    isStreaming,
+    liveAgentSteps,
+    loadingConvs,
+    loadingMsgs,
+    messages,
+    openConversation,
+    startNewConversation,
+    handleSend,
+    cancelStreaming,
+    lastMessageId,
+  } = useChatPage({ initialMessage, initialDraftId })
   const bottomRef = useRef<HTMLDivElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const didAutoSend = useRef(false)
   const composerRef = useRef<DesktopChatInputHandle>(null)
 
   useEffect(() => { 
-    fetchConversations()
-  }, [])
-
-  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  useEffect(() => {
-    if (initialMessage && !didAutoSend.current && !loadingConvs) {
-      didAutoSend.current = true
-      void handleSend({ content: initialMessage, attachments: [] })
-    }
-  }, [initialMessage, loadingConvs]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (initialDraftId && !didAutoSend.current && !loadingConvs) {
-      const draft = consumeDraft(initialDraftId)
-      if (!draft) return
-      didAutoSend.current = true
-      void handleSend(draft)
-    }
-  }, [consumeDraft, initialDraftId, loadingConvs])
-
-  async function fetchConversations() {
-    setLoadingConvs(true)
-    try {
-      const res = await http.get("/api/v1/conversations")
-      setConversations(res.data.data ?? [])
-    } finally {
-      setLoadingConvs(false)
-    }
-  }
-
-  async function openConversation(conv: ConversationItem) {
-    if (conv.id === activeConvId) return
-    setActiveConvId(conv.id)
-    setMessages([])
-    setLoadingMsgs(true)
-    try {
-      const res = await http.get(`/api/v1/conversations/${conv.id}/messages`)
-      const msgs: Message[] = (res.data.data ?? []).map((m: { id: string; role: string; content: string }) => ({
-        id: m.id,
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }))
-      setMessages(msgs)
-    } finally {
-      setLoadingMsgs(false)
-    }
-  }
-
-  const handleSend = useCallback(async ({ content, attachments }: DesktopChatInputSubmitPayload) => {
-    const trimmedContent = content.trim()
-    if ((!trimmedContent && attachments.length === 0) || isStreaming) return
-
-    setIsStreaming(true)
-
-    let convId = activeConvId
-    if (!convId) {
-      try {
-        const res = await http.post("/api/v1/conversations", { title: trimmedContent.slice(0, 40) })
-        const newConv: ConversationItem = res.data.data
-        convId = newConv.id
-        setActiveConvId(convId)
-        setConversations((prev) => [newConv, ...prev])
-      } catch {
-        setIsStreaming(false)
-        return
-      }
-    }
-
-    // Capture attachments locally before upload block finishes to safely render preview
-    const filesContext = attachments.map((attachment) => ({
-      name: attachment.file.name,
-      url: attachment.previewUrl,
-      isImage: attachment.file.type.startsWith("image/"),
-    }))
-
-    const userMsg: Message = { id: genMsgId(), role: "user", content: trimmedContent, attachments: filesContext }
-    setMessages((m) => [...m, userMsg])
-
-    const serverAttachmentIds = attachments.map((attachment) => attachment.serverId).filter(Boolean) as string[]
-
-    const aiMsgId = genMsgId()
-    setMessages((m) => [...m, { id: aiMsgId, role: "assistant", content: "" }])
-
-    abortRef.current = new AbortController()
-    try {
-      const payload: { content: string; attachments?: string[] } = { content: trimmedContent }
-      if (serverAttachmentIds.length > 0) {
-        payload.attachments = serverAttachmentIds
-      }
-
-      const response = await fetch(`${baseUrl}/api/v1/conversations/${convId}/messages/stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-        signal: abortRef.current.signal,
-      })
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      if (!reader) throw new Error("No response body")
-
-      let buffer = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue
-          const raw = line.slice(5).trim()
-          if (raw === "[DONE]") break
-          try {
-            const evt = JSON.parse(raw)
-            if ((evt.type === "token" || evt.type === "text" || evt.type === "content") && evt.content) {
-              setMessages((m) =>
-                m.map((msg) =>
-                  msg.id === aiMsgId ? { ...msg, content: msg.content + evt.content } : msg
-                )
-              )
-            }
-          } catch { /* ignore malformed */ }
-        }
-      }
-    } catch (err: unknown) {
-      if ((err as Error)?.name !== "AbortError") {
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === aiMsgId ? { ...msg, content: "请求失败，请稍后重试。" } : msg
-          )
-        )
-      }
-    } finally {
-      setIsStreaming(false)
-      abortRef.current = null
-    }
-  }, [isStreaming, activeConvId, baseUrl, token])
-
-  function startNewConversation() {
-    abortRef.current?.abort()
-    setMessages([])
-    setActiveConvId(null)
-    setIsStreaming(false)
+  function handleNewConversation() {
+    startNewConversation()
     composerRef.current?.clear()
     setTimeout(() => composerRef.current?.focus(), 100)
   }
 
   const isEmpty = messages.length === 0
-  const lastMsgId = messages[messages.length - 1]?.id
+  const lastMsgId = lastMessageId
 
   return (
     <motion.div
@@ -362,7 +194,7 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
         <div className="px-4 pt-6 pb-3 shrink-0">
           <motion.button
             whileTap={{ scale: 0.97 }}
-            onClick={startNewConversation}
+            onClick={handleNewConversation}
             className="flex items-center gap-2.5 text-[13px] font-medium transition-colors"
             style={{ color: "var(--color-text-secondary)" }}
             whileHover={{ color: "var(--color-text-primary)" }}
@@ -401,13 +233,13 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
               暂无对话记录
             </p>
           ) : (
-            conversations.map((conv) => {
+            conversations.map((conv: { id: string; title?: string | null }) => {
               const isActive = activeConvId === conv.id
               return (
                 <motion.button
                   key={conv.id}
                   whileTap={{ scale: 0.99 }}
-                  onClick={() => openConversation(conv)}
+                  onClick={() => openConversation(conv.id)}
                   className={`relative w-full text-left px-3 py-[7px] text-[13px] transition-colors duration-100 block overflow-hidden rounded-lg ${
                     isActive
                       ? "bg-white/[0.12]"
@@ -438,7 +270,7 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
       </div>
 
       {/* ── Main chat area ──────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {loadingMsgs ? (
           <div className="flex-1 flex items-center justify-center">
             <Loader2 size={18} className="animate-spin" style={{ color: "var(--color-text-tertiary)" }} />
@@ -532,7 +364,7 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
                             )}
                             {msg.content && (
                               <div
-                                className="px-4 py-3 rounded-[18px] rounded-tr-[5px] text-[13.5px] leading-[1.7] text-white whitespace-pre-wrap"
+                                className="select-text px-4 py-3 rounded-[18px] rounded-tr-[5px] text-[13.5px] leading-[1.7] text-white whitespace-pre-wrap"
                                 style={{ background: "var(--color-accent)" }}
                               >
                                 {msg.content}
@@ -543,16 +375,62 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
                         </div>
                       ) : (
                         /* ── AI message ───────────────────────────── */
+                        <>
+                        {(() => {
+                          const steps = isLastStreaming && liveAgentSteps.length > 0
+                            ? liveAgentSteps
+                            : msg.agentSteps
+                          return steps && steps.length > 0 ? (
+                            <AgentSteps steps={steps} isStreaming={isLastStreaming} defaultOpen={false} className="mb-4" />
+                          ) : null
+                        })()}
                         <div className="flex items-start gap-3">
-                          <AiAvatar />
+                          <div className="relative flex-shrink-0">
+                            <AiAvatar />
+                            {isLastStreaming && (
+                              <div className="absolute bottom-full left-0 mb-2 w-max max-w-[200px]">
+                                <ThinkingBubble steps={liveAgentSteps} />
+                              </div>
+                            )}
+                          </div>
                           <div className="flex-1 min-w-0">
+                            {msg.mode === "offline_cache" && (
+                              <div
+                                className="mb-2 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium text-amber-300"
+                                style={{ borderColor: "rgba(251,191,36,0.28)", background: "rgba(251,191,36,0.08)" }}
+                              >
+                                <AlignLeft size={10} />
+                                本地离线回答
+                              </div>
+                            )}
                             {/* Content */}
                             <div
-                              className="text-[13.5px] leading-[1.75]"
+                              className="select-text text-[13.5px] leading-[1.75]"
                               style={{ color: "var(--color-text-primary)" }}
                             >
-                              <MessageBody content={msg.content} isLastStreaming={isLastStreaming} />
+                              <MessageBody
+                                content={msg.content}
+                                isLastStreaming={isLastStreaming}
+                                citations={msg.citations}
+                                onFollowUp={(q) => void handleSend({ content: q, attachments: [] })}
+                              />
                             </div>
+
+                            {/* Citation footer */}
+                            {msg.citations && msg.citations.length > 0 && (
+                              <CitationFooter citations={msg.citations} content={msg.content} namespace="chat" />
+                            )}
+
+                            {/* Rich attachments: mind map, diagram, MCP results */}
+                            {msg.mindMap && <MindMapView data={msg.mindMap} />}
+                            {msg.diagram && <DiagramView data={msg.diagram} />}
+                            {msg.mcpResult && (
+                              msg.mcpResult.html_content
+                                ? <MCPHTMLView data={msg.mcpResult} />
+                                : msg.mcpResult.tool.includes("excalidraw") && msg.mcpResult.data
+                                  ? <ExcalidrawView data={msg.mcpResult} />
+                                  : <MCPResultCard data={msg.mcpResult} />
+                            )}
 
                             {/* Action bar — shown only when done streaming */}
                             {!isLastStreaming && msg.content && (
@@ -581,6 +459,7 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
                             )}
                           </div>
                         </div>
+                        </>
                       )}
                     </motion.div>
                   )
@@ -599,7 +478,7 @@ export function ChatPage({ initialMessage, initialDraftId }: ChatPageProps) {
               placeholder="向 AI 提问，或描述你想探索的内容…"
               onSubmit={handleSend}
               streaming={isStreaming}
-              onCancel={() => abortRef.current?.abort()}
+              onCancel={cancelStreaming}
             />
           </div>
         </div>

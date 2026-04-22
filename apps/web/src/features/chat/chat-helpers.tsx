@@ -6,7 +6,7 @@
 import { type ReactNode } from "react";
 import { UPLOADS } from "@/lib/api-routes";
 import { http } from "@/lib/http-client";
-export { renderInlineCitations, processChildren } from "@/lib/citation-utils";
+export { renderInlineCitations, processChildren } from "@lyranote/ui/message-render";
 import type { ConversationRecord, MessageRecord } from "@/services/conversation-service";
 import type { CitationData } from "@/types";
 import type { LocalMessage } from "./chat-types";
@@ -178,7 +178,7 @@ export function sameConversationIds(a: ConversationRecord[], b: ConversationReco
 }
 
 // ── Inline citation parsing (shared) ──────────────────────────────────────────
-// renderInlineCitations and processChildren are re-exported from @/lib/citation-utils above.
+// renderInlineCitations and processChildren are re-exported from @lyranote/ui/message-render above.
 
 /**
  * 将 Markdown 加粗语法 **text** 解析为 <strong> 元素

@@ -3,13 +3,65 @@ import {
   User, Key, Palette, Bell, Check, Loader2, Moon, Sun,
   Globe, Brain, Cpu, Database, Shield, Wrench, Trash2, Plus,
   ChevronDown, ChevronRight, CheckCircle2, XCircle, Pencil, X,
+  RefreshCw, Download, RotateCcw,
 } from "lucide-react"
 import { pageVariants, pageTransition, springs } from "@/lib/animations"
 import { cn } from "@/lib/cn"
 import { useState, useEffect, useCallback, useRef } from "react"
+import { clearDesktopAuthSession, persistDesktopAuthSession } from "@/lib/auth-session"
+import {
+  diagnosticsExport,
+  fileCopyPath,
+  fileReveal,
+  globalShortcutStatus,
+  globalShortcutUpdate,
+  runtimeRestart,
+  recentItemsList,
+} from "@/lib/desktop-bridge"
 import { useAuthStore } from "@/store/use-auth-store"
+import { useDesktopJobsStore } from "@/store/use-desktop-jobs-store"
+import { useDesktopRuntimeStore } from "@/store/use-desktop-runtime-store"
 import { useThemeStore } from "@/store/use-theme-store"
-import { http } from "@/lib/http"
+import { getDesktopAuthService } from "@/lib/api-client"
+import {
+  getConfig,
+  testConfigEndpoint,
+  updateConfig,
+} from "@/services/config-service"
+import {
+  backfillMemory,
+  deleteMemory,
+  getMemoryDoc,
+  getMemoryList,
+  updateMemory,
+  updateMemoryDoc,
+} from "@/services/memory-service"
+import {
+  getSkills,
+  toggleSkill,
+} from "@/services/skill-service"
+import {
+  createMcpServer,
+  deleteMcpServer,
+  getMcpServers,
+  testMcpServer,
+  updateMcpServer,
+} from "@/services/mcp-service"
+import {
+  deleteSecureSecret,
+  getSecureSecret,
+  listSecureSecrets,
+  saveSecureSecret,
+} from "@/services/desktop-security-service"
+import {
+  checkForDesktopUpdate,
+  downloadAndInstallDesktopUpdate,
+  getDesktopAppVersion,
+  relaunchDesktopApp,
+  type DesktopUpdateCheckResult,
+  type DesktopUpdateProgress,
+} from "@/services/desktop-update-service"
+import type { DesktopSecretKey, DesktopShortcutConfig } from "@/types"
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -40,7 +92,6 @@ interface ConfigData {
   ai_name?: string
   user_occupation?: string
   user_preferences?: string
-  custom_system_prompt?: string
   storage_backend?: string
   storage_region?: string
   storage_s3_endpoint_url?: string
@@ -85,6 +136,13 @@ interface McpServer {
   url?: string
   is_enabled: boolean
   discovered_tools?: { name: string; description?: string }[]
+}
+
+const DEFAULT_DESKTOP_SHORTCUT: DesktopShortcutConfig = {
+  accelerator: "CmdOrCtrl+Shift+L",
+  action: "quick-capture",
+  enabled: true,
+  supported: false,
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -305,6 +363,35 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+function formatEpochLikeValue(value?: string | null) {
+  if (!value) return "—"
+  if (/^\d+$/.test(value)) {
+    const date = new Date(Number(value) * 1000)
+    if (!Number.isNaN(date.getTime())) {
+      return date.toLocaleString("zh-CN", {
+        month: "numeric",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    }
+  }
+  return value
+}
+
+function formatUpdateDate(value?: string | null) {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 function NavGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-0.5">
@@ -347,13 +434,15 @@ function useConfig() {
 
   useEffect(() => {
     setLoading(true)
-    http.get("/api/v1/config").then((res) => {
-      setConfig(res.data.data?.data ?? {})
-    }).finally(() => setLoading(false))
+    getConfig()
+      .then((res) => {
+        setConfig((res as ConfigData | undefined) ?? {})
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const patchConfig = useCallback(async (data: Partial<ConfigData>) => {
-    await http.patch("/api/v1/config", { data })
+    await updateConfig(data)
     setConfig((c) => ({ ...c, ...data }))
   }, [])
 
@@ -473,9 +562,10 @@ function AccountSection() {
     if (!username.trim() || savingProfile) return
     setSavingProfile(true)
     try {
-      const res = await http.patch("/api/v1/auth/profile", { username: username.trim() })
-      const updated = res.data.data
-      setAuth(token!, { ...user!, username: updated.username, name: updated.name ?? updated.username })
+      const updated = await getDesktopAuthService().updateProfile({ username: username.trim() })
+      const nextUser = { ...user!, username: updated.username, name: updated.name ?? updated.username }
+      setAuth(token!, nextUser)
+      await persistDesktopAuthSession(token!, nextUser)
       setProfileSaved(true)
       setTimeout(() => setProfileSaved(false), 2000)
     } finally { setSavingProfile(false) }
@@ -487,7 +577,7 @@ function AccountSection() {
     if (newPwd.length < 6) { setPwdError("新密码至少 6 位"); return }
     setSavingPwd(true)
     try {
-      await http.patch("/api/v1/auth/password", { old_password: oldPwd, new_password: newPwd })
+      await getDesktopAuthService().updatePassword({ old_password: oldPwd, new_password: newPwd })
       setPwdSaved(true)
       setOldPwd(""); setNewPwd(""); setConfirmPwd("")
       setTimeout(() => { setPwdSaved(false); setShowPwd(false) }, 2000)
@@ -569,7 +659,7 @@ function AccountSection() {
       </div>
 
       <div className="mt-6">
-        <motion.button whileTap={{ scale: 0.95 }} onClick={() => useAuthStore.getState().clearAuth()}
+        <motion.button whileTap={{ scale: 0.95 }} onClick={() => void clearDesktopAuthSession()}
           className="px-4 py-2 rounded-lg text-[12px] font-medium border border-red-500/25 text-red-400 hover:bg-red-500/8 transition-colors">
           退出登录
         </motion.button>
@@ -632,8 +722,8 @@ function ConfigSection() {
   async function test(endpoint: string, key: string) {
     setTestStatus((s) => ({ ...s, [key]: "testing" }))
     try {
-      const res = await http.post(`/api/v1/config/test-${endpoint}`)
-      setTestStatus((s) => ({ ...s, [key]: res.data.data?.ok ? "ok" : "error" }))
+      const res = await testConfigEndpoint(endpoint as "llm" | "embedding" | "reranker")
+      setTestStatus((s) => ({ ...s, [key]: (res as { ok?: boolean }).ok ? "ok" : "error" }))
     } catch { setTestStatus((s) => ({ ...s, [key]: "error" })) }
   }
 
@@ -716,7 +806,7 @@ function ConfigSection() {
 
 function PersonalitySection() {
   const { config, loading, patchConfig } = useConfig()
-  const [form, setForm] = useState({ ai_name: "", user_occupation: "", user_preferences: "", custom_system_prompt: "" })
+  const [form, setForm] = useState({ ai_name: "", user_occupation: "", user_preferences: "" })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -725,7 +815,6 @@ function PersonalitySection() {
       ai_name: config.ai_name ?? "",
       user_occupation: config.user_occupation ?? "",
       user_preferences: config.user_preferences ?? "",
-      custom_system_prompt: config.custom_system_prompt ?? "",
     })
   }, [config])
 
@@ -754,14 +843,6 @@ function PersonalitySection() {
         <input value={form.user_preferences} onChange={(e) => set("user_preferences", e.target.value)} placeholder="AI、哲学、文学..."
           className="px-3 py-1.5 rounded-lg text-[13px] outline-none border w-40 text-[var(--color-text-primary)] focus:border-[var(--color-accent)] transition-colors bg-[var(--color-bg-subtle)] border-[var(--color-border)]" />
       </SettingRow>
-
-      <GroupLabel>自定义系统提示词</GroupLabel>
-      <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
-        <textarea value={form.custom_system_prompt} onChange={(e) => set("custom_system_prompt", e.target.value)}
-          rows={6} placeholder="在此输入对 AI 行为的额外要求，例如：请始终使用简洁的中文回答..."
-          className="w-full bg-transparent outline-none resize-none text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] p-4 leading-relaxed"
-          style={{ fontFamily: "var(--font-sans)" }} />
-      </div>
       <SaveButton onClick={handleSave} saving={saving} saved={saved} />
     </>
   )
@@ -782,8 +863,8 @@ function MemorySection() {
 
   function loadMemories() {
     setLoading(true)
-    http.get("/api/v1/memory")
-      .then((r) => setMemories(r.data.data ?? {}))
+    getMemoryList()
+      .then((r) => setMemories((r as unknown as Record<string, MemoryItem[]>) ?? {}))
       .catch(() => setMemories({}))
       .finally(() => setLoading(false))
   }
@@ -791,17 +872,17 @@ function MemorySection() {
   useEffect(() => {
     loadMemories()
 
-    http.get("/api/v1/memory/doc")
+    getMemoryDoc()
       .then((r) => {
-        setDocContent(r.data.data?.content_md ?? "")
-        setDocUpdatedAt(r.data.data?.updated_at ?? null)
+        setDocContent((r.content_md as string | undefined) ?? "")
+        setDocUpdatedAt((r.updated_at as string | undefined) ?? null)
       })
       .catch(() => {})
   }, [])
 
   async function handleEdit(id: string) {
     try {
-      await http.put(`/api/v1/memory/${id}`, { value: editValue })
+      await updateMemory(id, editValue)
       setMemories((m) => {
         const next = { ...m }
         for (const type of Object.keys(next)) {
@@ -815,7 +896,7 @@ function MemorySection() {
 
   async function handleDelete(id: string) {
     try {
-      await http.delete(`/api/v1/memory/${id}`)
+      await deleteMemory(id)
       setMemories((m) => {
         const next = { ...m }
         for (const type of Object.keys(next)) {
@@ -829,7 +910,7 @@ function MemorySection() {
   async function handleSaveDoc() {
     setSavingDoc(true)
     try {
-      await http.patch("/api/v1/memory/doc", { content_md: docContent })
+      await updateMemoryDoc(docContent)
       setDocSaved(true); setTimeout(() => setDocSaved(false), 2000)
     } finally { setSavingDoc(false) }
   }
@@ -838,8 +919,8 @@ function MemorySection() {
     setBackfilling(true)
     setBackfillMsg(null)
     try {
-      const res = await http.post("/api/v1/memory/backfill")
-      setBackfillMsg(res.data.data?.message ?? "后台处理中，稍后刷新查看")
+      const res = await backfillMemory()
+      setBackfillMsg((res as { message?: string }).message ?? "后台处理中，稍后刷新查看")
       setTimeout(() => {
         loadMemories()
         setBackfillMsg(null)
@@ -947,13 +1028,13 @@ function SkillsSection() {
   const [toggling, setToggling] = useState<string | null>(null)
 
   useEffect(() => {
-    http.get("/api/v1/skills").then((r) => setSkills(r.data.data ?? [])).finally(() => setLoading(false))
+    getSkills().then((r) => setSkills((r as Skill[]) ?? [])).finally(() => setLoading(false))
   }, [])
 
   async function handleToggle(name: string, current: boolean) {
     setToggling(name)
     try {
-      await http.put(`/api/v1/skills/${name}`, { is_enabled: !current })
+      await toggleSkill(name, !current)
       setSkills((s) => s.map((sk) => sk.name === name ? { ...sk, is_enabled: !current } : sk))
     } finally { setToggling(null) }
   }
@@ -1009,13 +1090,13 @@ function McpSection() {
   const [editServer, setEditServer] = useState<Partial<McpServer>>({})
 
   useEffect(() => {
-    http.get("/api/v1/mcp/servers").then((r) => setServers(r.data.data ?? [])).finally(() => setLoading(false))
+    getMcpServers().then((r) => setServers((r as McpServer[]) ?? [])).finally(() => setLoading(false))
   }, [])
 
   async function handleAdd() {
     try {
-      const res = await http.post("/api/v1/mcp/servers", newServer)
-      setServers((s) => [...s, res.data.data])
+      const res = await createMcpServer(newServer as Record<string, unknown>)
+      setServers((s) => [...s, res as unknown as McpServer])
       setShowAdd(false)
       setNewServer({ transport: "stdio", is_enabled: true })
     } catch { /* ignore */ }
@@ -1023,22 +1104,22 @@ function McpSection() {
 
   async function handleEdit(id: string) {
     try {
-      const res = await http.patch(`/api/v1/mcp/servers/${id}`, editServer)
-      setServers((s) => s.map((sv) => sv.id === id ? { ...sv, ...res.data.data } : sv))
+      const res = await updateMcpServer(id, editServer as Record<string, unknown>)
+      setServers((s) => s.map((sv) => sv.id === id ? { ...sv, ...(res as Partial<McpServer>) } : sv))
       setEditingId(null)
     } catch { /* ignore */ }
   }
 
   async function handleDelete(id: string) {
     try {
-      await http.delete(`/api/v1/mcp/servers/${id}`)
+      await deleteMcpServer(id)
       setServers((s) => s.filter((sv) => sv.id !== id))
     } catch { /* ignore */ }
   }
 
   async function handleToggle(id: string, current: boolean) {
     try {
-      await http.patch(`/api/v1/mcp/servers/${id}`, { is_enabled: !current })
+      await updateMcpServer(id, { is_enabled: !current })
       setServers((s) => s.map((sv) => sv.id === id ? { ...sv, is_enabled: !current } : sv))
     } catch { /* ignore */ }
   }
@@ -1046,11 +1127,15 @@ function McpSection() {
   async function handleTest(id: string) {
     setTesting(id)
     try {
-      const res = await http.post(`/api/v1/mcp/servers/${id}/test`)
-      const ok = res.data.data?.ok
+      const res = await testMcpServer(id)
+      const ok = (res as { ok?: boolean }).ok
       setTestResults((t) => ({ ...t, [id]: ok ? "ok" : "error" }))
-      if (ok && res.data.data?.tools) {
-        setServers((s) => s.map((sv) => sv.id === id ? { ...sv, discovered_tools: res.data.data.tools } : sv))
+      if (ok && (res as { tools?: McpServer["discovered_tools"] }).tools) {
+        setServers((s) => s.map((sv) => (
+          sv.id === id
+            ? { ...sv, discovered_tools: (res as { tools?: McpServer["discovered_tools"] }).tools }
+            : sv
+        )))
       }
     } catch {
       setTestResults((t) => ({ ...t, [id]: "error" }))
@@ -1269,6 +1354,8 @@ function McpSection() {
 
 function StorageSection() {
   const { config, loading, patchConfig } = useConfig()
+  const jobs = useDesktopJobsStore((state) => state.jobs)
+  const runtimeStatus = useDesktopRuntimeStore((state) => state.status)
   const [backend, setBackend] = useState("local")
   const [form, setForm] = useState<ConfigData>({})
   const [saving, setSaving] = useState(false)
@@ -1319,6 +1406,50 @@ function StorageSection() {
           </div>
         </motion.div>
       )}
+      <GroupLabel>桌面 Runtime</GroupLabel>
+      <SettingRow label="本地运行模式">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">{runtimeStatus?.mode ?? "source"}</span>
+      </SettingRow>
+      <SettingRow label="日志目录" noBorder>
+        <button
+          onClick={() => runtimeStatus?.log_path && void fileReveal(runtimeStatus.log_path)}
+          className="rounded-lg px-3 py-1.5 text-[12px] font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors"
+        >
+          打开
+        </button>
+      </SettingRow>
+
+      <GroupLabel>后台队列</GroupLabel>
+      <div className="rounded-xl border overflow-hidden" style={{ borderColor: "var(--color-border)" }}>
+        {jobs.length === 0 ? (
+          <div className="px-4 py-4 text-[12px] text-[var(--color-text-tertiary)]">当前没有后台任务。</div>
+        ) : (
+          jobs.slice(0, 5).map((job, index) => (
+            <div
+              key={job.id}
+              className={cn("px-4 py-3", index !== jobs.slice(0, 5).length - 1 && "border-b")}
+              style={index !== jobs.slice(0, 5).length - 1 ? { borderColor: "var(--color-border)" } : undefined}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">{job.label}</p>
+                  <p className="truncate text-[11px] text-[var(--color-text-tertiary)]">{job.message || job.state}</p>
+                </div>
+                <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)] tabular-nums">{job.progress}%</span>
+              </div>
+              <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.max(job.progress || 0, job.state === "succeeded" ? 100 : 8)}%`,
+                    background: job.state === "failed" ? "#f87171" : "var(--color-accent)",
+                  }}
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </div>
       <SaveButton onClick={handleSave} saving={saving} saved={saved} />
     </>
   )
@@ -1360,8 +1491,8 @@ function NotificationsSection() {
   async function handleTestEmail() {
     setTesting(true); setTestResult(null)
     try {
-      const res = await http.post("/api/v1/config/test-email")
-      setTestResult(res.data.data?.ok ? "ok" : "error")
+      const res = await testConfigEndpoint("email")
+      setTestResult((res as { ok?: boolean }).ok ? "ok" : "error")
     } catch { setTestResult("error") }
     finally { setTesting(false) }
   }
@@ -1399,9 +1530,312 @@ function NotificationsSection() {
   )
 }
 
+type DesktopUpdateUiState = "idle" | "checking" | "available" | "none" | "downloading" | "installed" | "unsupported" | "error"
+
+export function DesktopUpdatePanel() {
+  const [currentVersion, setCurrentVersion] = useState("0.1.0")
+  const [updateResult, setUpdateResult] = useState<DesktopUpdateCheckResult | null>(null)
+  const [progress, setProgress] = useState<DesktopUpdateProgress | null>(null)
+  const [state, setState] = useState<DesktopUpdateUiState>("idle")
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void getDesktopAppVersion()
+      .then((version) => {
+        if (!cancelled) setCurrentVersion(version)
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentVersion("0.1.0")
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleCheckUpdate() {
+    setState("checking")
+    setError(null)
+    setProgress(null)
+    try {
+      const result = await checkForDesktopUpdate()
+      setUpdateResult(result)
+      setCurrentVersion(result.currentVersion)
+      if (!result.supported) {
+        setState("unsupported")
+      } else if (result.available) {
+        setState("available")
+      } else {
+        setState("none")
+      }
+    } catch (checkError) {
+      setState("error")
+      setError(checkError instanceof Error ? checkError.message : "检查更新失败")
+    }
+  }
+
+  async function handleInstallUpdate() {
+    setState("downloading")
+    setError(null)
+    setProgress({ event: "started", downloadedBytes: 0, percent: 0 })
+    try {
+      await downloadAndInstallDesktopUpdate((nextProgress) => {
+        setProgress(nextProgress)
+      })
+      setState("installed")
+    } catch (installError) {
+      setState("error")
+      setError(installError instanceof Error ? installError.message : "下载并安装更新失败")
+    }
+  }
+
+  async function handleRelaunch() {
+    setError(null)
+    try {
+      await relaunchDesktopApp()
+    } catch (relaunchError) {
+      setState("error")
+      setError(relaunchError instanceof Error ? relaunchError.message : "重启应用失败")
+    }
+  }
+
+  const isBusy = state === "checking" || state === "downloading"
+  const progressLabel = progress?.percent != null ? `${progress.percent}%` : "下载中"
+
+  return (
+    <div
+      className="rounded-xl border p-4"
+      style={{ borderColor: "var(--color-border)", background: "var(--color-bg-subtle)" }}
+    >
+      <SettingRow label="客户端版本">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">LyraNote Desktop {currentVersion}</span>
+      </SettingRow>
+      <SettingRow label="更新渠道" description="稳定版从 GitHub Releases latest.json 检查更新">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">stable</span>
+      </SettingRow>
+      {updateResult?.available ? (
+        <SettingRow label="可用版本" description={updateResult.date ? `发布时间 ${formatUpdateDate(updateResult.date)}` : undefined}>
+          <span className="text-[13px] font-medium text-[var(--color-accent)]">v{updateResult.version}</span>
+        </SettingRow>
+      ) : null}
+      {updateResult?.body ? (
+        <div className="mt-3 max-h-28 overflow-y-auto rounded-lg border px-3 py-2 text-[12px] leading-relaxed whitespace-pre-line text-[var(--color-text-tertiary)]"
+          style={{ borderColor: "var(--color-border)", background: "var(--color-bg-elevated)" }}>
+          {updateResult.body}
+        </div>
+      ) : null}
+      {state === "downloading" ? (
+        <div className="mt-4">
+          <div className="mb-1.5 flex items-center justify-between text-[11px] text-[var(--color-text-tertiary)]">
+            <span>正在下载并安装</span>
+            <span>{progressLabel}</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${progress?.percent ?? 8}%`, background: "var(--color-accent)" }}
+            />
+          </div>
+        </div>
+      ) : null}
+      {state === "none" ? (
+        <p className="mt-3 text-[12px] text-emerald-400">当前已经是最新版本。</p>
+      ) : null}
+      {state === "unsupported" ? (
+        <p className="mt-3 text-[12px] text-amber-300">{updateResult?.reason ?? "当前环境不支持自动更新。"}</p>
+      ) : null}
+      {state === "installed" ? (
+        <p className="mt-3 text-[12px] text-emerald-400">更新已安装，重启应用完成升级。</p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 text-[12px] text-red-400">{error}</p>
+      ) : null}
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={() => void handleCheckUpdate()}
+          disabled={isBusy}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] transition-colors hover:bg-white/[0.04] disabled:opacity-40"
+        >
+          {state === "checking" ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          检查更新
+        </motion.button>
+        {state === "available" ? (
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => void handleInstallUpdate()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[12px] font-medium text-white transition-colors"
+          >
+            <Download size={12} />
+            下载并安装
+          </motion.button>
+        ) : null}
+        {state === "installed" ? (
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => void handleRelaunch()}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--color-accent)] px-4 py-2 text-[12px] font-medium text-white transition-colors"
+          >
+            <RotateCcw size={12} />
+            重启应用
+          </motion.button>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function SecuritySection() {
   const { user } = useAuthStore()
+  const { status, setStatus } = useDesktopRuntimeStore()
   const email = user?.email ?? ""
+  const [restarting, setRestarting] = useState(false)
+  const [recentItems, setRecentItems] = useState<Array<{ title: string; path?: string | null; created_at: string }>>([])
+  const [exporting, setExporting] = useState(false)
+  const [secretKeys, setSecretKeys] = useState<DesktopSecretKey[]>([])
+  const [secretsLoading, setSecretsLoading] = useState(true)
+  const [secretKeyInput, setSecretKeyInput] = useState("")
+  const [secretValueInput, setSecretValueInput] = useState("")
+  const [secretSaving, setSecretSaving] = useState(false)
+  const [secretSaved, setSecretSaved] = useState(false)
+  const [secretError, setSecretError] = useState<string | null>(null)
+  const [revealingKey, setRevealingKey] = useState<string | null>(null)
+  const [deletingKey, setDeletingKey] = useState<string | null>(null)
+  const [shortcutConfig, setShortcutConfig] = useState<DesktopShortcutConfig>(DEFAULT_DESKTOP_SHORTCUT)
+  const [shortcutLoading, setShortcutLoading] = useState(true)
+  const [shortcutSaving, setShortcutSaving] = useState(false)
+  const [shortcutSaved, setShortcutSaved] = useState(false)
+  const [shortcutError, setShortcutError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void recentItemsList().then((items) => setRecentItems(items)).catch(() => setRecentItems([]))
+  }, [status?.state])
+
+  const loadSecretKeys = useCallback(async () => {
+    setSecretsLoading(true)
+    try {
+      setSecretKeys(await listSecureSecrets())
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "加载安全存储失败")
+      setSecretKeys([])
+    } finally {
+      setSecretsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadSecretKeys()
+  }, [loadSecretKeys])
+
+  useEffect(() => {
+    let cancelled = false
+    setShortcutLoading(true)
+    void globalShortcutStatus()
+      .then((config) => {
+        if (!cancelled) {
+          setShortcutConfig(config)
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setShortcutError(error instanceof Error ? error.message : "读取快捷键状态失败")
+          setShortcutConfig(DEFAULT_DESKTOP_SHORTCUT)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setShortcutLoading(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function handleRestartRuntime() {
+    setRestarting(true)
+    try {
+      const nextStatus = await runtimeRestart()
+      setStatus(nextStatus)
+    } finally {
+      setRestarting(false)
+    }
+  }
+
+  async function handleExportDiagnostics() {
+    setExporting(true)
+    try {
+      const bundle = await diagnosticsExport()
+      await fileReveal(bundle.path)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  async function handleSaveSecret() {
+    if (!secretKeyInput.trim() || !secretValueInput.trim()) return
+    setSecretSaving(true)
+    setSecretSaved(false)
+    setSecretError(null)
+    try {
+      await saveSecureSecret(secretKeyInput.trim(), secretValueInput)
+      setSecretValueInput("")
+      setSecretSaved(true)
+      await loadSecretKeys()
+      window.setTimeout(() => setSecretSaved(false), 1200)
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "保存安全存储失败")
+    } finally {
+      setSecretSaving(false)
+    }
+  }
+
+  async function handleRevealSecret(key: string) {
+    setRevealingKey(key)
+    setSecretError(null)
+    try {
+      const value = await getSecureSecret(key)
+      setSecretKeyInput(key)
+      setSecretValueInput(value ?? "")
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "读取安全存储失败")
+    } finally {
+      setRevealingKey(null)
+    }
+  }
+
+  async function handleDeleteSecret(key: string) {
+    setDeletingKey(key)
+    setSecretError(null)
+    try {
+      await deleteSecureSecret(key)
+      if (secretKeyInput === key) {
+        setSecretKeyInput("")
+        setSecretValueInput("")
+      }
+      await loadSecretKeys()
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "删除安全存储失败")
+    } finally {
+      setDeletingKey(null)
+    }
+  }
+
+  async function handleSaveShortcut(nextConfig: DesktopShortcutConfig) {
+    setShortcutSaving(true)
+    setShortcutSaved(false)
+    setShortcutError(null)
+    try {
+      const saved = await globalShortcutUpdate(nextConfig)
+      setShortcutConfig(saved)
+      setShortcutSaved(true)
+      window.setTimeout(() => setShortcutSaved(false), 1200)
+    } catch (error) {
+      setShortcutError(error instanceof Error ? error.message : "保存全局快捷键失败")
+    } finally {
+      setShortcutSaving(false)
+    }
+  }
 
   return (
     <>
@@ -1413,13 +1847,261 @@ function SecuritySection() {
       <SettingRow label="登录方式">
         <span className="text-[13px] text-[var(--color-text-tertiary)]">用户名 / 密码</span>
       </SettingRow>
-      <SettingRow label="客户端版本" noBorder>
-        <span className="text-[13px] text-[var(--color-text-tertiary)]">LyraNote Desktop 0.1.0</span>
+      <GroupLabel>桌面更新</GroupLabel>
+      <DesktopUpdatePanel />
+
+      <GroupLabel>安全存储</GroupLabel>
+      <div
+        className="rounded-xl border p-4"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-bg-subtle)" }}
+      >
+        <p className="mb-3 text-[12px] text-[var(--color-text-tertiary)]">
+          这里的键值会保存到 macOS Keychain，适合存放 API Key、设备身份或本地主密钥。
+        </p>
+        <div className="grid gap-3 md:grid-cols-[minmax(0,180px)_minmax(0,1fr)]">
+          <FieldInput
+            label="键名"
+            value={secretKeyInput}
+            onChange={setSecretKeyInput}
+            placeholder="例如 openai.api_key"
+            width="w-full"
+          />
+          <FieldInput
+            label="密钥值"
+            value={secretValueInput}
+            onChange={setSecretValueInput}
+            type="password"
+            placeholder="输入后会写入系统 Keychain"
+            width="w-full"
+          />
+        </div>
+        <div className="mt-1 flex items-center gap-3">
+          <SaveButton
+            onClick={handleSaveSecret}
+            saving={secretSaving}
+            saved={secretSaved}
+            disabled={!secretKeyInput.trim() || !secretValueInput.trim()}
+          />
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              setSecretKeyInput("")
+              setSecretValueInput("")
+              setSecretError(null)
+            }}
+            className="mt-5 rounded-lg border border-[var(--color-border)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors"
+          >
+            清空表单
+          </motion.button>
+        </div>
+        {secretError ? (
+          <p className="mt-3 text-[12px] text-red-400">{secretError}</p>
+        ) : null}
+        <div className="mt-4 space-y-2">
+          {secretsLoading ? (
+            <div className="flex items-center gap-2 text-[12px] text-[var(--color-text-tertiary)]">
+              <Loader2 size={12} className="animate-spin" />
+              正在读取安全存储...
+            </div>
+          ) : secretKeys.length === 0 ? (
+            <p className="text-[12px] text-[var(--color-text-tertiary)]">还没有保存任何 secret。</p>
+          ) : (
+            secretKeys.map((item) => (
+              <div
+                key={item.key}
+                className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+                style={{ borderColor: "var(--color-border)" }}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">{item.key}</p>
+                  <p className="truncate text-[10px] text-[var(--color-text-tertiary)]">
+                    最近更新 {formatEpochLikeValue(item.updated_at)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void handleRevealSecret(item.key)}
+                    className="rounded-lg border px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors"
+                    style={{ borderColor: "var(--color-border)" }}
+                  >
+                    {revealingKey === item.key ? "读取中..." : "读取编辑"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteSecret(item.key)}
+                    className="rounded-lg border border-red-500/20 px-2.5 py-1 text-[11px] text-red-400 hover:bg-red-500/8 transition-colors"
+                  >
+                    {deletingKey === item.key ? "删除中..." : "删除"}
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      <GroupLabel>桌面 Runtime</GroupLabel>
+      <SettingRow label="运行状态">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">{status?.state ?? "starting"}</span>
       </SettingRow>
+      <SettingRow label="运行模式">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">{status?.mode ?? "source"}</span>
+      </SettingRow>
+      <SettingRow label="本地 Health 地址">
+        <span className="max-w-[260px] truncate text-[13px] text-[var(--color-text-tertiary)]">{status?.health_url || "—"}</span>
+      </SettingRow>
+      <SettingRow label="最近错误" noBorder>
+        <span className="max-w-[260px] truncate text-right text-[13px] text-[var(--color-text-tertiary)]">{status?.last_error || "—"}</span>
+      </SettingRow>
+      <SettingRow label="上次退出原因">
+        <span className="max-w-[260px] truncate text-right text-[13px] text-[var(--color-text-tertiary)]">{status?.last_exit_reason || "—"}</span>
+      </SettingRow>
+      <SettingRow label="Watcher 数量">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">{status?.watcher_count ?? 0}</span>
+      </SettingRow>
+      <SettingRow label="监听目录状态">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">{status?.watchers_paused ? "已暂停" : "运行中"}</span>
+      </SettingRow>
+      <SettingRow label="重启次数">
+        <span className="text-[13px] text-[var(--color-text-tertiary)]">{status?.restart_count ?? 0}</span>
+      </SettingRow>
+      <SettingRow label="最近一次重启">
+        <span className="max-w-[260px] truncate text-right text-[13px] text-[var(--color-text-tertiary)]">{status?.last_restart_at || "—"}</span>
+      </SettingRow>
+      <SettingRow label="最近心跳">
+        <span className="max-w-[260px] truncate text-right text-[13px] text-[var(--color-text-tertiary)]">{status?.last_heartbeat_at || "—"}</span>
+      </SettingRow>
+      <SettingRow label="状态目录">
+        <span className="max-w-[260px] truncate text-right text-[13px] text-[var(--color-text-tertiary)]">{status?.state_dir || "—"}</span>
+      </SettingRow>
+      <SettingRow label="Sidecar 路径" noBorder>
+        <span className="max-w-[260px] truncate text-right text-[13px] text-[var(--color-text-tertiary)]">{status?.sidecar_path || "—"}</span>
+      </SettingRow>
+
+      <GroupLabel>全局快捷键</GroupLabel>
+      <div
+        className="rounded-xl border p-4"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-bg-subtle)" }}
+      >
+        <p className="mb-3 text-[12px] text-[var(--color-text-tertiary)]">
+          这是系统级快捷键。应用在后台时也可以直接唤起 Quick Capture 或独立聊天窗口。
+        </p>
+        <SettingRow label="可用状态" description="由 Tauri 全局快捷键插件负责注册" noBorder>
+          <span className="text-[13px] text-[var(--color-text-tertiary)]">
+            {shortcutLoading ? "检测中..." : shortcutConfig.supported ? "可用" : "不可用"}
+          </span>
+        </SettingRow>
+        <SettingRow label="启用全局快捷键" description="关闭后将注销已注册的系统级快捷键">
+          <Toggle
+            checked={shortcutConfig.enabled}
+            onChange={(enabled) => setShortcutConfig((current) => ({ ...current, enabled }))}
+            disabled={shortcutLoading || shortcutSaving}
+          />
+        </SettingRow>
+        <SettingRow label="触发动作" description="决定按下快捷键后打开哪个桌面窗口">
+          <div className="flex items-center gap-1.5">
+            {([
+              { value: "quick-capture", label: "Quick Capture" },
+              { value: "quick-chat", label: "快速提问" },
+            ] as const).map((item) => (
+              <motion.button
+                key={item.value}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShortcutConfig((current) => ({ ...current, action: item.value }))}
+                className={cn(
+                  "rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors",
+                  shortcutConfig.action === item.value
+                    ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)] border-[var(--color-accent)]/40"
+                    : "text-[var(--color-text-secondary)] border-[var(--color-border)] hover:bg-white/[0.04]",
+                )}
+              >
+                {item.label}
+              </motion.button>
+            ))}
+          </div>
+        </SettingRow>
+        <SettingRow label="快捷键组合" description="沿用菜单里的写法，例如 CmdOrCtrl+Shift+L">
+          <input
+            value={shortcutConfig.accelerator}
+            onChange={(event) =>
+              setShortcutConfig((current) => ({ ...current, accelerator: event.target.value }))
+            }
+            disabled={shortcutLoading || shortcutSaving}
+            className="w-56 rounded-lg border px-3 py-2 text-[12px] outline-none"
+            style={{
+              borderColor: "var(--color-border)",
+              background: "var(--color-bg-elevated)",
+              color: "var(--color-text-primary)",
+            }}
+          />
+        </SettingRow>
+        {shortcutError ? (
+          <p className="mt-3 text-[12px] text-red-400">{shortcutError}</p>
+        ) : null}
+        <div className="mt-4 flex items-center gap-3">
+          <SaveButton
+            onClick={() => void handleSaveShortcut(shortcutConfig)}
+            saving={shortcutSaving}
+            saved={shortcutSaved}
+            disabled={shortcutLoading || !shortcutConfig.accelerator.trim()}
+          />
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => void handleSaveShortcut(DEFAULT_DESKTOP_SHORTCUT)}
+            className="rounded-lg border border-[var(--color-border)] px-4 py-2 text-[12px] font-medium text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors"
+          >
+            恢复默认
+          </motion.button>
+        </div>
+      </div>
+
+      <GroupLabel>最近导入</GroupLabel>
+      <div
+        className="rounded-xl border p-3 text-[12px]"
+        style={{ borderColor: "var(--color-border)", background: "var(--color-bg-subtle)" }}
+      >
+        {recentItems.length === 0 ? (
+          <p className="text-[var(--color-text-tertiary)]">暂无最近导入记录。</p>
+        ) : (
+          recentItems.slice(0, 4).map((item) => (
+            <div key={`${item.title}-${item.created_at}`} className="flex items-center justify-between py-1.5">
+              <div className="min-w-0 pr-3">
+                <p className="truncate text-[var(--color-text-primary)]">{item.title}</p>
+                <p className="truncate text-[var(--color-text-tertiary)]">{item.path || item.created_at}</p>
+              </div>
+              {item.path ? (
+                <button
+                  type="button"
+                  onClick={() => void fileCopyPath(item.path!)}
+                  className="rounded-lg border px-2 py-1 text-[11px] text-[var(--color-text-secondary)]"
+                  style={{ borderColor: "var(--color-border)" }}
+                >
+                  复制路径
+                </button>
+              ) : null}
+            </div>
+          ))
+        )}
+      </div>
 
       <GroupLabel>操作</GroupLabel>
       <p className="text-[12px] text-[var(--color-text-tertiary)] mb-3">退出登录将清除本地凭证，下次启动时需要重新登录。</p>
-      <motion.button whileTap={{ scale: 0.95 }} onClick={() => useAuthStore.getState().clearAuth()}
+      <div className="flex items-center gap-3">
+        <motion.button whileTap={{ scale: 0.95 }} onClick={handleRestartRuntime}
+          className="px-4 py-2 rounded-lg text-[12px] font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors">
+          {restarting ? <Loader2 size={12} className="animate-spin inline mr-1" /> : null}重启 Runtime
+        </motion.button>
+        <motion.button whileTap={{ scale: 0.95 }} onClick={() => status?.log_path && fileReveal(status.log_path)}
+          className="px-4 py-2 rounded-lg text-[12px] font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors">
+          打开日志目录
+        </motion.button>
+        <motion.button whileTap={{ scale: 0.95 }} onClick={() => void handleExportDiagnostics()}
+          className="px-4 py-2 rounded-lg text-[12px] font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-white/[0.04] transition-colors">
+          {exporting ? <Loader2 size={12} className="animate-spin inline mr-1" /> : null}导出诊断包
+        </motion.button>
+      </div>
+      <motion.button whileTap={{ scale: 0.95 }} onClick={() => void clearDesktopAuthSession()}
         className="px-4 py-2 rounded-lg text-[12px] font-medium border border-red-500/25 text-red-400 hover:bg-red-500/8 transition-colors">
         退出登录
       </motion.button>
@@ -1444,25 +2126,27 @@ export function SettingsPage() {
   return (
     <motion.div variants={pageVariants} initial="initial" animate="animate" exit="exit" transition={pageTransition} className="flex h-full">
       {/* Sidebar */}
-      <div className="w-52 shrink-0 flex flex-col border-r p-2 pt-1.5 overflow-y-auto"
-        style={{ borderColor: "var(--color-border)" }}>
-        {NAV_GROUPS.map((group) => (
-          <NavGroup key={group.label} label={group.label}>
-            {group.ids.map((id) => {
-              const s = SECTIONS.find((sec) => sec.id === id)!
-              return (
-                <motion.button key={s.id} whileTap={{ scale: 0.95 }} onClick={() => setActiveSection(s.id)}
-                  className={cn("flex items-center gap-2.5 h-8 w-full px-2.5 rounded-lg text-[13px] font-normal transition-colors text-left",
-                    activeSection === s.id
-                      ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]"
-                      : "text-white/55 hover:text-white/85 hover:bg-white/[0.05]")}>
-                  <s.icon size={15} strokeWidth={1.6} className="shrink-0" />
-                  {s.label}
-                </motion.button>
-              )
-            })}
-          </NavGroup>
-        ))}
+      <div className="w-52 shrink-0 flex flex-col border rounded-xl overflow-hidden ml-2 mt-2 mb-2 overflow-y-auto"
+        style={{ borderColor: "var(--color-border)", background: "rgba(255,255,255,0.012)" }}>
+        <div className="p-2 pt-1.5">
+          {NAV_GROUPS.map((group) => (
+            <NavGroup key={group.label} label={group.label}>
+              {group.ids.map((id) => {
+                const s = SECTIONS.find((sec) => sec.id === id)!
+                return (
+                  <motion.button key={s.id} whileTap={{ scale: 0.95 }} onClick={() => setActiveSection(s.id)}
+                    className={cn("flex items-center gap-2.5 h-8 w-full px-2.5 rounded-lg text-[13px] transition-colors text-left",
+                      activeSection === s.id
+                        ? "bg-white/[0.12] text-[var(--color-text-primary)] font-semibold"
+                        : "font-normal text-white/55 hover:text-white/85 hover:bg-white/[0.05]")}>
+                    <s.icon size={15} strokeWidth={1.6} className="shrink-0" />
+                    {s.label}
+                  </motion.button>
+                )
+              })}
+            </NavGroup>
+          ))}
+        </div>
       </div>
 
       {/* Content */}

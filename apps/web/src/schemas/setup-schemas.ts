@@ -63,7 +63,6 @@ export function createPersonalitySchema(t: (key: string) => string) {
     ai_name: z.string().min(1, t("validation.nameRequired")).max(20, t("validation.nameMaxLength")),
     user_occupation: z.string().max(100).optional(),
     user_preferences: z.string().max(500).optional(),
-    custom_system_prompt: z.string().max(5000).optional(),
   });
 }
 

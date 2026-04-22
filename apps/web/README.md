@@ -125,7 +125,7 @@ web/
 
 | Store | 文件 | 职责 |
 |---|---|---|
-| Auth Store | `store/use-auth-store.ts` | JWT Token、用户信息 |
+| Auth Provider | `features/auth/auth-provider.tsx` | 当前用户、加载态、认证操作 |
 | Notebook Store | `store/use-notebook-store.ts` | 笔记本列表、当前激活笔记本 |
 | UI Store | `store/use-ui-store.ts` | 侧边栏、面板开关等 UI 状态 |
 | Proactive Store | `store/use-proactive-store.ts` | AI 主动洞察状态 |

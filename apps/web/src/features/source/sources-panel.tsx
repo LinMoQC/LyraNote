@@ -6,6 +6,7 @@ import { AlertCircle, CheckCircle2, FileAudio, FileText, Globe, Loader2, Notepad
 import { startTransition, useEffect, useRef } from "react";
 
 import { createSuggestionFingerprint, shouldAutoSurfaceSource } from "@/features/copilot/proactive-surface-policy";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { getSourceSuggestions } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
@@ -124,7 +125,7 @@ export function SourcesPanel({
   const prevSourcesRef = useRef<Source[]>([]);
 
   const { data: sources = [], isLoading } = useQuery({
-    queryKey: ["sources", notebookId],
+    queryKey: lyraQueryKeys.sources.list({ notebookId, scope: "notebook" }),
     queryFn: () => getSources(notebookId),
     refetchOnMount: "always",
     refetchOnWindowFocus: true,

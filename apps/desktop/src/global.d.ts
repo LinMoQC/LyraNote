@@ -5,8 +5,7 @@
 
 // next-intl stub — aliased to src/lib/next-intl-stub.ts
 declare module "next-intl" {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export function useTranslations<N extends string = string>(namespace: N): (...args: any[]) => string
+  export function useTranslations<N extends string = string>(namespace: N): (...args: unknown[]) => string
 }
 
 // next/image stub — aliased to src/lib/next-image-stub.tsx
@@ -27,42 +26,49 @@ declare module "next/image" {
 // next/dynamic stub — aliased to src/lib/next-dynamic-stub.ts
 declare module "next/dynamic" {
   import type { ComponentType } from "react"
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export default function dynamic<P = Record<string, any>>(
-    loader: () => Promise<any>,
+  export default function dynamic<P = Record<string, unknown>>(
+    loader: () => Promise<unknown>,
     options?: { ssr?: boolean; loading?: () => JSX.Element | null },
   ): ComponentType<P>
 }
 
 // Optional heavy dependencies — stubs so TS doesn't error on import
 declare module "@nivo/calendar" {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export const ResponsiveCalendar: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export const ResponsiveTimeRange: any
+  export const ResponsiveCalendar: unknown
+  export const ResponsiveTimeRange: unknown
 }
 
 declare module "@excalidraw/excalidraw" {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export const Excalidraw: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export const exportToSvg: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type ExcalidrawElement = any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type AppState = any
+  export const Excalidraw: unknown
+  export const exportToSvg: unknown
+  export type ExcalidrawElement = unknown
+  export type AppState = unknown
 }
 
 declare module "markmap-lib" {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export class Transformer { transform(md: string): any; getUsedAssets(features: any): any }
+  export interface MarkmapTransformResult {
+    root: unknown
+    features: unknown
+  }
+
+  export interface MarkmapAssets {
+    styles?: unknown[]
+    scripts?: unknown[]
+  }
+
+  export class Transformer {
+    transform(md: string): MarkmapTransformResult
+    getUsedAssets(features: unknown): MarkmapAssets
+  }
 }
 
 declare module "markmap-view" {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export class Markmap { static create(el: SVGElement, opts?: any, data?: any): Markmap; fit(): void; setData(data: any): void; destroy(): void }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export function loadCSS(styles: any[]): Promise<void>
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export function loadJS(scripts: any[], opts?: any): Promise<void>
+  export class Markmap {
+    static create(el: SVGElement, opts?: unknown, data?: unknown): Markmap
+    fit(): void
+    setData(data: unknown): void
+    destroy(): void
+  }
+  export function loadCSS(styles: unknown[]): Promise<void>
+  export function loadJS(scripts: unknown[], opts?: unknown): Promise<void>
 }

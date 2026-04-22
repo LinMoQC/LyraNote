@@ -17,24 +17,28 @@ import { memo, useMemo } from "react";
 
 import { BotAvatar } from "@/components/ui/bot-avatar";
 import { cn } from "@/lib/utils";
-import { CitationFooter } from "@/components/message-render/citation-footer";
-import { MCPHTMLView, MCPResultCard } from "@/components/message-render/mcp-result-views";
-import { AgentSteps, ThinkingBubble } from "@/components/message-render/agent-steps";
-import { MindMapView } from "@/components/message-render/mind-map-view";
-import { DiagramView } from "@/components/message-render/diagram-view";
-import { ExcalidrawView } from "@/components/message-render/excalidraw-view";
 import { DeepResearchProgress } from "@/components/deep-research/deep-research-progress";
-import { ChoiceCards } from "@/components/message-render/choice-cards";
-import { parseMessageContent } from "@/components/message-render/parse-message-content";
-import { AttachmentImage } from "@/components/message-render/attachment-image";
-import { MarkdownContent } from "@/components/message-render/markdown-content";
-import { CodeBlock } from "@/components/message-render/code-block";
-import { ReasoningBlock } from "@/components/message-render/reasoning-block";
-import { buildMarkdownComponents } from "@/components/genui";
+import { CodeBlock } from "@lyranote/ui/message-render";
+import { buildMarkdownComponents } from "@lyranote/ui/genui";
 import type { AgentEvent } from "@/services/ai-service";
 import type { FeedbackRating } from "@/services/feedback-service";
 import type { LocalMessage } from "./chat-types";
 import { formatTime, isServerMessageId } from "./chat-helpers";
+import {
+  AgentSteps,
+  AttachmentImage,
+  ChoiceCards,
+  CitationFooter,
+  DiagramView,
+  ExcalidrawView,
+  MarkdownContent,
+  MCPHTMLView,
+  MCPResultCard,
+  MindMapView,
+  parseMessageContent,
+  ReasoningBlock,
+  ThinkingBubble,
+} from "@lyranote/ui/message-render";
 
 export interface ChatMessageBubbleProps {
   msg: LocalMessage;
@@ -54,29 +58,6 @@ export interface ChatMessageBubbleProps {
   onArtifact?: (payload: { type: "html"; content: string; title: string }) => void;
 }
 
-function StreamingEllipsis() {
-  return (
-    <div
-      data-testid="streaming-ellipsis"
-      className="mt-3 flex items-end gap-1.5 text-foreground/42"
-      aria-hidden="true"
-    >
-      {[0, 1, 2].map((dot) => (
-        <m.span
-          key={dot}
-          className="h-2 w-2 rounded-full bg-current"
-          animate={{ y: [0, -8, 0], opacity: [0.35, 1, 0.45], scale: [1, 1.12, 1] }}
-          transition={{
-            duration: 0.9,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: dot * 0.14,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export const ChatMessageBubble = memo(function ChatMessageBubble({
   msg,
@@ -181,23 +162,22 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                 className={cn(
                   "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
                   msg.role === "user"
-                    ? "rounded-br-sm bg-primary text-white selection:bg-white/30 selection:text-white"
+                    ? "rounded-br-sm bg-primary text-white selection-on-primary"
                     : "rounded-bl-sm bg-muted/50 text-foreground",
                 )}
               >
                 {msg.role === "assistant" ? (
                   <>
                     {needsRichMarkdown ? (
-                      <div className="text-sm leading-relaxed text-foreground/85">
+                      <div className={cn("text-sm leading-relaxed text-foreground/85", isStreaming && "streaming-cursor")}>
                         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                           {textContent}
                         </ReactMarkdown>
                       </div>
                     ) : (
-                      <MarkdownContent content={textContent} citations={msg.citations} />
+                      <MarkdownContent content={textContent} citations={msg.citations} showCursor={isStreaming} />
                     )}
                     {choices && <ChoiceCards choices={choices} onSelect={onFollowUp} />}
-                    {isStreaming && <StreamingEllipsis />}
                   </>
                 ) : (
                   <p className="text-sm leading-relaxed">{msg.content}</p>

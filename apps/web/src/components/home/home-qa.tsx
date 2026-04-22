@@ -3,11 +3,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { ChatInput, ChatToolbar } from "@/components/chat-input";
 import { AttachmentPreviewBar } from "@/components/chat-input/attachment-preview-bar";
 import { useFileAttachments } from "@/hooks/use-file-attachments";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { getConfig } from "@/services/config-service";
 import { LLM_MODELS } from "@/lib/constants";
@@ -30,20 +31,39 @@ export function HomeQA({ showHint = true }: HomeQAProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { attachments, addFiles, removeAttachment, getServerIds, isUploading } = useFileAttachments();
-  const { data: appConfig } = useQuery({ queryKey: ["app-config"], queryFn: getConfig, staleTime: 60_000 });
+  const { data: appConfig } = useQuery({
+    queryKey: lyraQueryKeys.config.current(),
+    queryFn: getConfig,
+    staleTime: 60_000,
+  });
   const currentModelId = appConfig?.llm_model ?? "";
   const isThinkingModel = LLM_MODELS.find((m) => m.value === currentModelId)?.thinking ?? false;
   const { data: notebooks = [] } = useQuery({
-    queryKey: ["notebooks"],
+    queryKey: lyraQueryKeys.notebooks.list(),
     queryFn: getNotebooks,
     enabled: menuOpen,
     staleTime: 1000 * 60 * 5,
   });
-  const toolItems = CHAT_TOOL_DEFS.map((tool) => ({
-    id: tool.hint,
-    label: th(tool.key),
-    icon: tool.icon,
-  }));
+  const toolItems = useMemo(
+    () => CHAT_TOOL_DEFS.map((tool) => ({
+      id: tool.hint,
+      label: th(tool.key),
+      icon: tool.icon,
+    })),
+    [th],
+  );
+
+  const handleToolbarFileClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleToggleDeepResearch = useCallback(() => {
+    setIsDeepResearch((v) => !v);
+  }, []);
+
+  const handleToggleThinking = useCallback(() => {
+    setThinkingEnabled((v) => !v);
+  }, []);
 
   function handleSend(text: string) {
     if (isUploading) return;
@@ -87,14 +107,14 @@ export function HomeQA({ showHint = true }: HomeQAProps) {
         onChange={handleFileSelect}
       />
       <ChatToolbar
-        onFileClick={() => fileInputRef.current?.click()}
+        onFileClick={handleToolbarFileClick}
         isDeepResearch={isDeepResearch}
-        onToggleDeepResearch={() => setIsDeepResearch((v) => !v)}
+        onToggleDeepResearch={handleToggleDeepResearch}
         drMode={drMode}
         onDrModeChange={setDrMode}
         isThinkingModel={isThinkingModel}
         thinkingEnabled={thinkingEnabled}
-        onToggleThinking={() => setThinkingEnabled((v) => !v)}
+        onToggleThinking={handleToggleThinking}
         onMenuOpenChange={setMenuOpen}
         tools={toolItems}
         selectedToolId={selectedToolId}

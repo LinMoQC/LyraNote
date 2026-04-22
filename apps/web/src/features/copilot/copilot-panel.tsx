@@ -16,7 +16,6 @@ import { useCopilotResize, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 import type { CopilotMode } from "@/features/notebook/notebook-workspace";
 
 import { ChatInput } from "@/components/chat-input";
-import { ApprovalCard } from "@/components/message-render/approval-card";
 import { BotAvatar } from "@/components/ui/bot-avatar";
 import { CopilotMessageBubble } from "@/features/copilot/copilot-message-bubble";
 import { approveToolCall, getContextGreeting, getInsights, sendMessageStream, type GreetingSuggestion, type ProactiveInsight } from "@/services/ai-service";
@@ -28,6 +27,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useNotebookStore } from "@/store/use-notebook-store";
 import type { CitationData, Message, MindMapData } from "@/types";
 import { getRelatedKnowledge, type CrossNotebookChunk } from "@/services/ai-service";
+import { ApprovalCard } from "@lyranote/ui/message-render";
 
 export { MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH } from "@/hooks/use-copilot-resize";
 

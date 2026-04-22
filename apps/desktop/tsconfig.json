@@ -21,7 +21,14 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "next-intl": ["src/lib/next-intl-stub.ts"],
+      "next/image": ["src/lib/next-image-stub.tsx"],
+      "next/dynamic": ["src/lib/next-dynamic-stub.tsx"],
+      "@excalidraw/excalidraw": ["src/lib/stubs/excalidraw-stub.tsx"],
+      "@nivo/calendar": ["src/lib/stubs/nivo-calendar-stub.tsx"],
+      "markmap-lib": ["src/lib/stubs/markmap-lib-stub.ts"],
+      "markmap-view": ["src/lib/stubs/markmap-view-stub.ts"]
     }
   },
   "include": ["src"],

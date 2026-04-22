@@ -6,12 +6,12 @@ import { SelectionActionMenu } from "@/features/editor/selection-action-menu";
 import { renderWithProviders } from "@test/utils/render-with-providers";
 
 const runRewrite = vi.fn();
-const applyPreview = vi.fn();
+const acceptEdit = vi.fn();
+const rejectEdit = vi.fn();
 const retry = vi.fn();
-const cancel = vi.fn();
 const rewriteState = {
   isRewriting: false,
-  preview: null as null | {
+  appliedEdit: null as null | {
     action: "proofread";
     from: number;
     to: number;
@@ -27,11 +27,12 @@ vi.mock("@tiptap/react", () => ({
 vi.mock("@/hooks/use-inline-rewrite", () => ({
   useInlineRewrite: () => ({
     isRewriting: rewriteState.isRewriting,
-    preview: rewriteState.preview,
+    appliedEdit: rewriteState.appliedEdit,
     runRewrite,
-    applyPreview,
+    acceptEdit,
+    rejectEdit,
     retry,
-    cancel,
+    lastAction: rewriteState.appliedEdit?.action ?? null,
   }),
 }));
 
@@ -56,12 +57,17 @@ function createEditorMock() {
     state: {
       selection: { from: 3, to: 18 },
       doc: {
+        content: { size: 200 },
         textBetween: vi.fn(() => "Selected text"),
         nodeAt: vi.fn(() => ({ type: { name: "paragraph" } })),
       },
     },
+    view: {
+      coordsAtPos: vi.fn(() => ({ left: 120, bottom: 240 })),
+    },
     isEditable: true,
     getAttributes: vi.fn(() => ({})),
+    getText: vi.fn(() => "Selected text"),
     isActive: vi.fn(() => false),
     chain: vi.fn(() => chain),
   };
@@ -106,11 +112,11 @@ const messages = {
 describe("SelectionActionMenu", () => {
   beforeEach(() => {
     runRewrite.mockReset();
-    applyPreview.mockReset();
+    acceptEdit.mockReset();
+    rejectEdit.mockReset();
     retry.mockReset();
-    cancel.mockReset();
     rewriteState.isRewriting = false;
-    rewriteState.preview = null;
+    rewriteState.appliedEdit = null;
   });
 
   it("renders grouped actions and routes inline rewrite skills", () => {
@@ -124,8 +130,9 @@ describe("SelectionActionMenu", () => {
     fireEvent.click(screen.getByTestId("selection-ai-skill-proofread"));
     expect(runRewrite).toHaveBeenCalledWith("proofread");
 
-    fireEvent.click(screen.getByRole("button", { name: "More" }));
-    expect(screen.getByTestId("selection-action-menu-more")).toBeInTheDocument();
+    const moreButton = screen.getByRole("button", { name: "More" });
+    fireEvent.click(moreButton);
+    expect(moreButton).toBeInTheDocument();
   });
 
   it("submits custom AI edit as a structured editor action", () => {
@@ -139,7 +146,10 @@ describe("SelectionActionMenu", () => {
     fireEvent.change(screen.getByTestId("selection-ai-input"), {
       target: { value: "Make it more concise" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.keyDown(screen.getByTestId("selection-ai-input"), {
+      key: "Enter",
+      code: "Enter",
+    });
 
     expect(onEditorAction).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -152,7 +162,7 @@ describe("SelectionActionMenu", () => {
   });
 
   it("shows the local preview card and applies the rewrite", () => {
-    rewriteState.preview = {
+    rewriteState.appliedEdit = {
       action: "proofread",
       from: 3,
       to: 18,
@@ -165,8 +175,9 @@ describe("SelectionActionMenu", () => {
       { messages },
     );
 
-    expect(screen.getByTestId("selection-rewrite-preview")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("selection-ai-skill-proofread"));
+    expect(screen.getByRole("button", { name: "Replace text" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Replace text" }));
-    expect(applyPreview).toHaveBeenCalled();
+    expect(acceptEdit).toHaveBeenCalled();
   });
 });

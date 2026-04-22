@@ -6,6 +6,9 @@ import { NotebookTopBar } from "@/features/notebook/notebook-header";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useFormatter: () => ({
+    dateTime: (value: Date) => value.toISOString(),
+  }),
 }));
 
 vi.mock("next/navigation", () => ({

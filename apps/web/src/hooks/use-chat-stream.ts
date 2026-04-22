@@ -16,6 +16,7 @@ import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
 import type { DiagramData, MindMapData, MCPResultData } from "@/types";
 import type { LocalMessage, MessageAttachment } from "@/features/chat/chat-types";
@@ -197,7 +198,7 @@ export function useChatStream({
       setStreaming(false);
       streamLifecycle.finish();
       resetGenerationTracking();
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.conversations.all() });
 
       // Refresh from server AFTER streaming ends — prevents full content
       // appearing all at once by overwriting the drain queue mid-flight.
@@ -254,8 +255,8 @@ export function useChatStream({
     }
     if (event.type === "note_created") {
       queryClient.invalidateQueries({ queryKey: ["note"] });
-      queryClient.invalidateQueries({ queryKey: ["notes"] });
-      queryClient.invalidateQueries({ queryKey: ["notebooks"] });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.all() });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notebooks.all() });
       const noteTitle = event.note_title ?? t("aiDraft");
       notifySuccess(t("noteCreated", { title: noteTitle }));
       if (event.notebook_id) {

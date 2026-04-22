@@ -9,18 +9,18 @@
 import { AnimatePresence, m } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useCallback } from "react";
 
 import { ChatInput, ChatToolbar } from "@/components/chat-input";
 import { AttachmentPreviewBar } from "@/components/chat-input/attachment-preview-bar";
 import { cn } from "@/lib/utils";
-import { DeepResearchProgress } from "@/components/deep-research/deep-research-progress";
 import { DrPlanCard } from "@/components/deep-research/dr-plan-card";
 import { DrProgressCard } from "@/components/deep-research/dr-progress-card";
 import { DrResearchDrawer } from "@/components/deep-research/dr-research-drawer";
 import { ChatInputContainer, ChatMessageList } from "@/features/chat/chat-layout";
-import { ArtifactPanel } from "@/components/genui";
-import { ApprovalCard } from "@/components/message-render/approval-card";
+import { ArtifactPanel } from "@lyranote/ui/genui";
 import { approveToolCall } from "@/services/ai-service";
+import { ApprovalCard } from "@lyranote/ui/message-render";
 
 import { ChatEmptyState } from "./chat-empty-state";
 import { ChatSidebarPanel } from "./chat-sidebar-panel";
@@ -32,6 +32,22 @@ export function ChatView() {
   const t = useTranslations("chat");
   const tc = useTranslations("common");
   const tDr = useTranslations("deepResearch");
+  const { fileInputRef, fileAttachments, setIsDeepResearch, setThinkingEnabled } = p;
+  const handleToolbarFileClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, [fileInputRef]);
+  const handleToggleDeepResearch = useCallback(() => {
+    setIsDeepResearch((v: boolean) => !v);
+  }, [setIsDeepResearch]);
+  const handleToggleThinking = useCallback(() => {
+    setThinkingEnabled((v: boolean) => !v);
+  }, [setThinkingEnabled]);
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      fileAttachments.addFiles(e.target.files);
+    }
+    e.target.value = "";
+  }, [fileAttachments]);
 
   return (
     <div className="flex h-full dark:border border-border/40">
@@ -181,22 +197,17 @@ export function ChatView() {
                   multiple
                   accept=".pdf,.doc,.docx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,text/markdown"
                   className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      p.fileAttachments.addFiles(e.target.files);
-                    }
-                    e.target.value = "";
-                  }}
+                  onChange={handleFileInputChange}
                 />
                 <ChatToolbar
-                  onFileClick={() => p.fileInputRef.current?.click()}
+                  onFileClick={handleToolbarFileClick}
                   isDeepResearch={p.isDeepResearch}
-                  onToggleDeepResearch={() => p.setIsDeepResearch((v: boolean) => !v)}
+                  onToggleDeepResearch={handleToggleDeepResearch}
                   drMode={p.drMode}
                   onDrModeChange={p.setDrMode}
                   isThinkingModel={p.isThinkingModel}
                   thinkingEnabled={p.thinkingEnabled}
-                  onToggleThinking={() => p.setThinkingEnabled((v: boolean) => !v)}
+                  onToggleThinking={handleToggleThinking}
                   onMenuOpenChange={p.setMenuOpen}
                   tools={p.toolItems}
                   selectedToolId={p.selectedToolId}

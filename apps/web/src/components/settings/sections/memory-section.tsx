@@ -236,11 +236,11 @@ export function MemorySection() {
 
   const handleUpdate = useCallback(async (id: string, value: string) => {
     const updated = await updateMemory(id, value);
-    setMemories((prev) => {
+    setMemories((prev: MemoryGrouped | null) => {
       if (!prev) return prev;
       const next = { ...prev };
       for (const type of ["preference", "fact", "skill"] as const) {
-        next[type] = next[type].map((m) => (m.id === id ? { ...m, ...updated } : m));
+        next[type] = next[type].map((m: MemoryEntry) => (m.id === id ? { ...m, ...updated } : m));
       }
       return next;
     });
@@ -248,12 +248,12 @@ export function MemorySection() {
 
   const handleDelete = useCallback(async (id: string) => {
     await deleteMemory(id);
-    setMemories((prev) => {
+    setMemories((prev: MemoryGrouped | null) => {
       if (!prev) return prev;
       return {
-        preference: prev.preference.filter((m) => m.id !== id),
-        fact: prev.fact.filter((m) => m.id !== id),
-        skill: prev.skill.filter((m) => m.id !== id),
+        preference: prev.preference.filter((m: MemoryEntry) => m.id !== id),
+        fact: prev.fact.filter((m: MemoryEntry) => m.id !== id),
+        skill: prev.skill.filter((m: MemoryEntry) => m.id !== id),
       };
     });
   }, []);

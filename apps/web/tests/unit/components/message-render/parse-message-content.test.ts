@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { parseChoicesBlock } from "@/components/message-render/choice-cards";
-import { parseMessageContent } from "@/components/message-render/parse-message-content";
+import { parseChoicesBlock, parseMessageContent } from "@lyranote/ui/message-render";
 
 describe("parseMessageContent", () => {
   it("extracts choices blocks into structured options", () => {

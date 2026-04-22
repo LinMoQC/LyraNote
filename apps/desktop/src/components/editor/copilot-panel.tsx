@@ -1,17 +1,11 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Sparkles, X, ArrowUp, Loader2, Bot, User, Trash2 } from "lucide-react"
+import { PanelRight, PanelRightClose, Sparkles, X, ArrowUp, Loader2, Bot, User, Trash2 } from "lucide-react"
 import { springs } from "@/lib/animations"
 import { cn } from "@/lib/cn"
-import { useServerStore } from "@/store/use-server-store"
-import { useAuthStore } from "@/store/use-auth-store"
-import { http } from "@/lib/http"
+import { useCopilotStream } from "@/features/editor/use-copilot-stream"
 
-interface Message {
-  id: string
-  role: "user" | "assistant"
-  content: string
-}
+export type CopilotMode = "docked" | "floating"
 
 const QUICK_ACTIONS = [
   { label: "总结笔记", prompt: "请帮我总结以下笔记的核心要点：\n\n" },
@@ -20,116 +14,32 @@ const QUICK_ACTIONS = [
   { label: "解释概念", prompt: "请解释以下内容中的核心概念：\n\n" },
 ]
 
-let msgCounter = 1
-function genMsgId() { return `copilot-msg-${msgCounter++}` }
-
 interface CopilotPanelProps {
   notebookId?: string
+  notebookTitle?: string
   onClose: () => void
   getEditorContent: () => string
+  mode?: CopilotMode
+  onModeChange?: (mode: CopilotMode) => void
 }
 
-export function CopilotPanel({ notebookId, onClose, getEditorContent }: CopilotPanelProps) {
-  const { baseUrl } = useServerStore()
-  const { token } = useAuthStore()
-  const [messages, setMessages] = useState<Message[]>([])
+export function CopilotPanel({ notebookId, notebookTitle, onClose, getEditorContent, mode = "docked", onModeChange }: CopilotPanelProps) {
   const [input, setInput] = useState("")
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [convId, setConvId] = useState<string | null>(null)
+  const { messages, isStreaming, send, clear } = useCopilotStream(notebookId)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  async function ensureConversation(): Promise<string | null> {
-    if (convId) return convId
-    try {
-      const endpoint = notebookId
-        ? `/api/v1/notebooks/${notebookId}/conversations`
-        : "/api/v1/conversations"
-      const res = await http.post(endpoint, { title: "AI 帮写", source: "copilot" })
-      const id: string = res.data.data.id
-      setConvId(id)
-      return id
-    } catch {
-      return null
-    }
-  }
-
   const handleSend = useCallback(async (text?: string) => {
     const content = (text ?? input).trim()
     if (!content || isStreaming) return
 
     setInput("")
-    setIsStreaming(true)
-
-    const activeConvId = await ensureConversation()
-    if (!activeConvId) {
-      setIsStreaming(false)
-      return
-    }
-
-    const userMsg: Message = { id: genMsgId(), role: "user", content }
-    setMessages((m) => [...m, userMsg])
-
-    const aiMsgId = genMsgId()
-    setMessages((m) => [...m, { id: aiMsgId, role: "assistant", content: "" }])
-
-    abortRef.current = new AbortController()
-    try {
-      const response = await fetch(`${baseUrl}/api/v1/conversations/${activeConvId}/messages/stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ content }),
-        signal: abortRef.current.signal,
-      })
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      if (!reader) throw new Error("No response body")
-
-      let buffer = ""
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() ?? ""
-        for (const line of lines) {
-          if (!line.startsWith("data:")) continue
-          const raw = line.slice(5).trim()
-          if (raw === "[DONE]") break
-          try {
-            const evt = JSON.parse(raw)
-            if (evt.type === "text" || evt.type === "content") {
-              setMessages((m) =>
-                m.map((msg) =>
-                  msg.id === aiMsgId ? { ...msg, content: msg.content + (evt.content ?? "") } : msg
-                )
-              )
-            }
-          } catch { /* ignore malformed */ }
-        }
-      }
-    } catch (err: unknown) {
-      if ((err as Error)?.name !== "AbortError") {
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === aiMsgId ? { ...msg, content: "请求失败，请稍后重试。" } : msg
-          )
-        )
-      }
-    } finally {
-      setIsStreaming(false)
-      abortRef.current = null
-    }
-  }, [input, isStreaming, convId, baseUrl, token, notebookId]) // eslint-disable-line react-hooks/exhaustive-deps
+    await send(content)
+  }, [input, isStreaming, send])
 
   function handleQuickAction(action: { label: string; prompt: string }) {
     const noteContent = getEditorContent().trim()
@@ -140,10 +50,7 @@ export function CopilotPanel({ notebookId, onClose, getEditorContent }: CopilotP
   }
 
   function handleClear() {
-    abortRef.current?.abort()
-    setMessages([])
-    setConvId(null)
-    setIsStreaming(false)
+    clear()
   }
 
   const isEmpty = messages.length === 0
@@ -152,28 +59,42 @@ export function CopilotPanel({ notebookId, onClose, getEditorContent }: CopilotP
     <div className="flex flex-col h-full">
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-3 border-b shrink-0"
+        className="flex items-center justify-between px-4 py-2.5 border-b shrink-0"
         style={{ borderColor: "var(--color-border)" }}
       >
         <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-[var(--color-accent)]" />
-          <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">AI 帮写</span>
+          <div className="w-5 h-5 rounded-full flex items-center justify-center bg-gradient-to-br from-violet-600 to-purple-800">
+            <Bot size={10} className="text-white" />
+          </div>
+          <span className="text-[13px] font-semibold text-[var(--color-text-primary)]">
+            {notebookTitle || "Lyra"}
+          </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-0.5">
           {!isEmpty && (
             <motion.button
               whileTap={{ scale: 0.9 }}
               onClick={handleClear}
               title="清空对话"
-              className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-white/8 transition-colors"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-white/[0.06] transition-colors"
             >
               <Trash2 size={13} />
+            </motion.button>
+          )}
+          {onModeChange && (
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => onModeChange(mode === "docked" ? "floating" : "docked")}
+              title={mode === "docked" ? "悬浮窗模式" : "侧边栏模式"}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-white/[0.06] transition-colors"
+            >
+              {mode === "docked" ? <PanelRightClose size={14} /> : <PanelRight size={14} />}
             </motion.button>
           )}
           <motion.button
             whileTap={{ scale: 0.9 }}
             onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-white/8 transition-colors"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-white/[0.06] transition-colors"
           >
             <X size={14} />
           </motion.button>

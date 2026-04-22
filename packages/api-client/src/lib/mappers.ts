@@ -5,10 +5,14 @@
 
 import { SOURCE_STATUSES } from "@lyranote/types/constants";
 import type {
+  AgentStep,
   Artifact,
   CitationData,
   ConversationRecord,
+  DiagramData,
+  MCPResultData,
   Message,
+  MindMapData,
   Note,
   Notebook,
   Source,
@@ -24,7 +28,8 @@ export function mapNotebook(raw: Raw): Notebook {
     description: (raw.description as string) ?? "",
     updatedAt: (raw.updated_at as string) ?? new Date().toISOString(),
     sourceCount: (raw.source_count as number) ?? 0,
-    artifactCount: 0,
+    noteCount: (raw.note_count as number) ?? 0,
+    artifactCount: (raw.artifact_count as number) ?? 0,
     wordCount: (raw.word_count as number) ?? 0,
     summary: (raw.summary_md as string) || undefined,
     status: (raw.status as string) === "active" ? "active" : "draft",
@@ -88,6 +93,10 @@ export function mapMessage(raw: Raw): Message {
     role: raw.role as ChatRole,
     content: raw.content as string,
     citations: (raw.citations as CitationData[] | null) ?? undefined,
+    agentSteps: (raw.agent_steps as AgentStep[] | null) ?? undefined,
+    mindMap: (raw.mind_map as MindMapData | null) ?? undefined,
+    diagram: (raw.diagram as DiagramData | null) ?? undefined,
+    mcpResult: (raw.mcp_result as MCPResultData | null) ?? undefined,
   };
 }
 

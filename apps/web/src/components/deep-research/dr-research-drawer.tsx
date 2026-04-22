@@ -15,7 +15,7 @@ import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { buildMarkdownComponents } from "@/components/genui";
+import { buildMarkdownComponents } from "@lyranote/ui/genui";
 import { DrDocumentCard } from "./dr-document-card";
 import type { DrProgress } from "./dr-types";
 

@@ -10,6 +10,7 @@ import { saveDeepResearchSources, planDeepResearch } from "@/services/ai-service
 import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { DrProgress, DrPlanData } from "@/components/deep-research/deep-research-progress";
 import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
 import type { LocalMessage } from "@/features/chat/chat-types";
@@ -100,7 +101,7 @@ export function useDeepResearch({
 
       // Refresh messages from server (backend already saved user + assistant messages)
       if (convId) {
-        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        queryClient.invalidateQueries({ queryKey: lyraQueryKeys.conversations.all() });
       }
 
       const finalize = () => {
@@ -161,7 +162,7 @@ export function useDeepResearch({
         setActiveConvId(conversationId);
         saveActiveConversation(conversationId);
         drPersistedRef.current = true;
-        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        queryClient.invalidateQueries({ queryKey: lyraQueryKeys.conversations.all() });
       }
     } catch (error) {
       if (isAbortError(error)) return;

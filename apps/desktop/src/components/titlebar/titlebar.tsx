@@ -1,17 +1,15 @@
-import { getCurrentWindow } from "@tauri-apps/api/window"
 import { motion, AnimatePresence } from "framer-motion"
 import { X } from "lucide-react"
 import { cn } from "@/lib/cn"
 import { useTabStore, type Tab } from "@/store/use-tab-store"
 import { useNavStore } from "@/store/use-nav-store"
-
-const appWindow = getCurrentWindow()
+import { windowService } from "@/lib/window-service"
 
 export function Titlebar() {
   const { tabs, activeTabId, closeTab, setActiveTab } = useTabStore()
   const { setActiveSection, sidebarExpanded } = useNavStore()
 
-  function handleMaximize() { appWindow.toggleMaximize() }
+  function handleMaximize() { void windowService.toggleMaximize() }
 
   function handleTabClick(tab: Tab) {
     setActiveTab(tab.id)
@@ -22,19 +20,16 @@ export function Titlebar() {
     if (e.button !== 0) return
     const target = e.target as HTMLElement
     if (target.closest("button, input, textarea, a, [role=button]")) return
-    appWindow.startDragging()
+    void windowService.startDragging()
   }
 
   return (
     <div
-      // When sidebar is collapsed, pad left to clear the absolute traffic-lights overlay (~96px)
       className={cn(
         "flex items-center h-10 shrink-0 select-none",
         sidebarExpanded ? "pl-8" : "pl-36"
       )}
-      style={{
-        transition: "padding-left 220ms cubic-bezier(0.4,0,0.2,1)",
-      }}
+      style={{ transition: "padding-left 220ms cubic-bezier(0.4,0,0.2,1)" }}
       onMouseDown={handleDragStart}
       onDoubleClick={handleMaximize}
     >
@@ -83,7 +78,6 @@ export function Titlebar() {
             )
           })}
         </AnimatePresence>
-
       </div>
 
       <div className="flex-1 h-full" />

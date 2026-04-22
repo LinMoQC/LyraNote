@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
 
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { createNote, deleteNote, listNotes } from "@/services/note-service";
 import type { NoteRecord } from "@/services/note-service";
@@ -40,7 +41,7 @@ export function NotePickerDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
 
   const { data: notes = [], isLoading } = useQuery({
-    queryKey: ["notes", notebookId],
+    queryKey: lyraQueryKeys.notes.list(notebookId),
     queryFn: () => listNotes(notebookId),
     enabled: open,
     staleTime: 10_000,
@@ -77,7 +78,7 @@ export function NotePickerDropdown({
     setCreating(true);
     try {
       const newNote = await createNote(notebookId, t("newNote"));
-      await queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+      await queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
       onCreated(newNote);
       setOpen(false);
     } finally {
@@ -91,7 +92,7 @@ export function NotePickerDropdown({
     setDeletingId(noteId);
     try {
       await deleteNote(noteId);
-      await queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+      await queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
       onDeleted(noteId);
     } finally {
       setDeletingId(null);

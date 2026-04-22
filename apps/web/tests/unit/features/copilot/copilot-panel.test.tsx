@@ -45,11 +45,7 @@ vi.mock("@/components/chat-input", () => ({
   },
 }));
 
-vi.mock("@/components/message-render/agent-steps", () => ({
-  AgentSteps: () => null,
-}));
-
-vi.mock("@/components/message-render/approval-card", () => ({
+vi.mock("@lyranote/ui/message-render", () => ({
   ApprovalCard: () => null,
 }));
 

@@ -13,14 +13,18 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      include: [
-        "src/features/**",
-        "src/components/**",
-        "src/services/**",
-        "src/hooks/**",
-        "src/utils/**",
+      thresholds: {
+        lines: 70,
+      },
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "tests/**",
+        "src/**/*.test.{ts,tsx}",
+        "src/**/*.spec.{ts,tsx}",
+        "src/**/*.d.ts",
+        "src/app/**",
+        "src/components/ui/**",
       ],
-      exclude: ["tests/**", "src/**/*.test.{ts,tsx}", "src/**/*.spec.{ts,tsx}"],
     },
   },
   resolve: {

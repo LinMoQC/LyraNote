@@ -75,7 +75,7 @@ export function Sidebar() {
   const toggle = useUiStore((s) => s.toggleSidebar);
   const sidebarMobileOpen = useUiStore((s) => s.sidebarMobileOpen);
   const setSidebarMobileOpen = useUiStore((s) => s.setSidebarMobileOpen);
-  const { matches: isMobile, ready: mediaQueryReady } = useMediaQuery("(max-width: 767px)");
+  const { matches: isMobile } = useMediaQuery("(max-width: 767px)");
   const [logoHovered, setLogoHovered] = useState(false);
   const [recentNotebooks, setRecentNotebooks] = useState<Pick<Notebook, "id" | "title">[]>([]);
   const [notebooksLoading, setNotebooksLoading] = useState(true);
@@ -136,18 +136,15 @@ export function Sidebar() {
   };
 
   return (
-    <m.aside
-      initial={isMobile ? { x: -288 } : { width: collapsed ? 64 : 240 }}
-      animate={
-        isMobile
-          ? { x: sidebarMobileOpen ? 0 : -288 }
-          : { width: collapsed ? 64 : 240 }
-      }
-      transition={hydrated ? { type: "spring", stiffness: 320, damping: 32, restDelta: 0.5 } : { duration: 0 }}
+    <aside
       className={cn(
-        "fixed left-0 top-0 z-50 flex h-screen w-72 -translate-x-full flex-shrink-0 flex-col overflow-hidden bg-sidebar md:static md:z-auto md:w-auto md:translate-x-0"
+        "fixed left-0 top-0 z-50 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden bg-sidebar md:static md:z-auto md:translate-x-0 motion-reduce:transition-none",
+        hydrated
+          ? "transition-transform duration-200 ease-out md:transition-[width] md:duration-200 md:ease-[cubic-bezier(0.22,1,0.36,1)]"
+          : "transition-none",
+        sidebarMobileOpen ? "translate-x-0" : "-translate-x-full",
+        collapsed ? "md:w-16" : "md:w-[240px]"
       )}
-      style={isMobile ? undefined : {}}
     >
       {/* ── Brand ─────────────────────────────────────── */}
       <div className="flex h-16 flex-shrink-0 items-center justify-between px-2">
@@ -183,7 +180,7 @@ export function Sidebar() {
               transition={{ duration: 0.14 }}
               className="absolute inset-0 flex items-center justify-center text-foreground"
             >
-              <PanelLeft size={20} />
+              <svg width="22" height="22" viewBox="0 0 1024 1024" fill="currentColor"><path d="M725.333333 132.266667A166.4 166.4 0 0 1 891.733333 298.666667v426.666666c0 91.904-74.496 166.4-166.4 166.4H298.666667A166.442667 166.442667 0 0 1 132.266667 725.333333V298.666667A166.4 166.4 0 0 1 298.666667 132.266667h426.666666z m-281.6 682.666666H725.333333a89.6 89.6 0 0 0 89.6-89.6V298.666667A89.6 89.6 0 0 0 725.333333 209.066667h-281.6v605.866666zM298.666667 209.066667A89.6 89.6 0 0 0 209.066667 298.666667v426.666666c0 49.493333 40.106667 89.6 89.6 89.6h68.266666V209.066667H298.666667z"></path></svg>
             </m.div>
           </div>
 
@@ -207,7 +204,7 @@ export function Sidebar() {
             )}
             tabIndex={collapsed || isMobile ? -1 : 0}
           >
-            <PanelLeft size={20} />
+            <svg width="22" height="22" viewBox="0 0 1024 1024" fill="currentColor"><path d="M725.333333 132.266667A166.4 166.4 0 0 1 891.733333 298.666667v426.666666c0 91.904-74.496 166.4-166.4 166.4H298.666667A166.442667 166.442667 0 0 1 132.266667 725.333333V298.666667A166.4 166.4 0 0 1 298.666667 132.266667h426.666666z m-281.6 682.666666H725.333333a89.6 89.6 0 0 0 89.6-89.6V298.666667A89.6 89.6 0 0 0 725.333333 209.066667h-281.6v605.866666zM298.666667 209.066667A89.6 89.6 0 0 0 209.066667 298.666667v426.666666c0 49.493333 40.106667 89.6 89.6 89.6h68.266666V209.066667H298.666667z"></path></svg>
           </button>
         </div>
       </div>
@@ -487,6 +484,6 @@ export function Sidebar() {
           )}
         </div>
       </div>
-    </m.aside>
+    </aside>
   );
 }

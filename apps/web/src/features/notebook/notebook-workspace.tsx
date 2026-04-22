@@ -38,6 +38,7 @@ import { useNotebookStore } from "@/store/use-notebook-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { getWritingContext } from "@/services/ai-service";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { getSources } from "@/services/source-service";
 import { getRelatedKnowledge, type CrossNotebookChunk } from "@/services/ai-service";
 import { listNotes } from "@/services/note-service";
@@ -130,7 +131,7 @@ export function NotebookWorkspace({
 
   // Fetch sources so we can resolve activeSourceId → Source object for the drawer
   const { data: sources = [] } = useQuery({
-    queryKey: ["sources", notebookId],
+    queryKey: lyraQueryKeys.sources.list({ notebookId, scope: "notebook" }),
     queryFn: () => getSources(notebookId),
   });
   const activeSource = sources.find((s) => s.id === activeSourceId) ?? null;
@@ -183,11 +184,11 @@ export function NotebookWorkspace({
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title ?? null);
     setActiveNoteUpdatedAt(note.updatedAt ?? null);
-    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
   }, [notebookId, queryClient]);
 
   const handleNoteDeleted = useCallback((deletedNoteId: string) => {
-    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
     if (activeNoteId === deletedNoteId) {
       // Fall back to the next available note
       listNotes(notebookId).then((notes) => {
@@ -204,7 +205,7 @@ export function NotebookWorkspace({
   }, []);
 
   const handleNoteSaved = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
     setActiveNoteUpdatedAt(new Date().toISOString());
   }, [notebookId, queryClient]);
 
@@ -449,7 +450,7 @@ export function NotebookWorkspace({
               setActiveNoteId(noteId);
               setActiveNoteTitle(noteTitle);
               setActiveNoteUpdatedAt(new Date().toISOString());
-              void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+              void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
               setNoteRefreshKey((k) => k + 1);
             }}
             pendingPrompt={pendingPrompt}
@@ -519,7 +520,7 @@ export function NotebookWorkspace({
                   setActiveNoteId(noteId);
                   setActiveNoteTitle(noteTitle);
                   setActiveNoteUpdatedAt(new Date().toISOString());
-                  void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+                  void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
                   setNoteRefreshKey((k) => k + 1);
                 }}
                 pendingPrompt={pendingPrompt}

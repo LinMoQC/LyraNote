@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
+import { lyraQueryKeys } from "@/lib/query-keys"
 import { getNotebooks } from "@/services/notebook-service"
 import { cn } from "@/lib/utils"
 import type { Notebook } from "@/types"
@@ -29,7 +30,7 @@ export const NotebookPicker = forwardRef<NotebookPickerHandle, NotebookPickerPro
   }))
 
   const { data: notebooks = [] } = useQuery({
-    queryKey: ["notebooks"],
+    queryKey: lyraQueryKeys.notebooks.list(),
     queryFn: getNotebooks,
     enabled: open,
     staleTime: 1000 * 60 * 5,

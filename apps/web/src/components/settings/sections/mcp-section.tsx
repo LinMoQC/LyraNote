@@ -347,7 +347,7 @@ function TestResultPanel({
       )}
       {result.tools.length > 0 && (
         <div className="space-y-1">
-          {result.tools.map((tool) => (
+          {result.tools.map((tool: MCPTestResult["tools"][number]) => (
             <div key={tool.name} className="flex items-start gap-2">
               <Zap size={11} className="mt-0.5 flex-shrink-0 text-primary/60" />
               <div className="min-w-0">
@@ -455,7 +455,7 @@ function ServerRow({
           </p>
           {server.discoveredTools && server.discoveredTools.length > 0 && (
             <div className="mt-1 flex flex-wrap gap-1">
-              {server.discoveredTools.slice(0, 5).map((tool) => (
+              {server.discoveredTools.slice(0, 5).map((tool: NonNullable<MCPServer["discoveredTools"]>[number]) => (
                 <span
                   key={tool.name}
                   title={tool.description || tool.name}

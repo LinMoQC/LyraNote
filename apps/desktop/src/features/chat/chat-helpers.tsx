@@ -1,11 +1,11 @@
 /**
  * Stub for @/features/chat/chat-helpers used by message-render components.
- * Provides parseBold and re-exports processChildren from citation-utils.
+ * Provides parseBold and re-exports shared citation helpers.
  */
 
 import type { ReactNode } from "react"
 
-export { renderInlineCitations, processChildren } from "@/lib/citation-utils"
+export { renderInlineCitations, processChildren } from "@lyranote/ui/message-render"
 
 /**
  * Parses **bold** markdown syntax into <strong> elements.

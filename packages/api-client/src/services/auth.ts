@@ -29,6 +29,7 @@ export interface AuthUserOut {
 }
 
 export interface ProfileUpdatePayload {
+  username?: string;
   name?: string;
   avatar_url?: string;
 }

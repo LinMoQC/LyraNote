@@ -1,9 +1,12 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { motion, AnimatePresence } from "framer-motion"
-import { ArrowUp, Book, Check, ChevronDown, ChevronRight, FlaskConical, Lightbulb, List, FileSearch, FileText, GitCompare, Loader2, Paperclip, Plus, Radar, Sparkles, StopCircle, X } from "lucide-react"
+import { ArrowUp, Book, Check, ChevronDown, ChevronRight, FlaskConical, Lightbulb, List, FileSearch, FileText, GitCompare, Loader2, Paperclip, Plus, Radar, Sparkles, Square, X } from "lucide-react"
 
 import { ChatComposer } from "@/components/chat-input/chat-composer"
-import { http } from "@/lib/http"
+import { lyraQueryKeys } from "@/lib/query-keys"
+import { getNotebooks } from "@/services/notebook-service"
+import { uploadTempFile } from "@/services/upload-service"
 
 const MOCK_TOOLS = [
   { id: "toolSummarize", label: "总结", icon: FileText },
@@ -33,12 +36,12 @@ export const DesktopChatInput = forwardRef<DesktopChatInputHandle, DesktopChatIn
     const [thinkingEnabled, setThinkingEnabled] = useState(false)
     const [selectedTool, setSelectedTool] = useState<ToolOption | null>(null)
     const [selectedNotebook, setSelectedNotebook] = useState<NotebookOption | null>(null)
-    const [notebooks, setNotebooks] = useState<NotebookOption[]>([])
     const [isSubmitting, setIsSubmitting] = useState(false)
-
-    useEffect(() => {
-      http.get("/api/v1/notebooks").then((res) => setNotebooks(res.data?.data ?? [])).catch(() => {})
-    }, [])
+    const { data: notebooks = [] } = useQuery({
+      queryKey: lyraQueryKeys.notebooks.list(),
+      queryFn: getNotebooks,
+      staleTime: 60_000,
+    })
 
     useEffect(() => {
       function handleClickOutside(event: MouseEvent) {
@@ -96,10 +99,7 @@ export const DesktopChatInput = forwardRef<DesktopChatInputHandle, DesktopChatIn
 
       await Promise.all(wrapped.map(async (attachment) => {
         try {
-          const form = new FormData()
-          form.append("file", attachment.file)
-          const res = await http.post("/api/v1/uploads/temp", form)
-          const serverId = res.data?.data?.id || res.data?.id
+          const serverId = await uploadTempFile(attachment.file)
           setAttachments((prev) => prev.map((item) => item.localId === attachment.localId ? { ...item, serverId, isUploading: false } : item))
         } catch {
           setAttachments((prev) => prev.map((item) => item.localId === attachment.localId ? { ...item, isUploading: false } : item))
@@ -123,14 +123,13 @@ export const DesktopChatInput = forwardRef<DesktopChatInputHandle, DesktopChatIn
 
       if (isSubmitDisabled) return
 
+      const payload = { content: input.trim(), attachments }
+      setInput("")
+      setAttachments([])
+
       setIsSubmitting(true)
       try {
-        await onSubmit({
-          content: input.trim(),
-          attachments,
-        })
-        setInput("")
-        setAttachments([])
+        await onSubmit(payload)
       } finally {
         setIsSubmitting(false)
       }
@@ -406,7 +405,7 @@ export const DesktopChatInput = forwardRef<DesktopChatInputHandle, DesktopChatIn
                                 尚无笔记本
                               </div>
                             ) : (
-                              notebooks.map((notebook) => {
+                              notebooks.map((notebook: NotebookOption) => {
                                 const active = selectedNotebook?.id === notebook.id
                                 return (
                                   <div key={notebook.id} className="px-1.5 py-0.5">
@@ -444,7 +443,7 @@ export const DesktopChatInput = forwardRef<DesktopChatInputHandle, DesktopChatIn
             className="flex items-center justify-center w-[30px] h-[30px] rounded-full text-[var(--color-text-secondary)] transition-all disabled:opacity-30 hover:bg-[#ffffff12] hover:text-[var(--color-text-primary)]"
           >
             {streaming
-              ? <StopCircle size={18} strokeWidth={2} />
+              ? <Square size={12} strokeWidth={0} fill="currentColor" className="rounded-[2px]" />
               : <ArrowUp size={18} strokeWidth={2} />}
           </motion.button>
         )}

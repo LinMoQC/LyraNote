@@ -30,12 +30,12 @@ export function HomePage() {
   function handleSubmit(payload: DesktopChatInputSubmitPayload) {
     if (!payload.content.trim() && payload.attachments.length === 0) return
     const draftId = saveDraft(payload)
-    openTab({ type: "chat" as never, title: "对话", meta: { draftId } })
+    openTab({ type: "chat", title: "对话", meta: { draftId } })
     setActiveSection("chat")
   }
 
   function handleSuggestion(s: string) {
-    openTab({ type: "chat" as never, title: "对话", meta: { initialMessage: s } })
+    openTab({ type: "chat", title: "对话", meta: { initialMessage: s } })
     setActiveSection("chat")
   }
 

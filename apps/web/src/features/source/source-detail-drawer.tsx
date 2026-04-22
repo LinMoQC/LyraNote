@@ -25,6 +25,7 @@ import { createPortal } from "react-dom"
 
 import { useToast } from "@/hooks/use-toast"
 import { REFETCH_INTERVAL_FAST, TRUNCATE_PREVIEW } from "@/lib/constants"
+import { lyraQueryKeys } from "@/lib/query-keys"
 import { cn } from "@/lib/utils"
 import { getNotebooks } from "@/services/notebook-service"
 import {
@@ -208,22 +209,26 @@ export function SourceDetailDrawer({
   }, [source, onClose])
 
   const { data: chunks = [], isLoading: chunksLoading } = useQuery({
-    queryKey: ["chunks", source?.id],
+    queryKey: source ? lyraQueryKeys.sources.chunks(source.id) : lyraQueryKeys.sources.chunks("idle"),
     queryFn: () => getChunks(source!.id),
     enabled: !!source && tab === "chunks",
     refetchInterval: source?.status === "processing" || source?.status === "pending" ? REFETCH_INTERVAL_FAST : false,
   })
 
   const { data: notebooks = [] } = useQuery({
-    queryKey: ["notebooks"],
+    queryKey: lyraQueryKeys.notebooks.list(),
     queryFn: getNotebooks,
     enabled: tab === "settings",
   })
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["all-sources"] })
-    queryClient.invalidateQueries({ queryKey: ["chunks", source?.id] })
-    if (source) queryClient.invalidateQueries({ queryKey: ["sources", source.notebookId] })
+    if (source) {
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.sources.chunks(source.id) })
+      queryClient.invalidateQueries({
+        queryKey: lyraQueryKeys.sources.list({ notebookId: source.notebookId, scope: "notebook" }),
+      })
+    }
   }
 
   // Build the rechunk options from current settings state

@@ -199,6 +199,15 @@ html[data-theme-preset="notion"] ::selection {
   background: hsl(207 75% 51% / 0.3);
 }
 
+/* User message bubble sits on bg-primary — global ::selection is same hue → invisible.
+   Override with white so the highlight is visible on the blue background.
+   !important is needed to beat PostCSS/Tailwind layer ordering. */
+.selection-on-primary::selection,
+.selection-on-primary *::selection {
+  background: rgba(255, 255, 255, 0.35) !important;
+  color: #fff !important;
+}
+
 /* ─── Utilities ──────────────────────────────────────────────────────────── */
 .surface-panel {
   @apply rounded-3xl border border-foreground/[0.06] bg-card/85 shadow-panel backdrop-blur;
@@ -411,4 +420,35 @@ html[data-theme-preset="notion"] ::selection {
 
 .spin-ease {
   animation: spin 1s linear infinite;
+}
+
+/* ─── Streaming cursor (blinking caret at end of AI response) ──────────── */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+.streaming-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1.2s ease-in-out infinite;
+}
+
+/* ReactMarkdown fallback: cursor on last direct text element */
+.streaming-cursor > :is(p, li, h1, h2, h3, h4, h5, h6):last-child::after,
+.streaming-cursor > :is(ul, ol):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1.2s ease-in-out infinite;
 }

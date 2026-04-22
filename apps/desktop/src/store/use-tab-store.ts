@@ -1,20 +1,47 @@
 import { create } from "zustand"
 
-export type TabType = "home" | "notebooks" | "editor" | "knowledge" | "chat" | "settings"
+export type TabType =
+  | "home"
+  | "notebooks"
+  | "editor"
+  | "knowledge"
+  | "chat"
+  | "settings"
+  | "scheduled"
+  | "profile"
 
-export interface Tab {
+interface BaseTab {
   id: string
-  type: TabType
   title: string
-  /** Extra context: noteId, notebookId, etc. */
-  meta?: Record<string, unknown>
   isDirty?: boolean
 }
+
+export type Tab =
+  | (BaseTab & { type: "home" | "notebooks" | "knowledge" | "settings" | "scheduled" | "profile" })
+  | (BaseTab & { type: "editor"; meta: { notebookId?: string } })
+  | (BaseTab & {
+      type: "chat"
+      meta?: {
+        initialMessage?: string
+        draftId?: string
+      }
+    })
+
+export type TabInput =
+  | ({ id?: string } & Omit<BaseTab, "id"> & { type: "home" | "notebooks" | "knowledge" | "settings" | "scheduled" | "profile" })
+  | ({ id?: string } & Omit<BaseTab, "id"> & { type: "editor"; meta: { notebookId?: string } })
+  | ({ id?: string } & Omit<BaseTab, "id"> & {
+      type: "chat"
+      meta?: {
+        initialMessage?: string
+        draftId?: string
+      }
+    })
 
 interface TabStore {
   tabs: Tab[]
   activeTabId: string | null
-  openTab: (tab: Omit<Tab, "id"> & { id?: string }) => void
+  openTab: (tab: TabInput) => void
   closeTab: (id: string) => void
   setActiveTab: (id: string) => void
   updateTab: (id: string, patch: Partial<Tab>) => void
@@ -25,6 +52,13 @@ function genId() {
   return `tab-${counter++}`
 }
 
+function serializeTabMeta(tab: TabInput) {
+  if ("meta" in tab && tab.meta) {
+    return JSON.stringify(tab.meta)
+  }
+  return ""
+}
+
 export const useTabStore = create<TabStore>((set, get) => ({
   tabs: [
     { id: "tab-home", type: "home", title: "主页" },
@@ -33,11 +67,10 @@ export const useTabStore = create<TabStore>((set, get) => ({
 
   openTab(tab) {
     const { tabs } = get()
-    // If same type+meta already open, just activate
     const existing = tabs.find(
       (t) =>
         t.type === tab.type &&
-        JSON.stringify(t.meta) === JSON.stringify(tab.meta)
+        serializeTabMeta(t) === serializeTabMeta(tab)
     )
     if (existing) {
       set({ activeTabId: existing.id })
@@ -68,7 +101,7 @@ export const useTabStore = create<TabStore>((set, get) => ({
 
   updateTab(id, patch) {
     set((s) => ({
-      tabs: s.tabs.map((t) => (t.id === id ? { ...t, ...patch } : t)),
+      tabs: s.tabs.map((t) => (t.id === id ? ({ ...t, ...patch } as Tab) : t)),
     }))
   },
 }))

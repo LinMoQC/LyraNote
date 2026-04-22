@@ -5,23 +5,27 @@ import { m } from "framer-motion";
 import { useTranslations } from "next-intl";
 import { memo, useCallback, useMemo, useState } from "react";
 
+import { CodeBlock } from "@lyranote/ui/message-render";
+import { buildMarkdownComponents } from "@lyranote/ui/genui";
 import { BotAvatar } from "@/components/ui/bot-avatar";
-import { CitationFooter } from "@/components/message-render/citation-footer";
-import { MCPHTMLView, MCPResultCard } from "@/components/message-render/mcp-result-views";
-import { MindMapView } from "@/components/message-render/mind-map-view";
-import { DiagramView } from "@/components/message-render/diagram-view";
-import { ExcalidrawView } from "@/components/message-render/excalidraw-view";
-import { ChoiceCards } from "@/components/message-render/choice-cards";
-import { AgentSteps, ThinkingBubble } from "@/components/message-render/agent-steps";
-import { MarkdownContent } from "@/components/message-render/markdown-content";
-import { CodeBlock } from "@/components/message-render/code-block";
-import { parseMessageContent } from "@/components/message-render/parse-message-content";
-import { buildMarkdownComponents } from "@/components/genui";
 import type { AgentEvent } from "@/services/ai-service";
 import type { Message, MindMapData } from "@/types";
-import { stripCitationMarkers } from "@/lib/citation-utils";
 import { cn } from "@/lib/utils";
-import { useAuth } from "@/features/auth/auth-provider";
+import { useAuthUser } from "@/features/auth/auth-provider";
+import {
+  AgentSteps,
+  ChoiceCards,
+  CitationFooter,
+  DiagramView,
+  ExcalidrawView,
+  MarkdownContent,
+  MCPHTMLView,
+  MCPResultCard,
+  MindMapView,
+  parseMessageContent,
+  stripCitationMarkers,
+  ThinkingBubble,
+} from "@lyranote/ui/message-render";
 
 type Props = {
   message: Message;
@@ -41,25 +45,6 @@ function buildReferencesBlock(citations: NonNullable<Message["citations"]>): str
   return `\n\n**Reference Sources**\n\n${lines.join("\n\n")}`;
 }
 
-function StreamingEllipsis() {
-  return (
-    <div className="mt-3 flex items-end gap-1.5 text-foreground/42" aria-hidden="true">
-      {[0, 1, 2].map((dot) => (
-        <m.span
-          key={dot}
-          className="h-2 w-2 rounded-full bg-current"
-          animate={{ y: [0, -8, 0], opacity: [0.35, 1, 0.45], scale: [1, 1.12, 1] }}
-          transition={{
-            duration: 0.9,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: dot * 0.14,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export const CopilotMessageBubble = memo(function CopilotMessageBubble({
   message,
@@ -71,7 +56,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({
   onFollowUp,
 }: Props) {
   const t = useTranslations("copilot");
-  const { user } = useAuth();
+  const user = useAuthUser();
   const avatarUrl = user?.avatar_url ?? null;
   const initials = (user?.name?.[0] ?? user?.username?.[0] ?? "U").toUpperCase();
   const [insertState, setInsertState] = useState<"idle" | "loading" | "done">("idle");
@@ -157,7 +142,7 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({
                   </p>
                 </div>
               ) : null}
-              <div className="rounded-2xl rounded-br-sm bg-primary px-3 py-2.5 text-sm leading-relaxed text-white selection:bg-white/30 selection:text-white">
+              <div className="rounded-2xl rounded-br-sm bg-primary px-3 py-2.5 text-sm leading-relaxed text-white selection-on-primary">
                 <p>{message.content}</p>
               </div>
             </div>
@@ -166,16 +151,15 @@ export const CopilotMessageBubble = memo(function CopilotMessageBubble({
               {!isSpinning && (
                 <div className="rounded-2xl rounded-bl-sm bg-black/[0.04] px-3 py-2.5 text-sm leading-6 text-foreground dark:bg-white/[0.07]">
                   {needsRichMarkdown ? (
-                    <div className="text-sm leading-relaxed text-foreground/85">
+                    <div className={cn("text-sm leading-relaxed text-foreground/85", isStreaming && "streaming-cursor")}>
                       <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
                         {textContent}
                       </ReactMarkdown>
                     </div>
                   ) : (
-                    <MarkdownContent content={textContent} citations={message.citations} />
+                    <MarkdownContent content={textContent} citations={message.citations} showCursor={isStreaming} />
                   )}
                   {choices && <ChoiceCards choices={choices} onSelect={(q) => onFollowUp?.(q)} />}
-                  {isStreaming && <StreamingEllipsis />}
                 </div>
               )}
 

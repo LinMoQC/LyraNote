@@ -19,7 +19,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
-import { buildMarkdownComponents } from "@/components/genui";
+import { buildMarkdownComponents } from "@lyranote/ui/genui";
 import { EVIDENCE_STRENGTH_CONFIG, type DrProgress } from "./dr-types";
 
 // ── Evidence badge helpers ─────────────────────────────────────────────────────
@@ -127,6 +127,8 @@ export function DrDocumentViewer({
   const { deliverable, reportTokens, doneCitations } = progress;
   const title = deliverable?.title ?? t("reportTitle");
   const toc = useMemo(() => extractToc(reportTokens), [reportTokens]);
+  const markdownContent = useMemo(() => injectEvidenceTokens(reportTokens), [reportTokens]);
+  const baseMarkdownComponents = useMemo(() => buildMarkdownComponents({}), []);
 
   // Track active heading on scroll
   useEffect(() => {
@@ -301,7 +303,7 @@ export function DrDocumentViewer({
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      ...buildMarkdownComponents({}),
+                      ...baseMarkdownComponents,
                       h1: ({ children }) => {
                         const id = headingId(headingCounter);
                         return <h1 data-toc-id={id}>{children}</h1>;
@@ -321,12 +323,11 @@ export function DrDocumentViewer({
                         if (text === "__ev:strong__") return <EvidenceBadge grade="强" />;
                         if (text === "__ev:medium__") return <EvidenceBadge grade="中" />;
                         if (text === "__ev:weak__")   return <EvidenceBadge grade="弱" />;
-                        const baseMd = buildMarkdownComponents({});
-                        return (baseMd.code as (...args: unknown[]) => React.ReactNode)({ children, className, ...rest });
+                        return (baseMarkdownComponents.code as (...args: unknown[]) => React.ReactNode)({ children, className, ...rest });
                       },
                     }}
                   >
-                    {injectEvidenceTokens(reportTokens)}
+                    {markdownContent}
                   </ReactMarkdown>
                 </div>
 

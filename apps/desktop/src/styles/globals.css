@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CSS Variables */
+/* CSS Variables — desktop-specific palette */
 :root {
   --color-bg-base: #111113;
   --color-bg-elevated: #1a1a1f;
@@ -33,6 +33,29 @@
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-mono: "SF Mono", "Fira Code", monospace;
+
+  /* ── shadcn/ui semantic tokens (HSL triplets) ─────────────────────────
+     Used by @lyranote/ui (genui / message-render).
+     Values derived from desktop palette above to keep visual consistency.
+     ──────────────────────────────────────────────────────────────────── */
+  --background:             240  8%   7%;   /* #111113  bg-base              */
+  --foreground:               0  0%  93%;   /* rgba(255,255,255,0.92)        */
+  --card:                   240  9%  11%;   /* #1a1a1f  bg-elevated          */
+  --card-foreground:          0  0%  93%;
+  --border:                 240  8%  15%;   /* #222228  visible border       */
+  --input:                  240  8%  14%;
+  --primary:                217 91%  60%;   /* #3b82f6  accent blue          */
+  --primary-foreground:       0  0% 100%;
+  --secondary:              240  9%  11%;   /* bg-elevated                   */
+  --secondary-foreground:     0  0%  80%;
+  --muted:                  240  9%  13%;   /* between elevated and overlay  */
+  --muted-foreground:       240  5%  55%;   /* text-secondary                */
+  --accent:                 240  8%  18%;   /* bg-subtle                     */
+  --accent-foreground:        0  0%  93%;
+  --destructive:              0 84%  60%;   /* red                           */
+  --destructive-foreground:   0  0% 100%;
+  --ring:                   217 91%  60%;   /* same as primary               */
+  --sidebar:                240  8%   6%;   /* slightly darker than bg       */
 }
 
 /* Utilities */
@@ -58,6 +81,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
+}
+
+/* Allow text selection inside chat message content */
+.select-text, .select-text * {
+  user-select: text;
 }
 
 /* App root — vibrancy background */

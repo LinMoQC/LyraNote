@@ -1,17 +1,48 @@
 import { useState, useEffect, useCallback, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import {
-  Upload, Link, ArrowUp, MoreHorizontal, Loader2, RefreshCw,
+  Upload, Link, MoreHorizontal, Loader2, RefreshCw,
   FileText, Globe, File, Search, Trash2, RotateCcw, X, Check,
   LayoutGrid, List, CheckCircle2, AlertCircle, ExternalLink, ChevronRight,
   Settings2, AlignLeft, Scissors, Zap, ChevronDown
 } from "lucide-react"
 import { pageVariants, pageTransition, springs } from "@/lib/animations"
 import { cn } from "@/lib/cn"
-import { http } from "@/lib/http"
-import { mapSource } from "@/lib/mappers"
-import { useTabStore } from "@/store/use-tab-store"
-import type { Source, SourceType } from "@/types"
+import {
+  dialogPickSources,
+  dialogPickWatchFolder,
+  notificationShow,
+  trayToggleWatchers,
+  watchFoldersSync,
+} from "@/lib/desktop-bridge"
+import {
+  deleteSource,
+  getAllSources,
+  getSourceChunks,
+  importGlobalPath,
+  importGlobalUrl,
+  rechunkSource,
+} from "@/services/source-service"
+import {
+  cancelDesktopJob,
+  createWatchFolder,
+  deleteWatchFolder,
+  getRecentImports,
+  searchLocalKnowledge,
+  getWatchFolders,
+  inspectLocalFile,
+} from "@/services/desktop-service"
+import { computeLocalFileHash } from "@/services/native-file-service"
+import { useDesktopJobsStore } from "@/store/use-desktop-jobs-store"
+import { useDesktopRuntimeStore } from "@/store/use-desktop-runtime-store"
+import type {
+  DesktopLocalFileInspection,
+  DesktopLocalSearchHit,
+  DesktopRecentImport,
+  DesktopWatchFolder,
+  Source,
+  SourceType,
+} from "@/types"
 import { REFETCH_INTERVAL_PROCESSING } from "@lyranote/types/constants"
 import { openUrl } from "@tauri-apps/plugin-opener"
 
@@ -176,10 +207,22 @@ function cleanSummary(raw: string | null): string {
   return cleaned.slice(0, 110) + (cleaned.length > 110 ? "…" : "")
 }
 
+function formatChunkLocation(metadata?: Record<string, unknown> | null) {
+  if (!metadata) return ""
+  const parts: string[] = []
+  const page = metadata.page
+  if (page) parts.push(`第${String(page)}页`)
+  const heading = metadata.heading ?? metadata.section
+  if (heading) parts.push(String(heading))
+  return parts.join(" · ")
+}
+
 const TYPE_FILTERS: Array<"all" | SourceType> = ["all", "pdf", "web", "audio", "doc"]
 
 export function KnowledgePage() {
-  const { openTab } = useTabStore()
+  const jobs = useDesktopJobsStore((state) => state.jobs)
+  const runtimeStatus = useDesktopRuntimeStore((state) => state.status)
+  const setRuntimeStatus = useDesktopRuntimeStore((state) => state.setStatus)
   const [sources, setSources] = useState<Source[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -197,26 +240,32 @@ export function KnowledgePage() {
   const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set())
 
   const [showUrlInput, setShowUrlInput] = useState(false)
+  const [showDesktopPanel, setShowDesktopPanel] = useState(true)
   const [urlInput, setUrlInput] = useState("")
   const [importingUrl, setImportingUrl] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
+  const [watchFolders, setWatchFolders] = useState<DesktopWatchFolder[]>([])
+  const [recentImports, setRecentImports] = useState<DesktopRecentImport[]>([])
+  const [localSearchHits, setLocalSearchHits] = useState<DesktopLocalSearchHit[]>([])
+  const [localSearchLoading, setLocalSearchLoading] = useState(false)
+  const [localSearchError, setLocalSearchError] = useState<string | null>(null)
+  const [desktopPanelLoading, setDesktopPanelLoading] = useState(false)
+  const [watchFolderMutating, setWatchFolderMutating] = useState(false)
+  const [watchersToggling, setWatchersToggling] = useState(false)
 
-  const [aiInput, setAiInput] = useState("")
   const [menuSourceId, setMenuSourceId] = useState<string | null>(null)
   const menuBtnRef = useRef<HTMLButtonElement | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const urlInputRef = useRef<HTMLInputElement>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetchSources = useCallback(async (offset = 0, append = false) => {
     if (offset === 0) setLoading(true); else setLoadingMore(true)
     try {
-      const res = await http.get("/api/v1/sources/all", { params: { offset, limit: 100 } })
-      const page = res.data.data
-      const items: Source[] = (page?.items ?? []).map(mapSource)
+      const page = await getAllSources(offset, 100)
+      const items = page.items
       setSources((prev) => append ? [...prev, ...items] : items)
-      setTotal(page?.total ?? items.length)
-      setHasMore(page?.has_more ?? false)
+      setTotal(page.total || items.length)
+      setHasMore(page.hasMore)
 
       // Poll if any sources are still processing
       const hasProcessing = items.some(s => s.status === "processing" || s.status === "pending")
@@ -232,10 +281,64 @@ export function KnowledgePage() {
     }
   }, [])
 
+  const refreshDesktopPanel = useCallback(async () => {
+    setDesktopPanelLoading(true)
+    try {
+      const [folders, imports] = await Promise.all([
+        getWatchFolders(),
+        getRecentImports(),
+      ])
+      setWatchFolders(folders)
+      setRecentImports(imports)
+      await watchFoldersSync(folders)
+    } finally {
+      setDesktopPanelLoading(false)
+    }
+  }, [])
+
   useEffect(() => { fetchSources() }, [fetchSources])
+  useEffect(() => { void refreshDesktopPanel() }, [refreshDesktopPanel])
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
   useEffect(() => { if (showSearch) document.getElementById("knowledge-search")?.focus() }, [showSearch])
   useEffect(() => { if (showUrlInput) setTimeout(() => urlInputRef.current?.focus(), 50) }, [showUrlInput])
+  useEffect(() => {
+    const query = search.trim()
+    if (query.length < 2) {
+      setLocalSearchHits([])
+      setLocalSearchError(null)
+      setLocalSearchLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setLocalSearchLoading(true)
+    setLocalSearchError(null)
+
+    const timer = window.setTimeout(() => {
+      void searchLocalKnowledge(query, { limit: 6 })
+        .then((result) => {
+          if (!cancelled) {
+            setLocalSearchHits(result.items)
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setLocalSearchHits([])
+            setLocalSearchError((error as Error)?.message || "本地搜索暂时不可用")
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setLocalSearchLoading(false)
+          }
+        })
+    }, 220)
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [search])
 
   // Keep detail panel in sync if source data refreshes
   useEffect(() => {
@@ -250,26 +353,70 @@ export function KnowledgePage() {
     if (!activeSource) { setChunks([]); return }
     setChunksLoading(true)
     setExpandedChunks(new Set())
-    http.get(`/api/v1/sources/${activeSource.id}/chunks`)
-      .then(res => setChunks(res.data.data ?? []))
+    getSourceChunks(activeSource.id)
+      .then((data) => setChunks(data ?? []))
       .catch(() => setChunks([]))
       .finally(() => setChunksLoading(false))
   }, [activeSource?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    e.target.value = ""
+  async function handleUpload() {
+    if (uploadingFile) return
+    const selected = await dialogPickSources()
+    const files = selected.filter((entry) => !entry.is_dir)
+    if (files.length === 0) return
+
     setUploadingFile(true)
     try {
-      const form = new FormData()
-      form.append("file", file)
-      const res = await http.post("/api/v1/sources/global/upload", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      })
-      const newSource: Source = mapSource(res.data.data)
-      setSources((prev) => [newSource, ...prev])
-      setTotal((t) => t + 1)
+      const prepared = await Promise.all(
+        files.map(async (entry) => {
+          let digest: string | null = null
+          try {
+            const hash = await computeLocalFileHash(entry.path)
+            digest = hash.digest
+          } catch {
+            digest = null
+          }
+          let inspection: DesktopLocalFileInspection | null = null
+          try {
+            inspection = await inspectLocalFile(entry.path, digest)
+          } catch {
+            inspection = null
+          }
+          return { entry, digest, inspection }
+        }),
+      )
+
+      const duplicates = prepared.filter(({ inspection }) =>
+        inspection?.state === "duplicate" || inspection?.state === "unchanged",
+      )
+      const importable = prepared.filter(({ inspection }) =>
+        inspection == null || inspection.state === "new" || inspection.state === "updated",
+      )
+
+      if (duplicates.length > 0) {
+        const duplicateTitles = duplicates
+          .slice(0, 2)
+          .map(({ inspection, entry }) => inspection?.matched_title || entry.name)
+          .join("、")
+        void notificationShow({
+          kind: "知识库导入",
+          title: "已跳过重复文件",
+          body:
+            duplicates.length === 1
+              ? `${duplicateTitles} 已存在于知识库中。`
+              : `${duplicateTitles} 等 ${duplicates.length} 个文件已存在于知识库中。`,
+        })
+      }
+
+      const created = await Promise.all(
+        importable.map(({ entry, digest }) => importGlobalPath(entry.path, digest)),
+      )
+
+      if (created.length > 0) {
+        setSources((prev) => [...created, ...prev])
+        setTotal((t) => t + created.length)
+      }
+      await refreshDesktopPanel()
     } finally {
       setUploadingFile(false)
     }
@@ -280,15 +427,70 @@ export function KnowledgePage() {
     if (!url || importingUrl) return
     setImportingUrl(true)
     try {
-      const res = await http.post("/api/v1/sources/global/import-url", { url })
-      const newSource: Source = mapSource(res.data.data)
+      const newSource = await importGlobalUrl(url)
       setSources((prev) => [newSource, ...prev])
       setTotal((t) => t + 1)
       setUrlInput("")
       setShowUrlInput(false)
+      await refreshDesktopPanel()
     } finally {
       setImportingUrl(false)
     }
+  }
+
+  async function handleAddWatchFolder() {
+    if (watchFolderMutating) return
+    const selected = await dialogPickWatchFolder()
+    if (!selected?.path) return
+
+    setWatchFolderMutating(true)
+    try {
+      const created = await createWatchFolder(selected.path)
+      const nextFolders = [created, ...watchFolders]
+      setWatchFolders(nextFolders)
+      await watchFoldersSync(nextFolders)
+      void notificationShow({
+        kind: "监听目录",
+        title: "目录已注册",
+        body: selected.name || selected.path,
+      })
+    } finally {
+      setWatchFolderMutating(false)
+    }
+  }
+
+  async function handleDeleteWatchFolder(id: string) {
+    if (watchFolderMutating) return
+    const nextFolders = watchFolders.filter((folder) => folder.id !== id)
+    setWatchFolderMutating(true)
+    try {
+      await deleteWatchFolder(id)
+      setWatchFolders(nextFolders)
+      await watchFoldersSync(nextFolders)
+    } finally {
+      setWatchFolderMutating(false)
+    }
+  }
+
+  async function handleToggleWatchers() {
+    setWatchersToggling(true)
+    try {
+      const nextStatus = await trayToggleWatchers()
+      setRuntimeStatus(nextStatus)
+      void notificationShow({
+        kind: "监听目录",
+        title: nextStatus.watchers_paused ? "监听已暂停" : "监听已恢复",
+        body: nextStatus.watchers_paused
+          ? "目录变化将暂时不会进入导入队列。"
+          : "目录变化会重新进入本地导入队列。",
+      })
+    } finally {
+      setWatchersToggling(false)
+    }
+  }
+
+  async function handleCancelJob(jobId: string) {
+    await cancelDesktopJob(jobId)
   }
 
   async function handleDelete(id: string) {
@@ -296,7 +498,7 @@ export function KnowledgePage() {
     setSources((prev) => prev.filter((s) => s.id !== id))
     setTotal((t) => t - 1)
     try {
-      await http.delete(`/api/v1/sources/${id}`)
+      await deleteSource(id)
     } catch {
       fetchSources()
     }
@@ -305,17 +507,17 @@ export function KnowledgePage() {
   async function handleRechunk(id: string) {
     setSources((prev) => prev.map((s) => s.id === id ? { ...s, status: "processing" } : s))
     try {
-      await http.post(`/api/v1/sources/${id}/rechunk`)
+      await rechunkSource(id)
     } catch {
       fetchSources()
     }
   }
 
-  function handleAiSend() {
-    const q = aiInput.trim()
-    if (!q) return
-    setAiInput("")
-    openTab({ type: "chat", title: "对话", meta: { initialMessage: q } })
+  function handleOpenLocalHit(hit: DesktopLocalSearchHit) {
+    const source = sources.find((item) => item.id === hit.source_id)
+    if (!source) return
+    setActiveSource(source)
+    setDetailTab("chunks")
   }
 
   const filtered = sources
@@ -349,6 +551,7 @@ export function KnowledgePage() {
           <div className="flex items-center gap-1">
             {/* Search toggle */}
             <motion.button whileTap={{ scale: 0.9 }} onClick={() => setShowSearch((v) => !v)}
+              aria-label="打开知识库搜索"
               className={cn("w-8 h-8 flex items-center justify-center rounded-lg transition-colors",
                 showSearch ? "bg-[var(--color-accent-muted)] text-[var(--color-accent)]" : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] hover:bg-white/5"
               )}>
@@ -384,15 +587,28 @@ export function KnowledgePage() {
               URL
             </motion.button>
             {/* Upload */}
-            <motion.button whileTap={{ scale: 0.94 }} onClick={() => fileInputRef.current?.click()}
+            <motion.button whileTap={{ scale: 0.94 }} onClick={() => void handleUpload()}
               disabled={uploadingFile}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-white disabled:opacity-60"
               style={{ background: "var(--color-accent)" }}>
               {uploadingFile ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
               上传
             </motion.button>
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload}
-              accept=".pdf,.md,.txt,.docx" />
+            <motion.button
+              whileTap={{ scale: 0.94 }}
+              onClick={() => setShowDesktopPanel((open) => !open)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium border transition-colors",
+                showDesktopPanel
+                  ? "border-[var(--color-accent)] text-[var(--color-accent)] bg-[var(--color-accent-muted)]"
+                  : "text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]",
+              )}
+              style={!showDesktopPanel ? { background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" } : undefined}
+            >
+              <Settings2 size={13} />
+              桌面
+              <ChevronDown size={12} className={cn("transition-transform", showDesktopPanel && "rotate-180")} />
+            </motion.button>
           </div>
         </div>
 
@@ -413,7 +629,7 @@ export function KnowledgePage() {
                   id="knowledge-search"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="搜索来源名称..."
+                  placeholder="搜索来源名称或本地内容..."
                   className="flex-1 bg-transparent outline-none text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]"
                 />
                 {search && (
@@ -459,6 +675,212 @@ export function KnowledgePage() {
                     className="w-6 h-6 flex items-center justify-center rounded-md text-[var(--color-text-tertiary)] hover:bg-white/5">
                     <X size={13} />
                   </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {showSearch && search.trim().length >= 2 && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={springs.snappy}
+              className="overflow-hidden border-b shrink-0"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <div className="px-6 py-3">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[12px] font-medium text-[var(--color-text-primary)]">本地内容命中</p>
+                    <p className="text-[11px] text-[var(--color-text-tertiary)]">直接来自 desktop SQLite FTS 检索，可用于离线问答。</p>
+                  </div>
+                  {localSearchLoading && (
+                    <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-tertiary)]">
+                      <Loader2 size={12} className="animate-spin" />
+                      搜索中...
+                    </div>
+                  )}
+                </div>
+
+                {localSearchError ? (
+                  <p className="text-[11px] text-red-400">{localSearchError}</p>
+                ) : localSearchHits.length === 0 && !localSearchLoading ? (
+                  <p className="text-[11px] text-[var(--color-text-tertiary)]">没有命中本地内容，试试更具体的关键词。</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {localSearchHits.map((hit) => {
+                      const location = formatChunkLocation(hit.metadata)
+                      return (
+                        <button
+                          key={hit.chunk_id}
+                          onClick={() => handleOpenLocalHit(hit)}
+                          className="rounded-xl border px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]"
+                          style={{ borderColor: "var(--color-border)", background: "var(--color-bg-elevated)" }}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">
+                              {hit.source_title || "未命名资料"}
+                            </p>
+                            <span className="shrink-0 text-[10px] text-[var(--color-text-tertiary)]">
+                              片段 {hit.chunk_index + 1}
+                            </span>
+                          </div>
+                          {location && (
+                            <p className="mt-1 truncate text-[10px] text-[var(--color-text-tertiary)]">{location}</p>
+                          )}
+                          <p className="mt-2 line-clamp-3 text-[11px] leading-5 text-[var(--color-text-secondary)]">
+                            {hit.excerpt || hit.content}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence initial={false}>
+          {showDesktopPanel && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={springs.snappy}
+              className="overflow-hidden border-b shrink-0"
+              style={{ borderColor: "var(--color-border)" }}
+            >
+              <div className="px-6 py-4 grid grid-cols-3 gap-4">
+                <div className="rounded-xl border p-3.5" style={{ borderColor: "var(--color-border)", background: "var(--color-bg-elevated)" }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <p className="text-[12px] font-medium text-[var(--color-text-primary)]">监听目录</p>
+                      <p className="text-[11px] text-[var(--color-text-tertiary)]">
+                        {runtimeStatus?.watchers_paused ? "当前已暂停，目录变化不会触发导入。" : "目录变化会自动进入本地导入队列"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => void handleToggleWatchers()}
+                        disabled={watchersToggling}
+                        className="rounded-lg border px-2.5 py-1.5 text-[11px] font-medium text-[var(--color-text-secondary)] disabled:opacity-50 hover:bg-white/[0.04] transition-colors"
+                        style={{ borderColor: "var(--color-border)" }}
+                      >
+                        {watchersToggling
+                          ? "切换中..."
+                          : runtimeStatus?.watchers_paused
+                            ? "恢复"
+                            : "暂停"}
+                      </button>
+                      <button
+                        onClick={() => void handleAddWatchFolder()}
+                        disabled={watchFolderMutating}
+                        className="rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-white disabled:opacity-50"
+                        style={{ background: "var(--color-accent)" }}
+                      >
+                        添加
+                      </button>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    {desktopPanelLoading ? (
+                      <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-tertiary)]">
+                        <Loader2 size={12} className="animate-spin" />
+                        正在同步桌面状态...
+                      </div>
+                    ) : watchFolders.length === 0 ? (
+                      <p className="text-[11px] text-[var(--color-text-tertiary)]">还没有监听目录。适合把你的 PDF / Markdown 收件箱接进来。</p>
+                    ) : (
+                      watchFolders.map((folder) => (
+                        <div key={folder.id} className="rounded-lg border px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">{folder.name}</p>
+                              <p className="truncate text-[10px] text-[var(--color-text-tertiary)]">{folder.path}</p>
+                            </div>
+                            <button
+                              onClick={() => void handleDeleteWatchFolder(folder.id)}
+                              className="rounded-md p-1 text-[var(--color-text-tertiary)] hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--color-text-tertiary)]">
+                            <span>{folder.last_synced_at ? `最近同步 ${formatDate(folder.last_synced_at)}` : "尚未触发同步"}</span>
+                            <span className={cn(folder.last_error && "text-red-400")}>
+                              {folder.last_error || (runtimeStatus?.watchers_paused ? "已暂停" : "监听中")}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-3.5" style={{ borderColor: "var(--color-border)", background: "var(--color-bg-elevated)" }}>
+                  <div className="mb-3">
+                    <p className="text-[12px] font-medium text-[var(--color-text-primary)]">后台任务</p>
+                    <p className="text-[11px] text-[var(--color-text-tertiary)]">导入、重建索引和同步都在本地队列里排队。</p>
+                  </div>
+                  <div className="space-y-2">
+                    {jobs.length === 0 ? (
+                      <p className="text-[11px] text-[var(--color-text-tertiary)]">当前没有后台任务。</p>
+                    ) : (
+                      jobs.slice(0, 4).map((job) => (
+                        <div key={job.id} className="rounded-lg border px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">{job.label}</p>
+                              <p className="truncate text-[10px] text-[var(--color-text-tertiary)]">{job.message || job.state}</p>
+                            </div>
+                            {(job.state === "queued" || job.state === "running") && (
+                              <button
+                                onClick={() => void handleCancelJob(job.id)}
+                                className="rounded-md px-2 py-1 text-[10px] font-medium text-[var(--color-text-secondary)] hover:bg-white/5 transition-colors"
+                              >
+                                取消
+                              </button>
+                            )}
+                          </div>
+                          <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.08)" }}>
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${Math.max(job.progress || 0, job.state === "succeeded" ? 100 : 8)}%`,
+                                background: job.state === "failed" ? "#f87171" : "var(--color-accent)",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border p-3.5" style={{ borderColor: "var(--color-border)", background: "var(--color-bg-elevated)" }}>
+                  <div className="mb-3">
+                    <p className="text-[12px] font-medium text-[var(--color-text-primary)]">最近导入</p>
+                    <p className="text-[11px] text-[var(--color-text-tertiary)]">帮助你追踪桌面端刚刚写入知识库的文件。</p>
+                  </div>
+                  <div className="space-y-2">
+                    {recentImports.length === 0 ? (
+                      <p className="text-[11px] text-[var(--color-text-tertiary)]">还没有最近导入记录。</p>
+                    ) : (
+                      recentImports.slice(0, 5).map((item) => (
+                        <div key={`${item.path}-${item.imported_at}`} className="rounded-lg border px-3 py-2" style={{ borderColor: "var(--color-border)" }}>
+                          <p className="truncate text-[12px] font-medium text-[var(--color-text-primary)]">{item.title || item.path.split("/").pop() || item.path}</p>
+                          <div className="mt-1 flex items-center justify-between gap-3 text-[10px] text-[var(--color-text-tertiary)]">
+                            <span className="truncate">{item.path}</span>
+                            <span className="shrink-0">{formatDate(item.imported_at)}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -620,31 +1042,6 @@ export function KnowledgePage() {
               )}
             </div>
           )}
-        </div>
-
-        {/* AI input */}
-        <div className="px-4 pb-4 pt-2 shrink-0 border-t" style={{ borderColor: "var(--color-border)" }}>
-          <div className="rounded-xl border flex items-center gap-2 px-4 py-2.5"
-            style={{ background: "var(--color-bg-elevated)", borderColor: "var(--color-border)" }}>
-            <input
-              value={aiInput}
-              onChange={(e) => setAiInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAiSend() } }}
-              placeholder="基于知识库提问..."
-              className="flex-1 bg-transparent outline-none text-[13px] text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)]"
-            />
-            <motion.button
-              whileTap={{ scale: 0.88 }}
-              onClick={handleAiSend}
-              disabled={!aiInput.trim()}
-              className={cn(
-                "flex items-center justify-center w-7 h-7 rounded-lg text-white transition-opacity shrink-0",
-                aiInput.trim() ? "bg-[var(--color-accent)]" : "bg-[var(--color-bg-subtle)] opacity-40"
-              )}
-            >
-              <ArrowUp size={14} strokeWidth={2.5} />
-            </motion.button>
-          </div>
         </div>
       </div>
 
