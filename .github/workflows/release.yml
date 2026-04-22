@@ -70,7 +70,6 @@ jobs:
               --notes-file release-notes.md \
               --draft \
               "${PRERELEASE_ARGS[@]}" \
-              --target "$GITHUB_SHA" \
               --verify-tag
           fi
 
