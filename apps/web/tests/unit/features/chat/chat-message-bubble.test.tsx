@@ -45,7 +45,12 @@ vi.mock("@lyranote/ui/message-render", () => ({
   CodeBlock: () => null,
   DiagramView: () => null,
   ExcalidrawView: () => null,
-  MarkdownContent: ({ content }: { content: string }) => <div>{content}</div>,
+  MarkdownContent: ({ content, showCursor }: { content: string; showCursor?: boolean }) => (
+    <div>
+      <span>{content}</span>
+      {showCursor ? <span data-testid="streaming-ellipsis" /> : null}
+    </div>
+  ),
   MCPHTMLView: () => null,
   MCPResultCard: () => null,
   MindMapView: () => null,
