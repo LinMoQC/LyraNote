@@ -170,7 +170,8 @@ jobs:
     name: Publish @lyranote/cli to npm
     runs-on: ubuntu-latest
     needs: prepare-release
-    if: ${{ secrets.NPM_TOKEN != '' }}
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     steps:
       - uses: actions/checkout@v6
@@ -188,10 +189,15 @@ jobs:
       - name: Sync version from git tag
         run: pnpm --filter @lyranote/cli exec npm version "${{ needs.prepare-release.outputs.version }}" --no-git-tag-version
 
+      - name: Skip npm publish when token missing
+        if: ${{ env.NPM_TOKEN == '' }}
+        run: echo "NPM_TOKEN is not configured; skipping @lyranote/cli publish."
+
       - name: Publish to npm
+        if: ${{ env.NPM_TOKEN != '' }}
         run: pnpm --filter @lyranote/cli publish --access public --no-git-checks
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ env.NPM_TOKEN }}
 
   publish-release:
     name: Publish GitHub Release
