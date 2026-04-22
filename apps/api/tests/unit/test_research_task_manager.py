@@ -55,6 +55,9 @@ async def test_run_research_task_marks_task_and_run_error_when_graph_raises(engi
         username="research-error-user",
         email="research-error@example.com",
     )
+    db_session.add(user)
+    await db_session.flush()
+
     task = ResearchTask(
         id=uuid.uuid4(),
         user_id=user.id,
@@ -62,7 +65,7 @@ async def test_run_research_task_marks_task_and_run_error_when_graph_raises(engi
         mode="quick",
         status="running",
     )
-    db_session.add_all([user, task])
+    db_session.add(task)
     await db_session.commit()
 
     class FailingGraph:
