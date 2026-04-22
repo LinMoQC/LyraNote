@@ -52,28 +52,44 @@ jobs:
           GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
-          PRERELEASE_ARGS=(--prerelease=false)
-          if [[ "${{ steps.meta.outputs.prerelease }}" == "true" ]]; then
-            PRERELEASE_ARGS=(--prerelease)
-          fi
+          PRERELEASE="${{ steps.meta.outputs.prerelease }}"
 
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" \
-              --title "LyraNote $GITHUB_REF_NAME" \
-              --notes-file release-notes.md \
-              --draft=true \
-              "${PRERELEASE_ARGS[@]}" \
-              --verify-tag
+          if RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$GITHUB_REF_NAME" --jq '.id' 2>/dev/null); then
+            jq -n \
+              --arg name "LyraNote $GITHUB_REF_NAME" \
+              --rawfile body release-notes.md \
+              --argjson prerelease "$PRERELEASE" \
+              '{
+                name: $name,
+                body: $body,
+                draft: true,
+                prerelease: $prerelease
+              }' > release-payload.json
+
+            gh api \
+              --method PATCH \
+              "repos/${{ github.repository }}/releases/$RELEASE_ID" \
+              --input release-payload.json >/dev/null
           else
-            gh release create "$GITHUB_REF_NAME" \
-              --title "LyraNote $GITHUB_REF_NAME" \
-              --notes-file release-notes.md \
-              --draft \
-              "${PRERELEASE_ARGS[@]}" \
-              --verify-tag
-          fi
+            jq -n \
+              --arg tag_name "$GITHUB_REF_NAME" \
+              --arg name "LyraNote $GITHUB_REF_NAME" \
+              --rawfile body release-notes.md \
+              --argjson prerelease "$PRERELEASE" \
+              '{
+                tag_name: $tag_name,
+                name: $name,
+                body: $body,
+                draft: true,
+                prerelease: $prerelease
+              }' > release-payload.json
 
-          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/$GITHUB_REF_NAME" --jq '.id')
+            RELEASE_ID=$(gh api \
+              --method POST \
+              "repos/${{ github.repository }}/releases" \
+              --input release-payload.json \
+              --jq '.id')
+          fi
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
 
   desktop-macos:
