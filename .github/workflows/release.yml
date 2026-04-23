@@ -175,7 +175,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          tagName: ${{ github.ref_name }}
           releaseDraft: true
           prerelease: ${{ needs.prepare-release.outputs.prerelease }}
           args: --target ${{ matrix.target }}
