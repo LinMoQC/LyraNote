@@ -179,7 +179,7 @@ jobs:
           releaseDraft: true
           prerelease: ${{ needs.prepare-release.outputs.prerelease }}
           args: --target ${{ matrix.target }}
-          releaseAssetNamePattern: LyraNote-[version]-macos-[arch]-[bundle][ext]
+          assetNamePattern: LyraNote-[version]-macos-[arch]-[bundle][ext]
 
   publish-cli:
     name: Publish @lyranote/cli to npm
