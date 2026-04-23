@@ -9,7 +9,7 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { m } from "framer-motion";
+import { AnimatePresence, m } from "framer-motion";
 import { Copy, FileText, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
@@ -113,10 +113,17 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
 
   return (
     <m.div
-      key={msg.id}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 28 }}
+      initial={{
+        opacity: 0,
+        y: msg.role === "user" ? 24 : 10,
+        scale: msg.role === "user" ? 0.97 : 1,
+      }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{
+        type: "spring",
+        stiffness: msg.role === "user" ? 350 : 300,
+        damping: msg.role === "user" ? 32 : 28,
+      }}
     >
       {msg.role === "assistant" && msg.deepResearch && (
         <div className="mb-3">
@@ -157,8 +164,13 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             {msg.role === "assistant" && msg.reasoning && showReasoning && (
               <ReasoningBlock content={msg.reasoning} streaming={isStreaming} />
             )}
+            <AnimatePresence>
             {showBubble && (
-              <div
+              <m.div
+                key="bubble"
+                initial={msg.role === "assistant" ? { opacity: 0, y: 4 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
                 className={cn(
                   "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
                   msg.role === "user"
@@ -217,8 +229,9 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                     })()}
                   </p>
                 )}
-              </div>
+              </m.div>
             )}
+            </AnimatePresence>
 
             {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
               <CitationFooter citations={msg.citations} content={msg.content} namespace="chat" />

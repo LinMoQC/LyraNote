@@ -332,8 +332,10 @@ export function useChatStream({
     setDrProgress(null);
 
     if (!skipUserBubble) {
+      const userLocalId = `local-${Date.now()}`;
       const userMsg: LocalMessage = {
-        id: `local-${Date.now()}`,
+        id: userLocalId,
+        _animKey: userLocalId,
         role: "user",
         content: text,
         timestamp: new Date(),
@@ -346,7 +348,7 @@ export function useChatStream({
 
     const assistantId = `local-asst-${Date.now()}`;
     assistantIdRef.current = assistantId;
-    setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "", timestamp: new Date() }]);
+    setMessages((prev) => [...prev, { id: assistantId, _animKey: assistantId, role: "assistant", content: "", timestamp: new Date() }]);
     setStreaming(true);
     streamLifecycle.start();
     streamAbortRef.current?.abort();

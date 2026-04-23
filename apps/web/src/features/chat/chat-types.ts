@@ -17,6 +17,8 @@ export interface StreamingMetrics {
 
 export interface LocalMessage {
   id: string
+  /** Stable key for AnimatePresence — never changes when server ID replaces local ID */
+  _animKey?: string
   role: ChatRole
   status?: "streaming" | "completed" | "error"
   generationId?: string

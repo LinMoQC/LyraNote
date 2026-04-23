@@ -62,8 +62,16 @@ export function ChatView() {
         onLoadMore={p.loadMoreConversations}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AnimatePresence mode="popLayout" initial={false}>
         {p.messages.length > 0 || p.pendingChatPayload.current || p.pendingAutoSendRef.current ? (
+          <m.div
+            key="chat-messages"
+            className="flex min-h-0 flex-1 flex-col"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          >
           <ChatMessageList>
             {p.hasMoreMessages && p.activeConvId && (
               <div className="flex justify-center">
@@ -79,7 +87,7 @@ export function ChatView() {
             <AnimatePresence initial={false}>
               {p.messages.map((msg: import("./chat-types").LocalMessage, idx: number) => (
                 <ChatMessageBubble
-                  key={msg.id}
+                  key={msg._animKey ?? msg.id}
                   msg={msg}
                   isLastAssistant={msg.role === "assistant" && idx === p.messages.length - 1}
                   streaming={p.streaming}
@@ -152,13 +160,27 @@ export function ChatView() {
 
             <div ref={p.bottomRef} />
           </ChatMessageList>
+          </m.div>
         ) : (
+          <m.div
+            key="chat-empty"
+            className="flex min-h-0 flex-1 flex-col"
+            exit={{
+              opacity: 0,
+              scale: 0.97,
+              y: -30,
+              filter: "blur(6px)",
+              transition: { duration: 0.25, ease: [0.4, 0, 1, 1] },
+            }}
+          >
           <ChatEmptyState
             suggestionsLoading={p.suggestionsLoading}
             dynamicSuggestions={p.dynamicSuggestions}
             onSend={p.chat.handleSend}
           />
+          </m.div>
         )}
+        </AnimatePresence>
 
         <ChatInputContainer>
           <ChatInput
