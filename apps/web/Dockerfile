@@ -44,6 +44,13 @@ COPY packages/api-client ./packages/api-client
 COPY packages/types ./packages/types
 COPY packages/ui ./packages/ui
 
+# Next 在解析 packages/* 源码里的二级依赖时会从仓库根继续向上查找 node_modules。
+# 为 builder 显式补根级 workspace 链接，避免仅在 apps/web/node_modules 下可见。
+RUN mkdir -p ./node_modules/@lyranote \
+  && ln -sfn ../../packages/api-client ./node_modules/@lyranote/api-client \
+  && ln -sfn ../../packages/types ./node_modules/@lyranote/types \
+  && ln -sfn ../../packages/ui ./node_modules/@lyranote/ui
+
 # 构建参数
 ARG NEXT_PUBLIC_API_BASE_URL=/api/v1
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}

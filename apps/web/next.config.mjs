@@ -32,14 +32,17 @@ if (fs.existsSync(pnpmStore)) {
 }
 
 const solidWebShimPath = path.join(__configDir, "config/solid-js-web-shim.mjs");
+const shouldUseSolidWebShim =
+  process.env.NODE_ENV === "development" && Boolean(solidWebBrowserPath);
 
-if (solidWebBrowserPath) {
-  // Re-export from the browser build which exports setStyleProperty.
-  fs.writeFileSync(
-    solidWebShimPath,
-    `export * from ${JSON.stringify(solidWebBrowserPath)};\n`
-  );
-}
+// Only dev needs the browser build shim for Locator. Production should always
+// stay host-agnostic so Docker/CI never bakes in a local absolute path.
+fs.writeFileSync(
+  solidWebShimPath,
+  shouldUseSolidWebShim
+    ? `export * from ${JSON.stringify(solidWebBrowserPath)};\n`
+    : `export * from "solid-js/web";\n`
+);
 
 const locatorTurbopackRules = createLocatorTurbopackRules({
   dev: process.env.NODE_ENV === "development",
@@ -66,8 +69,10 @@ const nextConfig = {
       config.module.rules.push(locatorRule);
     }
 
-    // Alias solid-js/web to the shim so @locator/runtime gets setStyleProperty.
-    config.resolve.alias["solid-js/web"] = solidWebShimPath;
+    if (dev) {
+      // Alias solid-js/web to the shim so @locator/runtime gets setStyleProperty.
+      config.resolve.alias["solid-js/web"] = solidWebShimPath;
+    }
 
     return config;
   },
