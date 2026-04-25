@@ -12,6 +12,7 @@ export interface NoteRecord {
   id: string
   title: string | null
   contentJson: Record<string, unknown> | null
+  updatedAt: string | null
 }
 
 function mapNote(raw: Record<string, unknown>): NoteRecord {
@@ -19,6 +20,7 @@ function mapNote(raw: Record<string, unknown>): NoteRecord {
     id: String(raw.id),
     title: (raw.title as string | null) ?? null,
     contentJson: (raw.content_json as Record<string, unknown> | null) ?? null,
+    updatedAt: (raw.updated_at as string | null) ?? null,
   }
 }
 

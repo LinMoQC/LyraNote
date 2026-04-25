@@ -224,7 +224,7 @@ export default function SetupPage() {
 
   const personalityForm = useForm<PersonalityValues>({
     resolver: zodResolver(personalitySchema),
-    defaultValues: { ai_name: "Lyra", user_occupation: "", user_preferences: "", custom_system_prompt: "" },
+    defaultValues: { ai_name: "Lyra", user_occupation: "", user_preferences: "" },
   })
 
   async function handleTestLlm() {
@@ -339,7 +339,6 @@ export default function SetupPage() {
         ai_name: personality.ai_name,
         user_occupation: personality.user_occupation,
         user_preferences: personality.user_preferences,
-        custom_system_prompt: personality.custom_system_prompt,
       })
       await refetch()
       setStep(4)
@@ -850,32 +849,6 @@ export default function SetupPage() {
                       {...personalityForm.register("user_preferences")}
                     />
                   </Field>
-
-                  <div className={["rounded-xl border bg-muted/20", personalityForm.formState.errors.custom_system_prompt ? "border-destructive/60" : "border-border"].join(" ")}>
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between px-4 py-2.5 text-xs font-medium text-muted-foreground"
-                      onClick={(e) => {
-                        const el = e.currentTarget.nextElementSibling as HTMLElement
-                        el.style.display = el.style.display === "none" ? "block" : "none"
-                      }}
-                    >
-                      <span>{t("customPromptTitle")}</span>
-                      <span className="opacity-50">{t("expandPrompt")}</span>
-                    </button>
-                    <div style={{ display: personalityForm.formState.errors.custom_system_prompt ? "block" : "none" }} className="border-t border-border px-4 pb-3 pt-3">
-                      <textarea
-                        placeholder={t("customPromptPlaceholder")}
-                        rows={4}
-                        className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/50 focus:border-primary focus:ring-1 focus:ring-primary/30"
-                        {...personalityForm.register("custom_system_prompt")}
-                      />
-                      <p className="mt-1 text-[11px] text-muted-foreground/60">{t("customPromptHint")}</p>
-                      {personalityForm.formState.errors.custom_system_prompt && (
-                        <p className="mt-1 text-[11px] text-destructive">{personalityForm.formState.errors.custom_system_prompt.message}</p>
-                      )}
-                    </div>
-                  </div>
 
                   {globalError && (
                     <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{globalError}</p>

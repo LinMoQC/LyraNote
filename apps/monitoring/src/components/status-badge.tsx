@@ -8,21 +8,23 @@ interface StatusConfig {
 }
 
 const statusMap: Record<string, StatusConfig> = {
-  healthy: { bg: "bg-success/10", text: "text-success", dot: "bg-success", pulse: false },
-  success: { bg: "bg-success/10", text: "text-success", dot: "bg-success", pulse: false },
-  done: { bg: "bg-success/10", text: "text-success", dot: "bg-success", pulse: false },
-  running: { bg: "bg-accent/10", text: "text-accent", dot: "bg-accent", pulse: true },
-  stale: { bg: "bg-warning/10", text: "text-warning", dot: "bg-warning", pulse: false },
-  stuck: { bg: "bg-warning/10", text: "text-warning", dot: "bg-warning", pulse: false },
-  down: { bg: "bg-danger/10", text: "text-danger", dot: "bg-danger", pulse: false },
-  error: { bg: "bg-danger/10", text: "text-danger", dot: "bg-danger", pulse: false },
-  failed: { bg: "bg-danger/10", text: "text-danger", dot: "bg-danger", pulse: false },
+  healthy: { bg: "bg-success/10 text-success ring-1 ring-inset ring-success/20", text: "text-success", dot: "bg-success shadow-glow-success", pulse: false },
+  success: { bg: "bg-success/10 text-success ring-1 ring-inset ring-success/20", text: "text-success", dot: "bg-success shadow-glow-success", pulse: false },
+  done: { bg: "bg-success/10 text-success ring-1 ring-inset ring-success/20", text: "text-success", dot: "bg-success shadow-glow-success", pulse: false },
+  succeeded: { bg: "bg-success/10 text-success ring-1 ring-inset ring-success/20", text: "text-success", dot: "bg-success shadow-glow-success", pulse: false },
+  running: { bg: "bg-accent/10 text-accent ring-1 ring-inset ring-accent/20", text: "text-accent", dot: "bg-accent shadow-glow-accent", pulse: true },
+  cancelled: { bg: "bg-zinc-800 text-zinc-300 ring-1 ring-inset ring-zinc-700", text: "text-zinc-300", dot: "bg-zinc-400", pulse: false },
+  stale: { bg: "bg-warning/10 text-warning ring-1 ring-inset ring-warning/20", text: "text-warning", dot: "bg-warning shadow-glow-warning", pulse: false },
+  stuck: { bg: "bg-warning/10 text-warning ring-1 ring-inset ring-warning/20", text: "text-warning", dot: "bg-warning shadow-glow-warning", pulse: false },
+  down: { bg: "bg-danger/10 text-danger ring-1 ring-inset ring-danger/20", text: "text-danger", dot: "bg-danger shadow-glow-danger", pulse: false },
+  error: { bg: "bg-danger/10 text-danger ring-1 ring-inset ring-danger/20", text: "text-danger", dot: "bg-danger shadow-glow-danger", pulse: false },
+  failed: { bg: "bg-danger/10 text-danger ring-1 ring-inset ring-danger/20", text: "text-danger", dot: "bg-danger shadow-glow-danger", pulse: false },
 }
 
 const fallback: StatusConfig = {
-  bg: "bg-white/8",
-  text: "text-foreground",
-  dot: "bg-muted",
+  bg: "bg-zinc-800 ring-1 ring-inset ring-zinc-700",
+  text: "text-zinc-300",
+  dot: "bg-zinc-400",
   pulse: false,
 }
 

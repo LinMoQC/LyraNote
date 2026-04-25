@@ -22,6 +22,12 @@
   --destructive-foreground: 0 0% 100%;
   --ring:               243 68% 52%;
   --sidebar:            220 6%  98%;
+
+  /* Notebook: UI chrome (侧栏 / 辅助导航) vs 正文画布 — 结构接近 Notion */
+  --font-notebook-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
+  --font-notebook-document: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
 }
 
 /* ─── Dark mode ──────────────────────────────────────────────────────────── */
@@ -44,6 +50,11 @@
   --destructive-foreground: 0 0% 100%;
   --ring:               243 68% 62%;
   --sidebar:            224 30% 6%;
+
+  --font-notebook-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
+  --font-notebook-document: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
 }
 
 /* ─── Notion theme preset — Light ────────────────────────────────────────── */
@@ -66,6 +77,11 @@
   --destructive-foreground: 0 0% 100%;
   --ring:               207 75% 51%;
   --sidebar:            36  20% 97%;
+
+  --font-notebook-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
+  --font-notebook-document: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
 }
 
 /* ─── Notion theme preset — Dark ─────────────────────────────────────────── */
@@ -88,6 +104,11 @@ html.dark[data-theme-preset="notion"] {
   --destructive-foreground: 0 0% 100%;
   --ring:               207 75% 51%;   /* #2383e2                          */
   --sidebar:            0   0%  12.5%; /* #202020  sidebar (lighter)       */
+
+  --font-notebook-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
+  --font-notebook-document: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", sans-serif;
 }
 
 /* ─── View Transition (directional theme reveal) ─────────────────────────── */
@@ -178,6 +199,15 @@ html[data-theme-preset="notion"] ::selection {
   background: hsl(207 75% 51% / 0.3);
 }
 
+/* User message bubble sits on bg-primary — global ::selection is same hue → invisible.
+   Override with white so the highlight is visible on the blue background.
+   !important is needed to beat PostCSS/Tailwind layer ordering. */
+.selection-on-primary::selection,
+.selection-on-primary *::selection {
+  background: rgba(255, 255, 255, 0.35) !important;
+  color: #fff !important;
+}
+
 /* ─── Utilities ──────────────────────────────────────────────────────────── */
 .surface-panel {
   @apply rounded-3xl border border-foreground/[0.06] bg-card/85 shadow-panel backdrop-blur;
@@ -185,6 +215,14 @@ html[data-theme-preset="notion"] ::selection {
 
 .hero-grid {
   background-size: 36px 36px;
+}
+
+/* ─── Notebook: 侧栏/目录等「工具层」vs 正文编辑区（可分别改 --font-notebook-*）── */
+.font-notebook-ui {
+  font-family: var(--font-notebook-ui);
+}
+.font-notebook-document {
+  font-family: var(--font-notebook-document);
 }
 
 .tiptap {
@@ -209,20 +247,30 @@ html[data-theme-preset="notion"] ::selection {
 }
 
 /* ─── Tiptap editor content styles ──────────────────────────────────────── */
+/* 字号跟随笔记本外观（NotebookWorkspace 上的 --editor-*），避免 text-2xl 等写死覆盖继承 */
 .tiptap h1 {
-  @apply mb-3 mt-8 text-2xl font-bold leading-tight tracking-tight text-foreground first:mt-0;
+  @apply mb-4 mt-8 font-extrabold leading-tight tracking-tight text-foreground first:mt-0;
+  font-size: calc(
+    var(--editor-font-size, 16px) * (1.54 * var(--editor-heading-scale, 1.12))
+  );
 }
 .tiptap h2 {
-  @apply mb-2 mt-6 text-xl font-semibold leading-tight tracking-tight text-foreground first:mt-0;
+  @apply mb-3 mt-6 font-bold leading-tight tracking-tight text-foreground first:mt-0;
+  font-size: calc(
+    var(--editor-font-size, 16px) * (1.22 * var(--editor-heading-scale, 1.12))
+  );
 }
 .tiptap h3 {
-  @apply mb-2 mt-5 text-lg font-semibold leading-snug text-foreground first:mt-0;
+  @apply mb-2 mt-5 font-semibold leading-snug text-foreground first:mt-0;
+  font-size: calc(
+    var(--editor-font-size, 16px) * (1.04 * var(--editor-heading-scale, 1.12))
+  );
 }
 .tiptap p {
-  @apply mb-3 leading-[1.8] last:mb-0;
+  @apply mb-3 font-normal leading-[1.8] last:mb-0;
 }
 .tiptap strong {
-  @apply font-semibold text-foreground;
+  @apply font-bold text-foreground;
 }
 .tiptap em {
   @apply italic;
@@ -237,13 +285,13 @@ html[data-theme-preset="notion"] ::selection {
   @apply rounded-sm bg-yellow-400/25 px-0.5 text-foreground;
 }
 .tiptap code {
-  @apply rounded bg-foreground/10 px-1.5 py-0.5 font-mono text-[0.875em] text-primary/90;
+  @apply rounded bg-foreground/10 px-1.5 py-0.5 font-mono text-[0.875em] font-normal text-primary/90;
 }
 .tiptap pre {
-  @apply my-4 overflow-x-auto rounded-xl bg-foreground/[0.08] p-4;
+  @apply my-4 overflow-x-auto rounded-xl bg-foreground/[0.08] p-4 font-normal;
 }
 .tiptap pre code {
-  @apply bg-transparent p-0 text-sm text-foreground/80;
+  @apply bg-transparent p-0 text-sm font-normal text-foreground/80;
 }
 .tiptap ul {
   @apply my-3 ml-5 list-disc space-y-1;
@@ -372,4 +420,35 @@ html[data-theme-preset="notion"] ::selection {
 
 .spin-ease {
   animation: spin 1s linear infinite;
+}
+
+/* ─── Streaming cursor (blinking caret at end of AI response) ──────────── */
+@keyframes cursor-blink {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+.streaming-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1.2s ease-in-out infinite;
+}
+
+/* ReactMarkdown fallback: cursor on last direct text element */
+.streaming-cursor > :is(p, li, h1, h2, h3, h4, h5, h6):last-child::after,
+.streaming-cursor > :is(ul, ol):last-child > li:last-child::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: hsl(var(--primary));
+  border-radius: 1px;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: cursor-blink 1.2s ease-in-out infinite;
 }

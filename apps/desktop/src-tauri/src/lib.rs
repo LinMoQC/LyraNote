@@ -1,79 +1,102 @@
-use tauri::{
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager, Runtime,
-};
+mod app;
+mod commands;
+mod native;
+mod platform;
+mod runtime;
+mod security;
+mod shared;
 
+use app::{build_app_menu, handle_menu_event, handle_run_event, setup_app, DesktopShell};
+use commands::{
+    diagnostics::diagnostics_export,
+    files::{
+        file_compute_hash, file_copy_path, file_open_default, file_probe_metadata,
+        notification_show,
+    },
+    runtime::{
+        dialog_pick_sources, dialog_pick_watch_folder, file_reveal, runtime_restart,
+        runtime_status, watch_folders_sync,
+    },
+    security::{
+        secure_secret_delete, secure_secret_get, secure_secret_list_keys, secure_secret_store,
+        session_clear, session_hydrate, session_store,
+    },
+    shell::{
+        global_shortcut_status, global_shortcut_update, quick_capture_open,
+        recent_items_list, tray_toggle_watchers, window_focus, window_open,
+    },
+};
+use runtime::{DesktopRuntime, WatchManager};
+use tauri::Manager;
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let runtime = DesktopRuntime::default();
+    let watch_manager = WatchManager::default();
+    let shell = DesktopShell::default();
+
     tauri::Builder::default()
+        .manage(runtime)
+        .manage(watch_manager)
+        .manage(shell)
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
-        .setup(|app| {
-            setup_tray(app)?;
-            Ok(())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .menu(|app| {
+            let shell = app.state::<DesktopShell>();
+            let watch_manager = app.state::<WatchManager>();
+            match build_app_menu(app, shell.inner(), watch_manager.inner()) {
+                Ok(menu) => Ok(menu),
+                Err(error) => {
+                    eprintln!("[desktop-shell] failed to build app menu: {error}");
+                    tauri::menu::Menu::new(app)
+                }
+            }
+        })
+        .on_menu_event(|app, event| {
+            let runtime = app.state::<DesktopRuntime>();
+            let shell = app.state::<DesktopShell>();
+            let watch_manager = app.state::<WatchManager>();
+            handle_menu_event(
+                app,
+                event,
+                runtime.inner(),
+                shell.inner(),
+                watch_manager.inner(),
+            );
         })
         .invoke_handler(tauri::generate_handler![
-            greet,
-            show_window,
-            hide_window,
+            runtime_status,
+            runtime_restart,
+            session_hydrate,
+            session_store,
+            session_clear,
+            secure_secret_store,
+            secure_secret_get,
+            secure_secret_delete,
+            secure_secret_list_keys,
+            dialog_pick_sources,
+            dialog_pick_watch_folder,
+            file_reveal,
+            notification_show,
+            watch_folders_sync,
+            global_shortcut_status,
+            global_shortcut_update,
+            tray_toggle_watchers,
+            quick_capture_open,
+            window_open,
+            window_focus,
+            recent_items_list,
+            diagnostics_export,
+            file_open_default,
+            file_copy_path,
+            file_probe_metadata,
+            file_compute_hash
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
-}
-
-fn setup_tray<R: Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
-    let show = MenuItemBuilder::with_id("show", "Open LyraNote").build(app)?;
-    let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
-    let menu = MenuBuilder::new(app).items(&[&show, &quit]).build()?;
-
-    let _tray = TrayIconBuilder::new()
-        .menu(&menu)
-        .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id().as_ref() {
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-            "quit" => app.exit(0),
-            _ => {}
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    if window.is_visible().unwrap_or(false) {
-                        let _ = window.hide();
-                    } else {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                }
-            }
-        })
-        .build(app)?;
-
-    Ok(())
-}
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! Welcome to LyraNote.", name)
-}
-
-#[tauri::command]
-async fn show_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    window.show().map_err(|e| e.to_string())?;
-    window.set_focus().map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn hide_window(window: tauri::WebviewWindow) -> Result<(), String> {
-    window.hide().map_err(|e| e.to_string())
+        .setup(setup_app)
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(handle_run_event);
 }

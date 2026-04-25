@@ -6,6 +6,7 @@ injected at construction, without any monkeypatching of import paths.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock
@@ -270,6 +271,36 @@ async def test_default_llm_backend_satisfies_protocol() -> None:
     """DefaultLLMBackend satisfies the LLMBackend Protocol (structural check)."""
     backend = DefaultLLMBackend()
     assert isinstance(backend, LLMBackend)
+
+
+@pytest.mark.asyncio
+async def test_exec_call_tools_propagates_cancellation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.agents.core.engine.record_completed_tool_call",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "app.agents.core.engine.traced_span",
+        lambda *a, **kw: _NullAsyncContext(),
+    )
+
+    async def cancelled_execute_tool(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(
+        "app.agents.core.engine.execute_tool",
+        cancelled_execute_tool,
+    )
+
+    engine, state = _make_engine(FakeLLMBackend(), has_tools=True)
+    from app.agents.core.instructions import CallToolsInstruction
+
+    instruction = CallToolsInstruction(
+        tool_calls=[{"id": "tc1", "name": "search_notebook_knowledge", "arguments": {"query": "cancel"}}]
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        _ = [e async for e in engine._exec_call_tools(instruction, state)]
 
 
 # ---------------------------------------------------------------------------

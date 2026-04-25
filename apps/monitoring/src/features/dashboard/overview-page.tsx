@@ -15,6 +15,7 @@ const statusDotMap: Record<string, string> = {
   healthy: "bg-success",
   success: "bg-success",
   done: "bg-success",
+  succeeded: "bg-success",
   running: "bg-accent",
   stale: "bg-warning",
   stuck: "bg-warning",
@@ -30,7 +31,7 @@ export function OverviewPage() {
   })
   const failuresQuery = useQuery({
     queryKey: ["monitoring", "failures", "recent"],
-    queryFn: () => getFailures("24h"),
+    queryFn: () => getFailures({ window: "24h" }),
   })
 
   const unauthorized =

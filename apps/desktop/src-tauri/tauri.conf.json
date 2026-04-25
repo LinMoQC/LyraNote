@@ -1,5 +1,5 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "$schema": "https://schema.tauri.app/config/2",
   "productName": "LyraNote",
   "version": "0.1.0",
   "identifier": "com.lyranote.desktop",
@@ -10,7 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "withGlobalTauri": true,
     "windows": [
       {
         "title": "LyraNote",
@@ -19,23 +18,56 @@
         "minWidth": 900,
         "minHeight": 600,
         "decorations": false,
-        "transparent": false,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "transparent": true,
+        "center": true,
+        "dragDropEnabled": true
       }
     ],
     "security": {
       "csp": null
     },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": false
-    }
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
+    "externalBin": [
+      "binaries/lyranote-api-desktop"
+    ],
+    "resources": {
+      "binaries/lyranote-api-desktop-runtime": "lyranote-api-desktop-runtime"
+    },
+    "fileAssociations": [
+      {
+        "ext": ["pdf"],
+        "name": "LyraNote PDF",
+        "description": "Open PDF files in LyraNote",
+        "mimeType": "application/pdf",
+        "role": "Editor"
+      },
+      {
+        "ext": ["md"],
+        "name": "LyraNote Markdown",
+        "description": "Open Markdown files in LyraNote",
+        "mimeType": "text/markdown",
+        "role": "Editor"
+      },
+      {
+        "ext": ["txt"],
+        "name": "LyraNote Text",
+        "description": "Open text files in LyraNote",
+        "mimeType": "text/plain",
+        "role": "Editor"
+      },
+      {
+        "ext": ["docx"],
+        "name": "LyraNote Word",
+        "description": "Open Word documents in LyraNote",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "role": "Editor"
+      }
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,9 +77,11 @@
     ]
   },
   "plugins": {
-    "notification": {},
-    "store": {
-      "filename": "lyranote-store.json"
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRGMjg0NkUxNDVCMjMyREMKUldUY01ySkY0VVlvVDlIcUlRSFBPZlVIUElQdG9OSmk0OW5obWhiaFFEYjd6Qkd5dkdxUm9kYTAK",
+      "endpoints": [
+        "https://github.com/LinMoQC/LyraNote/releases/latest/download/latest.json"
+      ]
     }
   }
 }

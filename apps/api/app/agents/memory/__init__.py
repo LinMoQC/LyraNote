@@ -3,6 +3,7 @@ Memory module — re-export hub.
 
 Public symbols from sub-modules:
   retrieval   — build_memory_context, get_user_memories
+  prompt_context — PromptContextBundle, build_prompt_context_bundle, load_prompt_context
   extraction  — extract_memories, _upsert_memory, reinforce_memory,
                 mark_memory_stale, decay_stale_memories, PREFERENCE_KEYS
   notebook    — get_notebook_summary, refresh_notebook_summary,
@@ -15,6 +16,11 @@ Public symbols from sub-modules:
 from app.agents.memory.retrieval import (  # noqa: F401
     build_memory_context,
     get_user_memories,
+)
+from app.agents.memory.prompt_context import (  # noqa: F401
+    PromptContextBundle,
+    build_prompt_context_bundle,
+    load_prompt_context,
 )
 from app.agents.memory.extraction import (  # noqa: F401
     PREFERENCE_KEYS,

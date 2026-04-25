@@ -36,6 +36,14 @@ export interface DrDeliverable {
   citationTable: Array<{ conclusion: string; grade: string; source: string }>;
 }
 
+export interface DrPlanData {
+  subQuestions: string[]
+  searchMatrix?: Record<string, string[]>
+  researchGoal: string
+  evaluationCriteria: string[]
+  reportTitle: string
+}
+
 export interface DrProgress {
   status: "planning" | "searching" | "writing" | "done";
   mode: "quick" | "deep";

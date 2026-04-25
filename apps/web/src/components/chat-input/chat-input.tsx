@@ -77,6 +77,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     ref,
   ) {
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const composingRef = useRef(false);
     const isCompact = variant === "compact";
     const resolvedMaxHeight = maxHeight ?? (isCompact ? 100 : 160);
 
@@ -100,7 +101,12 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+        if (
+          e.key === "Enter" &&
+          !e.shiftKey &&
+          !e.nativeEvent.isComposing &&
+          !composingRef.current
+        ) {
           e.preventDefault();
           if (streaming) return;
           const q = value.trim();
@@ -173,6 +179,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onCompositionStart={() => { composingRef.current = true; }}
+            onCompositionEnd={() => { requestAnimationFrame(() => { composingRef.current = false; }); }}
             onPaste={handlePaste}
             placeholder={placeholder}
             rows={1}

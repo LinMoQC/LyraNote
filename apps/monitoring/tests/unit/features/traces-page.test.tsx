@@ -70,6 +70,7 @@ describe("TracesPage", () => {
           run_type: "chat_generation",
           name: "chat.generation",
           status: "done",
+          user_id: null,
           conversation_id: null,
           generation_id: null,
           task_id: null,
@@ -92,7 +93,19 @@ describe("TracesPage", () => {
       expect(screen.getByText("chat.generation")).toBeInTheDocument();
     });
 
-    expect(getTraces).toHaveBeenCalledWith("24h", undefined, undefined, undefined, 12);
+    expect(getTraces).toHaveBeenCalledWith({
+      window: "24h",
+      type: undefined,
+      status: undefined,
+      cursor: undefined,
+      limit: 12,
+      user_id: undefined,
+      conversation_id: undefined,
+      generation_id: undefined,
+      task_id: undefined,
+      task_run_id: undefined,
+      notebook_id: undefined,
+    });
     expect(screen.getByText("第 1 / 5 页 · 每页 12 条 · 共 57 条")).toBeInTheDocument();
   });
 

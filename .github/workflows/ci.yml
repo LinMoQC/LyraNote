@@ -38,6 +38,63 @@ jobs:
       - name: Frontend tests
         run: pnpm test
 
+      - name: Frontend coverage
+        run: pnpm test:coverage
+
+  monitoring-tests:
+    name: Monitoring — Typecheck & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/monitoring
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript typecheck
+        run: pnpm typecheck
+
+      - name: Monitoring tests
+        run: pnpm test
+
+  desktop-tests:
+    name: Desktop — Typecheck & Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: TypeScript typecheck
+        run: pnpm typecheck
+
+      - name: Desktop tests
+        run: pnpm test
+
   # ── API tests ───────────────────────────────────────────────────────────────
   api-tests:
     name: API — Tests
@@ -100,6 +157,16 @@ jobs:
           STORAGE_LOCAL_PATH: /tmp/lyranote-test-storage
           OPENAI_API_KEY: sk-test
         run: pytest tests/ -v --tb=short --ignore=tests/e2e
+
+      - name: Coverage report
+        env:
+          DATABASE_URL: postgresql+asyncpg://lyranote:lyranote@localhost:5432/lyranote_test
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-secret-key
+          STORAGE_BACKEND: local
+          STORAGE_LOCAL_PATH: /tmp/lyranote-test-storage
+          OPENAI_API_KEY: sk-test
+        run: pytest tests/ --cov=app --cov-report=term-missing --ignore=tests/e2e
 
       - name: E2E API tests
         env:

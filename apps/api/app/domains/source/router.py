@@ -6,7 +6,15 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from app.dependencies import CurrentUser, DbDep
 from app.schemas.response import ApiResponse, success
 from app.services.source_service import DownloadRedirect, SourceService
-from .schemas import ChunkOut, RechunkRequest, SourceImportUrl, SourceOut, SourcePage, SourceUpdate
+from .schemas import (
+    ChunkOut,
+    RechunkRequest,
+    SourceImportPath,
+    SourceImportUrl,
+    SourceOut,
+    SourcePage,
+    SourceUpdate,
+)
 
 router = APIRouter(tags=["sources"])
 
@@ -147,4 +155,19 @@ async def import_global_source_url(
 ):
     svc = SourceService(db, current_user.id)
     source = await svc.import_global_source_url(body.url, body.title)
+    return success(source)
+
+
+@router.post(
+    "/sources/global/import-path",
+    response_model=ApiResponse[SourceOut],
+    status_code=status.HTTP_201_CREATED,
+)
+async def import_global_source_path(
+    body: SourceImportPath,
+    db: DbDep,
+    current_user: CurrentUser,
+):
+    svc = SourceService(db, current_user.id)
+    source = await svc.import_global_source_path(body.path, sha256=body.sha256)
     return success(source)

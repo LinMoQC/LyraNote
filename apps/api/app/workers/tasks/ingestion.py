@@ -13,6 +13,46 @@ from app.workers.celery_app import celery_app
 from app.workers._helpers import _run_async, _task_db
 
 
+def _mark_source_failed(source, reason: str) -> None:
+    """Mark a source as failed without relying on fields that Source does not expose."""
+    source.status = "failed"
+    if reason == "indexing_timeout":
+        message = "索引超时，请稍后重试或调整切分参数后重新导入。"
+    elif reason == "storage_missing":
+        message = "索引失败：原始文件不存在，请重新上传后重试。"
+    else:
+        message = f"索引失败：{reason}"
+
+    if not getattr(source, "summary", None):
+        source.summary = message
+
+
+async def _expire_stuck_sources_impl(db) -> int:
+    import logging
+    from datetime import datetime, timedelta, timezone
+    from sqlalchemy import select
+    from app.models import Source as SourceModel
+
+    logger = logging.getLogger(__name__)
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+
+    result = await db.execute(
+        select(SourceModel).where(
+            SourceModel.status.in_(["processing", "pending"]),
+            SourceModel.updated_at < cutoff,
+        )
+    )
+    stuck = result.scalars().all()
+    if stuck:
+        for src in stuck:
+            _mark_source_failed(src, "indexing_timeout")
+        await db.commit()
+        logger.warning(
+            "expire_stuck_sources: marked %d sources as failed (timeout)", len(stuck)
+        )
+    return len(stuck)
+
+
 @celery_app.task(
     name="ingest_source",
     bind=True,
@@ -23,17 +63,49 @@ from app.workers._helpers import _run_async, _task_db
 def ingest_source(
     self,
     source_id: str,
+    trace_id: str | None = None,
+    run_id: str | None = None,
     chunk_size: int = 512,
     chunk_overlap: int = 64,
-    splitter_type: str = "auto",
+    splitter_type: str = "recursive",
     separators: list | None = None,
     min_chunk_size: int = 50,
 ):
     async def _run():
         from app.agents.rag.ingestion import ingest
+        from app.models import Source as SourceModel
+        from app.services.monitoring_service import (
+            bind_trace_and_run,
+            finish_observability_run,
+            get_or_create_source_ingest_run,
+            reset_trace_and_run,
+        )
+        from celery.exceptions import MaxRetriesExceededError
+        from sqlalchemy import select
+        from uuid import UUID
 
         async with _task_db() as db:
+            trace_token = None
+            run_token = None
+            observability_run = None
+            source = None
             try:
+                source_result = await db.execute(
+                    select(SourceModel).where(SourceModel.id == UUID(source_id))
+                )
+                source = source_result.scalar_one_or_none()
+                if source is None:
+                    raise ValueError(f"Source {source_id} not found")
+
+                observability_run = await get_or_create_source_ingest_run(
+                    db,
+                    source_id=source.id,
+                    notebook_id=source.notebook_id,
+                    trace_id=trace_id,
+                    run_id=UUID(run_id) if run_id else None,
+                    metadata={"origin": "celery_worker"},
+                )
+                trace_token, run_token = bind_trace_and_run(observability_run.trace_id, observability_run.id)
                 await ingest(
                     source_id,
                     db,
@@ -43,30 +115,200 @@ def ingest_source(
                     separators=separators,
                     min_chunk_size=min_chunk_size,
                 )
+                if source.status == "indexed":
+                    await finish_observability_run(
+                        db,
+                        observability_run,
+                        status="succeeded",
+                        metadata={"source_status": source.status},
+                    )
+                else:
+                    await finish_observability_run(
+                        db,
+                        observability_run,
+                        status="failed",
+                        metadata={"source_status": source.status},
+                        error_message=source.summary or "source ingest failed",
+                    )
                 await db.commit()
+                if source.status == "indexed":
+                    postprocess_indexed_source.delay(source_id)
             except Exception as exc:
                 await db.rollback()
-                # On SoftTimeLimitExceeded, mark the source as failed immediately
-                # instead of retrying (retrying a timed-out task rarely helps)
                 try:
-                    from billiard.exceptions import SoftTimeLimitExceeded as _STLE
-                    if isinstance(exc, _STLE):
-                        from uuid import UUID
-                        from sqlalchemy import select
-                        from app.models import Source as SourceModel
+                    if isinstance(exc, FileNotFoundError):
                         async with _task_db() as db2:
                             res = await db2.execute(
                                 select(SourceModel).where(SourceModel.id == UUID(source_id))
                             )
                             src = res.scalar_one_or_none()
+                            failed_run = None
                             if src:
-                                src.status = "failed"
-                                src.metadata_ = {**(src.metadata_ or {}), "error": "indexing_timeout"}
+                                failed_run = await get_or_create_source_ingest_run(
+                                    db2,
+                                    source_id=src.id,
+                                    notebook_id=src.notebook_id,
+                                    trace_id=trace_id,
+                                    run_id=UUID(run_id) if run_id else None,
+                                    metadata={"origin": "celery_worker"},
+                                )
+                                _mark_source_failed(src, "storage_missing")
+                            if failed_run is not None:
+                                await finish_observability_run(
+                                    db2,
+                                    failed_run,
+                                    status="failed",
+                                    metadata={"source_status": "failed"},
+                                    error_message="storage_missing",
+                                )
                             await db2.commit()
                         return
                 except Exception:
                     pass
-                raise self.retry(exc=exc, countdown=30)
+                # On SoftTimeLimitExceeded, mark the source as failed immediately
+                # instead of retrying (retrying a timed-out task rarely helps)
+                try:
+                    from billiard.exceptions import SoftTimeLimitExceeded as _STLE
+                    if isinstance(exc, _STLE):
+                        async with _task_db() as db2:
+                            res = await db2.execute(
+                                select(SourceModel).where(SourceModel.id == UUID(source_id))
+                            )
+                            src = res.scalar_one_or_none()
+                            failed_run = None
+                            if src:
+                                failed_run = await get_or_create_source_ingest_run(
+                                    db2,
+                                    source_id=src.id,
+                                    notebook_id=src.notebook_id,
+                                    trace_id=trace_id,
+                                    run_id=UUID(run_id) if run_id else None,
+                                    metadata={"origin": "celery_worker"},
+                                )
+                                _mark_source_failed(src, "indexing_timeout")
+                            if failed_run is not None:
+                                await finish_observability_run(
+                                    db2,
+                                    failed_run,
+                                    status="failed",
+                                    metadata={"source_status": "failed"},
+                                    error_message="indexing_timeout",
+                                )
+                            await db2.commit()
+                        return
+                except Exception:
+                    pass
+                try:
+                    raise self.retry(exc=exc, countdown=30)
+                except MaxRetriesExceededError:
+                    async with _task_db() as db2:
+                        res = await db2.execute(
+                            select(SourceModel).where(SourceModel.id == UUID(source_id))
+                        )
+                        src = res.scalar_one_or_none()
+                        failed_run = None
+                        if src:
+                            failed_run = await get_or_create_source_ingest_run(
+                                db2,
+                                source_id=src.id,
+                                notebook_id=src.notebook_id,
+                                trace_id=trace_id,
+                                run_id=UUID(run_id) if run_id else None,
+                                metadata={"origin": "celery_worker"},
+                            )
+                            _mark_source_failed(src, str(exc))
+                        if failed_run is not None:
+                            await finish_observability_run(
+                                db2,
+                                failed_run,
+                                status="failed",
+                                metadata={"source_status": "failed"},
+                                error_message=str(exc),
+                            )
+                        await db2.commit()
+                    raise
+            finally:
+                if trace_token is not None and run_token is not None:
+                    reset_trace_and_run(trace_token, run_token)
+
+    _run_async(_run())
+
+
+@celery_app.task(name="postprocess_indexed_source", bind=True, max_retries=1)
+def postprocess_indexed_source(self, source_id: str):
+    """Run slow, non-critical post-processing after chunks are safely committed."""
+
+    async def _run():
+        import logging
+        from uuid import UUID
+
+        from sqlalchemy import select
+
+        from app.agents.memory import refresh_notebook_summary
+        from app.agents.rag.ingestion import _generate_summary
+        from app.models import Notebook as NbModel
+        from app.models import ProactiveInsight, Source as SourceModel
+
+        logger = logging.getLogger(__name__)
+
+        async with _task_db() as db:
+            try:
+                result = await db.execute(
+                    select(SourceModel).where(SourceModel.id == UUID(source_id))
+                )
+                source = result.scalar_one_or_none()
+                if source is None or source.status != "indexed" or not source.raw_text:
+                    return
+
+                try:
+                    summary = await _generate_summary(source.raw_text[:3000])
+                    if summary:
+                        source.summary = summary
+                        await db.flush()
+                except Exception as exc:
+                    logger.warning("Source summary generation failed for %s: %s", source_id, exc)
+
+                try:
+                    await refresh_notebook_summary(source.notebook_id, db)
+                except Exception as exc:
+                    logger.warning(
+                        "Notebook summary refresh failed for source %s: %s",
+                        source_id,
+                        exc,
+                    )
+
+                try:
+                    nb_result = await db.execute(
+                        select(NbModel.user_id).where(NbModel.id == source.notebook_id)
+                    )
+                    user_id = nb_result.scalar_one_or_none()
+                    if user_id:
+                        insight = ProactiveInsight(
+                            user_id=user_id,
+                            notebook_id=source.notebook_id,
+                            insight_type="source_indexed",
+                            title=f"「{source.title or '新资料'}」已完成索引",
+                            content=(source.summary or "")[:200] or None,
+                        )
+                        db.add(insight)
+                except Exception as exc:
+                    logger.warning(
+                        "Proactive insight generation failed for source %s: %s",
+                        source_id,
+                        exc,
+                    )
+
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                raise self.retry(exc=exc, countdown=60)
+
+        try:
+            from app.workers.tasks import extract_knowledge_graph
+
+            extract_knowledge_graph.delay(source_id)
+        except Exception:
+            pass
 
     _run_async(_run())
 
@@ -78,30 +320,8 @@ def expire_stuck_sources():
     for more than 15 minutes and mark them as 'failed'.
     """
     async def _run():
-        import logging
-        from datetime import datetime, timedelta, timezone
-        from sqlalchemy import select
-        from app.models import Source as SourceModel
-
-        logger = logging.getLogger(__name__)
-        cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
-
         async with _task_db() as db:
-            result = await db.execute(
-                select(SourceModel).where(
-                    SourceModel.status.in_(["processing", "pending"]),
-                    SourceModel.updated_at < cutoff,
-                )
-            )
-            stuck = result.scalars().all()
-            if stuck:
-                for src in stuck:
-                    src.status = "failed"
-                    src.metadata_ = {**(src.metadata_ or {}), "error": "indexing_timeout"}
-                await db.commit()
-                logger.warning(
-                    "expire_stuck_sources: marked %d sources as failed (timeout)", len(stuck)
-                )
+            await _expire_stuck_sources_impl(db)
 
     _run_async(_run())
 

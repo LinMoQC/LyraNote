@@ -10,8 +10,8 @@ def test_context_budget_for_scene_uses_review_budget() -> None:
     assert context_budget_for_scene("review") == 3500
 
 
-def test_context_budget_for_scene_falls_back_to_research() -> None:
-    assert context_budget_for_scene("unknown_scene") == 8000
+def test_context_budget_for_scene_falls_back_to_chat() -> None:
+    assert context_budget_for_scene("unknown_scene") == 5000
 
 
 def test_build_clarification_prompt_varies_by_scene() -> None:

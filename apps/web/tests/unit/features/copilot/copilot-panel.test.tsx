@@ -45,11 +45,7 @@ vi.mock("@/components/chat-input", () => ({
   },
 }));
 
-vi.mock("@/components/message-render/agent-steps", () => ({
-  AgentSteps: () => null,
-}));
-
-vi.mock("@/components/message-render/approval-card", () => ({
+vi.mock("@lyranote/ui/message-render", () => ({
   ApprovalCard: () => null,
 }));
 
@@ -82,6 +78,12 @@ vi.mock("@/store/use-proactive-store", () => ({
     suggestions: [],
     markAllRead: vi.fn(),
     writingContext: [],
+  }),
+}));
+
+vi.mock("@/store/use-notebook-store", () => ({
+  useNotebookStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
+    setCopilotStreaming: vi.fn(),
   }),
 }));
 

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getLocale, getMessages, getTimeZone } from "next-intl/server";
 
 import { Providers } from "@/app/providers";
+import type { ThemePreset } from "@/lib/theme-preset";
 import type { ColorTheme } from "@/lib/theme";
 import "@/app/globals.css";
 
@@ -37,8 +38,9 @@ export default async function RootLayout({
 
   // ── Theme preset ──────────────────────────────────────────────────────────
   const presetCookie = cookieStore.get("lyra:theme-preset")?.value;
+  const defaultThemePreset: ThemePreset = presetCookie === "notion" ? "notion" : "lyra";
   const themePresetAttr =
-    presetCookie && presetCookie !== "lyra" ? presetCookie : undefined;
+    defaultThemePreset !== "lyra" ? defaultThemePreset : undefined;
 
   return (
     <html
@@ -53,6 +55,7 @@ export default async function RootLayout({
           locale={locale}
           timeZone={timeZone}
           defaultTheme={defaultTheme}
+          defaultThemePreset={defaultThemePreset}
         >
           {children}
         </Providers>

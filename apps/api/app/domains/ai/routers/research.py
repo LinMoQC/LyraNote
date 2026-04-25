@@ -17,6 +17,7 @@ from sqlalchemy import select
 from app.dependencies import CurrentUser, DbDep
 from app.domains.ai.schemas import (
     ClarifyRequest,
+    DeepResearchPlanRequest,
     DeepResearchRequest,
     SaveDeepResearchSourcesRequest,
 )
@@ -43,6 +44,37 @@ async def clarify_deep_research(
     client = get_client()
     questions = await generate_clarifying_questions(body.query, client, settings.llm_model)
     return success({"questions": questions})
+
+
+@router.post("/ai/deep-research/plan")
+async def plan_deep_research(
+    body: DeepResearchPlanRequest,
+    current_user: CurrentUser,
+):
+    """Generate a research plan synchronously (no task creation, no SSE).
+    Returns sub_questions, research_goal, evaluation_criteria, report_title.
+    """
+    from app.agents.research.deep_research import _plan, MODES
+    from app.providers.llm import get_client
+
+    client = get_client()
+    cfg = MODES.get(body.mode, MODES["quick"])
+    result = await _plan(
+        body.query,
+        client,
+        settings.llm_model,
+        queries_per_dim=cfg.queries_per_dim,
+        clarification_context=body.clarification_context,
+    )
+    matrix = result.get("search_matrix", {})
+    sub_questions = [q for qs in matrix.values() for q in qs]
+    return success({
+        "sub_questions": sub_questions,
+        "search_matrix": matrix,
+        "research_goal": result.get("research_goal", ""),
+        "evaluation_criteria": result.get("evaluation_criteria", []),
+        "report_title": result.get("title", body.query[:25]),
+    })
 
 
 @router.post("/ai/deep-research")
@@ -101,9 +133,19 @@ async def create_deep_research(
     db.add(task)
     await db.commit()
 
-    from app.agents.memory import build_memory_context
+    from app.agents.memory import load_prompt_context
     try:
-        user_memories = await build_memory_context(current_user.id, body.query, db, top_k=5)
+        prompt_context = await load_prompt_context(
+            user_id=current_user.id,
+            query=body.query,
+            db=db,
+            scene="research",
+            notebook_id=notebook_id_uuid,
+            conversation_id=conv.id,
+            include_portrait=False,
+            top_k=5,
+        )
+        user_memories = prompt_context.all_memories
     except Exception as exc:
         logger.warning("Memory context load failed: %s", exc)
         user_memories = []
@@ -120,6 +162,7 @@ async def create_deep_research(
             tavily_api_key=settings.tavily_api_key or None,
             user_memories=user_memories,
             clarification_context=body.clarification_context,
+            plan_override=body.plan_override.model_dump() if body.plan_override else None,
             trace_id=get_trace_id(),
         )
     )

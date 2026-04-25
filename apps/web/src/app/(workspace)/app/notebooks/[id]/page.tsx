@@ -20,6 +20,7 @@ export default async function NotebookDetailPage({
       <NotebookWorkspace
         notebookId={id}
         title={notebook.title}
+        updatedAt={notebook.updatedAt}
         initialMessages={messages}
       />
     </div>

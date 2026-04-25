@@ -5,22 +5,30 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
+
+    /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
+
+    /* Linting */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "@lyranote/types": ["../../packages/types/src/index.ts"],
-      "@lyranote/types/constants": ["../../packages/types/src/constants.ts"],
-      "@lyranote/api-client": ["../../packages/api-client/src/index.ts"]
+      "@/*": ["src/*"],
+      "next-intl": ["src/lib/next-intl-stub.ts"],
+      "next/image": ["src/lib/next-image-stub.tsx"],
+      "next/dynamic": ["src/lib/next-dynamic-stub.tsx"],
+      "@excalidraw/excalidraw": ["src/lib/stubs/excalidraw-stub.tsx"],
+      "@nivo/calendar": ["src/lib/stubs/nivo-calendar-stub.tsx"],
+      "markmap-lib": ["src/lib/stubs/markmap-lib-stub.ts"],
+      "markmap-view": ["src/lib/stubs/markmap-view-stub.ts"]
     }
   },
   "include": ["src"],

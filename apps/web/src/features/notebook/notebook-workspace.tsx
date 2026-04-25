@@ -8,29 +8,39 @@
 
 import type { Editor } from "@tiptap/react";
 import { AnimatePresence, m } from "framer-motion";
-import { Library } from "lucide-react";
+import { Library, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { CopilotPanel, DEFAULT_WIDTH } from "@/features/copilot/copilot-panel";
 import { FloatingOrb } from "@/features/copilot/floating-orb";
 import { NoteEditor } from "@/features/editor/note-editor";
+import type { EditorActionRequest } from "@/features/editor/editor-actions";
 import { NotebookTopBar } from "@/features/notebook/notebook-header";
 import type { SaveStatus } from "@/features/notebook/notebook-header";
 import { MobileWorkspaceSheet } from "@/features/notebook/mobile-workspace-sheet";
 import type { MobileCopilotSnap, MobileWorkspaceSheetKey } from "@/features/notebook/mobile-workspace-sheet";
+import { RelevantSourcesView } from "@/features/copilot/relevant-sources-view";
 import { NotebookTOC } from "@/features/notebook/notebook-toc";
 import { FloatingTOC } from "@/features/notebook/floating-toc";
+import { ProactiveToaster } from "@/features/copilot/proactive-toaster";
 import { ImportSourceDialog } from "@/features/source/import-source-dialog";
 import { SourceDetailDrawer } from "@/features/source/source-detail-drawer";
 import { SourcesPanel } from "@/features/source/sources-panel";
+import {
+  buildNotebookAppearanceStyle,
+  resolveNotebookAppearance,
+  type NotebookAppearanceSettings,
+} from "@/features/notebook/notebook-appearance";
 import { useNotebookStore } from "@/store/use-notebook-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
 import { getWritingContext } from "@/services/ai-service";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { getSources } from "@/services/source-service";
+import { getRelatedKnowledge, type CrossNotebookChunk } from "@/services/ai-service";
 import { listNotes } from "@/services/note-service";
 import type { NoteRecord } from "@/services/note-service";
 import { useMarkdownWorker } from "@/hooks/use-markdown-worker";
@@ -39,22 +49,16 @@ import type { Message, MindMapData } from "@/types";
 
 export type CopilotMode = "docked" | "floating";
 
-const ACTION_PROMPT_KEYS: Record<string, string> = {
-  ask: "selectionExplain",
-  polish: "selectionRewrite",
-  shorten: "selectionCondense",
-  continue: "continueWritingPrompt",
-  summarize: "summarizeSourcesPrompt",
-};
-
 export function NotebookWorkspace({
   notebookId,
   title,
+  updatedAt,
   initialMessages,
   isNew = false,
 }: {
   notebookId: string;
   title: string;
+  updatedAt?: string;
   initialMessages: Message[];
   isNew?: boolean;
 }) {
@@ -63,6 +67,7 @@ export function NotebookWorkspace({
   const setMobileHeaderMode = useUiStore((state) => state.setMobileHeaderMode);
   const activeSourceId = useNotebookStore((state) => state.activeSourceId);
   const setActiveSourceId = useNotebookStore((state) => state.setActiveSourceId);
+  const setCopilotPanelOpen = useNotebookStore((state) => state.setCopilotPanelOpen);
   const { matches: isMobile, ready: mediaReady } = useMediaQuery("(max-width: 767px)");
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
@@ -73,6 +78,12 @@ export function NotebookWorkspace({
   const [notebookTitle, setNotebookTitle] = useState(title);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [appearance, setAppearance] = useState<NotebookAppearanceSettings>({});
+
+  const resolvedAppearance = useMemo(
+    () => resolveNotebookAppearance({}, appearance),
+    [appearance]
+  );
 
   // Hydrate copilot state from localStorage after mount to avoid SSR mismatch
   useEffect(() => {
@@ -102,6 +113,13 @@ export function NotebookWorkspace({
   }, [isMobile, setMobileHeaderMode]);
 
   useEffect(() => {
+    const open = isMobile ? mobileActiveSheet === "copilot" : copilotOpen;
+    setCopilotPanelOpen(open);
+  }, [copilotOpen, isMobile, mobileActiveSheet, setCopilotPanelOpen]);
+
+  useEffect(() => () => setCopilotPanelOpen(false), [setCopilotPanelOpen]);
+
+  useEffect(() => {
     localStorage.setItem("lyra:copilot-mode", copilotMode);
   }, [copilotMode]);
 
@@ -113,7 +131,7 @@ export function NotebookWorkspace({
 
   // Fetch sources so we can resolve activeSourceId → Source object for the drawer
   const { data: sources = [] } = useQuery({
-    queryKey: ["sources", notebookId],
+    queryKey: lyraQueryKeys.sources.list({ notebookId, scope: "notebook" }),
     queryFn: () => getSources(notebookId),
   });
   const activeSource = sources.find((s) => s.id === activeSourceId) ?? null;
@@ -133,6 +151,7 @@ export function NotebookWorkspace({
   // Bridge: hold a reference to the Tiptap editor instance
   // Also keep it as state so TOC and other consumers can re-render on change
   const [editorInstance, setEditorInstance] = useState<Editor | null>(null);
+  const [charCount, setCharCount] = useState(0);
   const [noteRefreshKey, setNoteRefreshKey] = useState(0);
   const convertMarkdown = useMarkdownWorker();
 
@@ -142,12 +161,15 @@ export function NotebookWorkspace({
   const queryClient = useQueryClient();
 
   // On mount, load the first note to populate the picker
+  const [activeNoteUpdatedAt, setActiveNoteUpdatedAt] = useState<string | null>(null);
+
   useEffect(() => {
     if (activeNoteId !== null) return;
     listNotes(notebookId).then((notes) => {
       if (notes[0]) {
         setActiveNoteId(notes[0].id);
         setActiveNoteTitle(notes[0].title ?? null);
+        setActiveNoteUpdatedAt(notes[0].updatedAt ?? null);
       }
     });
   }, [notebookId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -155,22 +177,25 @@ export function NotebookWorkspace({
   const handleNoteSelect = useCallback((note: NoteRecord) => {
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title ?? null);
+    setActiveNoteUpdatedAt(note.updatedAt ?? null);
   }, []);
 
   const handleNoteCreated = useCallback((note: NoteRecord) => {
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title ?? null);
-    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    setActiveNoteUpdatedAt(note.updatedAt ?? null);
+    void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
   }, [notebookId, queryClient]);
 
   const handleNoteDeleted = useCallback((deletedNoteId: string) => {
-    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
     if (activeNoteId === deletedNoteId) {
       // Fall back to the next available note
       listNotes(notebookId).then((notes) => {
         const next = notes.find((n) => n.id !== deletedNoteId) ?? null;
         setActiveNoteId(next?.id ?? null);
         setActiveNoteTitle(next?.title ?? null);
+        setActiveNoteUpdatedAt(next?.updatedAt ?? null);
       });
     }
   }, [notebookId, activeNoteId, queryClient]);
@@ -180,26 +205,54 @@ export function NotebookWorkspace({
   }, []);
 
   const handleNoteSaved = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+    void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
+    setActiveNoteUpdatedAt(new Date().toISOString());
   }, [notebookId, queryClient]);
 
   const handleEditorReady = useCallback((editor: Editor) => {
     editorRef.current = editor;
     setEditorInstance(editor);
+    // Initialize char count
+    setCharCount(editor.storage.characterCount?.characters?.() ?? 0);
+    editor.on("update", () => {
+      setCharCount(editor.storage.characterCount?.characters?.() ?? 0);
+    });
   }, []);
 
-  const handleAskAI = useCallback((text: string, action: string) => {
+  const handleEditorAction = useCallback((payload: EditorActionRequest) => {
     if (isMobile) {
       setMobileActiveSheet("copilot");
     } else {
       setCopilotOpen(true);
     }
-    if (action === "ask") {
-      setPendingQuote({ text, key: Date.now() });
-    } else {
-      const promptKey = ACTION_PROMPT_KEYS[action] ?? ACTION_PROMPT_KEYS.ask;
-      setPendingPrompt({ text: tNotebook(promptKey, { text }), key: Date.now() });
+    if (payload.action === "askCopilot") {
+      setPendingQuote({ text: payload.text, key: Date.now() });
+      return;
     }
+
+    if (payload.action === "customEdit") {
+      setPendingPrompt({
+        text: tNotebook("customEditPrompt", {
+          text: payload.text,
+          intent: payload.intent ?? "",
+        }),
+        key: Date.now(),
+      });
+      return;
+    }
+
+    const promptByAction: Partial<Record<EditorActionRequest["action"], string>> = {
+      explain: tNotebook("selectionExplain", { text: payload.text }),
+      continue: tNotebook("continueWritingPrompt"),
+      summarize: tNotebook("summarizeSourcesPrompt"),
+      comment: tNotebook("selectionExplain", { text: payload.text }),
+      editSuggestion: tNotebook("selectionExplain", { text: payload.text }),
+    };
+
+    setPendingPrompt({
+      text: promptByAction[payload.action] ?? tNotebook("selectionExplain", { text: payload.text }),
+      key: Date.now(),
+    });
   }, [isMobile, tNotebook]);
 
   const handleInsertToEditor = useCallback(async (content: string) => {
@@ -294,12 +347,21 @@ export function NotebookWorkspace({
       ref={containerRef}
       className="flex h-full flex-col overflow-hidden dark:border border-border/40"
       data-testid="notebook-workspace"
+      style={buildNotebookAppearanceStyle(resolvedAppearance)}
     >
       <ImportSourceDialog notebookId={notebookId} />
+      
+      <ProactiveToaster
+        onAsk={(text) => {
+          setCopilotOpen(true);
+          setPendingPrompt({ text, key: Date.now() });
+        }}
+      />
 
       <NotebookTopBar
         notebookId={notebookId}
         title={notebookTitle}
+        updatedAt={activeNoteUpdatedAt ?? updatedAt}
         saveStatus={saveStatus}
         onTitleChange={setNotebookTitle}
         isFullscreen={isFullscreen}
@@ -312,6 +374,12 @@ export function NotebookWorkspace({
         isMobile={isMobile}
         mobileActiveSheet={mobileActiveSheet}
         onMobileSheetChange={handleMobileSheetChange}
+        charCount={charCount}
+        onToggleSources={() => setSourcesOpen((v) => !v)}
+        sourcesOpen={sourcesOpen}
+        sourceCount={sources.length}
+        appearance={appearance}
+        onAppearanceChange={setAppearance}
       />
 
       <div className="relative flex flex-1 overflow-hidden" data-testid="notebook-workspace-main">
@@ -342,16 +410,17 @@ export function NotebookWorkspace({
             noteId={activeNoteId}
             notebookTitle={notebookTitle}
             onEditorReady={handleEditorReady}
-            onAskAI={handleAskAI}
+            onEditorAction={handleEditorAction}
             onSaveStatusChange={setSaveStatus}
             onActiveNoteTitleChange={handleEditorNoteTitleChange}
             onNoteSaved={handleNoteSaved}
             refreshKey={noteRefreshKey}
             onToggleSources={() => setSourcesOpen((v) => !v)}
             sourcesOpen={sourcesOpen}
-            wideLayout={isFullscreen}
             isMobileLayout={isMobile}
           />
+
+
           {!isMobile && isFullscreen && <FloatingTOC editor={editorInstance} />}
         </div>
 
@@ -380,7 +449,8 @@ export function NotebookWorkspace({
             onNoteCreated={(noteId, noteTitle) => {
               setActiveNoteId(noteId);
               setActiveNoteTitle(noteTitle);
-              void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+              setActiveNoteUpdatedAt(new Date().toISOString());
+              void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
               setNoteRefreshKey((k) => k + 1);
             }}
             pendingPrompt={pendingPrompt}
@@ -407,7 +477,7 @@ export function NotebookWorkspace({
                 width: { type: "spring", stiffness: 320, damping: 32, mass: 0.8 },
                 opacity: { duration: 0.22, ease: "easeInOut" },
               }}
-              className="h-full flex-shrink-0 overflow-hidden"
+              className="h-full flex-shrink-0 overflow-hidden px-2"
             >
               <NotebookTOC editor={editorInstance} />
             </m.div>
@@ -420,22 +490,6 @@ export function NotebookWorkspace({
           )}
         </AnimatePresence>
 
-        {/* Floating sources toggle */}
-        {!isMobile && !isFullscreen && (
-          <button
-            type="button"
-            onClick={() => setSourcesOpen((v) => !v)}
-            title={tNotebook("tabSources")}
-            className={cn(
-              "absolute bottom-6 left-4 z-10 flex h-9 w-9 items-center justify-center rounded-full border shadow-sm backdrop-blur-sm transition-all",
-              sourcesOpen
-                ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border/30 bg-card/80 text-muted-foreground/50 hover:text-foreground hover:border-border/60"
-            )}
-          >
-            <Library size={15} />
-          </button>
-        )}
 
         {isMobile && (
           <MobileWorkspaceSheet
@@ -465,7 +519,8 @@ export function NotebookWorkspace({
                 onNoteCreated={(noteId, noteTitle) => {
                   setActiveNoteId(noteId);
                   setActiveNoteTitle(noteTitle);
-                  void queryClient.invalidateQueries({ queryKey: ["notes", notebookId] });
+                  setActiveNoteUpdatedAt(new Date().toISOString());
+                  void queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.list(notebookId) });
                   setNoteRefreshKey((k) => k + 1);
                 }}
                 pendingPrompt={pendingPrompt}

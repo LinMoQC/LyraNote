@@ -74,17 +74,19 @@ export function CustomSelect({
         type="button"
         onClick={() => { onChange(opt.value); setOpen(false); }}
         className={cn(
-          "flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors",
-          isSel ? "bg-primary/10 text-primary" : "text-foreground hover:bg-muted/50"
+          "flex w-full items-center gap-2 rounded-lg mx-1 px-2.5 py-1.5 text-left text-sm transition-colors",
+          isSel ? "bg-primary/15 text-primary font-medium" : "text-foreground/80 hover:bg-muted/60 hover:text-foreground"
         )}
       >
+        <span className="w-3.5 flex-shrink-0">
+          {isSel && <Check size={12} className="text-primary" />}
+        </span>
         <span className="flex-1 truncate">{opt.label}</span>
         {opt.thinking && (
           <span className="flex-shrink-0 rounded-md bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-400">
             Thinking
           </span>
         )}
-        {isSel && <Check size={12} className="flex-shrink-0" />}
       </button>
     );
   };
@@ -121,7 +123,7 @@ export function CustomSelect({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.13 }}
-            className="absolute right-0 top-full z-50 mt-1.5 min-w-[240px] overflow-hidden rounded-xl border border-border bg-card shadow-xl shadow-black/25"
+            className="absolute right-0 top-full z-50 mt-1.5 min-w-[180px] overflow-hidden rounded-xl border border-border/60 bg-popover shadow-2xl shadow-black/40 backdrop-blur-sm"
           >
             {options.length > 8 && (
               <div className="border-b border-border/50 px-2 py-1.5">
@@ -135,7 +137,7 @@ export function CustomSelect({
                 />
               </div>
             )}
-            <div className="max-h-64 overflow-y-auto py-1">
+            <div className="max-h-64 overflow-y-auto py-1.5">
               {hasGroups
                 ? groups.map((g) => (
                     <div key={g.name}>

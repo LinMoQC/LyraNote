@@ -25,6 +25,7 @@ export type Notebook = {
   description: string;
   updatedAt: string;
   sourceCount: number;
+  noteCount: number;
   artifactCount: number;
   wordCount: number;
   summary?: string;
@@ -79,6 +80,23 @@ export type Source = {
   status: SourceStatus;
 };
 
+/** 知识来源文本分块 */
+export type SourceChunk = {
+  id: string;
+  chunk_index: number;
+  content: string;
+  token_count: number | null;
+};
+
+/** 临时上传文件结果 */
+export type UploadTempResult = {
+  id: string;
+  storage_key: string;
+  filename: string;
+  content_type: string;
+  size: number;
+};
+
 // ── Message ───────────────────────────────────────────────────────────────────
 
 import type { ChatRole, AgentStepType } from "./constants";
@@ -98,6 +116,7 @@ export interface AgentStep {
   content?: string;
   tool?: string;
   input?: Record<string, unknown>;
+  is_system?: boolean;
 }
 
 /** 思维导图节点 */

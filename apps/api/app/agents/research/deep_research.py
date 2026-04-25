@@ -26,7 +26,7 @@ from langchain_core.callbacks.manager import adispatch_custom_event
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 from openai import AsyncOpenAI
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.core.genui_protocol import GENUI_PROTOCOL_REPORT as _GENUI_PROTOCOL_REPORT
 from app.services.monitoring_service import (
@@ -87,6 +87,7 @@ class ResearchState(TypedDict):
     user_memories: list[dict]
     mode: str               # "quick" | "deep"
     clarification_context: list[dict] | None  # [{question, answer}, ...]
+    plan_override: dict | None                # pre-generated plan from /plan endpoint
 
     # ── plan_node output ───────────────────────────────────────────────────────
     report_title: str
@@ -281,10 +282,17 @@ async def web_search_sync(query: str, tavily_api_key: str, max_results: int = 4)
 # ── Research primitives ───────────────────────────────────────────────────────
 
 async def generate_clarifying_questions(query: str, client: AsyncOpenAI, model: str) -> list[dict]:
-    """Generate 4 query-specific clarifying questions with 3 options each."""
+    """Generate clarifying questions only when the query is genuinely ambiguous.
+
+    Returns an empty list if the query is already specific enough so the frontend
+    can skip the questionnaire and proceed directly to plan generation.
+    """
     system_prompt = (
-        "你是一位研究助手，需要通过几个简短选择题了解用户的研究偏好，以便生成更精准的深度研究报告。\n\n"
-        "根据用户的研究主题，生成4个选择题，每题3个选项。问题须涵盖：\n"
+        "你是一位研究助手，负责判断用户的研究课题是否需要进一步明确研究偏好。\n\n"
+        "判断标准：\n"
+        "- 如果课题已经足够具体（明确了研究方向、范围、目标等），则不需要提问，直接返回空列表。\n"
+        "- 如果课题较宽泛或存在多种合理解读方向，则生成2-4个选择题帮助明确偏好。\n\n"
+        "当需要提问时，问题须按需从以下维度选取（不必全选）：\n"
         "1. 研究侧重（选项必须与该主题强相关，不可用通用词汇）\n"
         "2. 目标读者（专业研究者 / 行业从业者 / 普通读者）\n"
         "3. 时间维度（最新进展为主 / 历史演进 / 不限）\n"
@@ -293,7 +301,8 @@ async def generate_clarifying_questions(query: str, client: AsyncOpenAI, model: 
         "- 第1题的选项必须高度贴合研究主题，体现该领域的核心分支或方向\n"
         "- 选项 value 使用简洁英文关键词，label 使用中文\n"
         "- 只返回JSON，不含其他文字\n\n"
-        '输出格式：{"questions": [{"question": "...", "options": [{"label": "...", "value": "..."}, ...]}, ...]}'
+        '输出格式：{"questions": [{"question": "...", "options": [{"label": "...", "value": "..."}, ...]}, ...]}\n'
+        '课题清晰无需提问时返回：{"questions": []}'
     )
     try:
         resp = await client.chat.completions.create(
@@ -309,45 +318,13 @@ async def generate_clarifying_questions(query: str, client: AsyncOpenAI, model: 
         raw = _strip_fences((resp.choices[0].message.content or "").strip())
         result = json.loads(raw)
         questions = result.get("questions", [])
-        if questions and len(questions) >= 2:
+        if isinstance(questions, list):
             return questions
     except Exception:
         pass
 
-    return [
-        {
-            "question": "研究侧重是什么？",
-            "options": [
-                {"label": "理论原理", "value": "theory"},
-                {"label": "实践应用", "value": "practice"},
-                {"label": "两者兼顾", "value": "both"},
-            ],
-        },
-        {
-            "question": "您的目标读者是？",
-            "options": [
-                {"label": "专业研究者", "value": "researcher"},
-                {"label": "行业从业者", "value": "practitioner"},
-                {"label": "普通读者", "value": "general"},
-            ],
-        },
-        {
-            "question": "时间维度侧重？",
-            "options": [
-                {"label": "最新进展（近1年）", "value": "recent"},
-                {"label": "历史演进与现状", "value": "history"},
-                {"label": "不限时间", "value": "all"},
-            ],
-        },
-        {
-            "question": "报告输出风格？",
-            "options": [
-                {"label": "综合综述", "value": "overview"},
-                {"label": "技术深度分析", "value": "technical"},
-                {"label": "案例驱动", "value": "case_study"},
-            ],
-        },
-    ]
+    # LLM call failed — skip clarification so the user isn't blocked
+    return []
 
 
 async def _plan(
@@ -384,17 +361,19 @@ async def _plan(
         {
             "role": "system",
             "content": (
-                "你是一位资深研究规划师，擅长将模糊问题拆解为精准、深度的研究子问题。\n\n"
+                "你是一位资深研究规划师，负责为深度研究任务制定具体的研究行动计划。\n\n"
                 "## 核心要求\n"
-                "1. **深度拆解**：不要简单重复用户的问题，要从不同角度深入挖掘\n"
-                "2. **具体化**：每个查询必须是精确的、可搜索的、包含明确方向的问题\n"
-                "3. **多层次**：涵盖基础原理→应用实践→前沿进展→对比评价等不同深度\n\n"
-                "## 每个维度的查询要求\n"
+                "1. **任务描述风格**：每条研究任务必须以动词开头（梳理/检索/调查/分析/对比/汇总等），"
+                "描述'要做什么、覆盖什么范围、关注什么重点'，而非写成疑问句\n"
+                "2. **具体且可执行**：每条任务需包含明确的时间范围、具体对象或技术点，"
+                "让搜索引擎能精确检索，例如：'梳理2022-2023年ReAct、Reflexion等推理框架的提出背景与核心机制'\n"
+                "3. **叙述完整**：每条任务应是一个完整的研究动作描述，不要只写关键词\n\n"
+                "## 每个维度的任务要求\n"
                 + dim_desc
                 + "## 输出格式\n"
                 "只返回一个JSON对象，不含任何其他文字：\n"
-                '{"title": "研究报告标题（学术风格，10-25字，不要直接复述用户问题，而是提炼出研究主题的本质，例如用户问\'什么是ReAct\'应生成\'ReAct框架：推理与行动的协同机制\'）",'
-                '"research_goal": "一句话描述研究目标（需包含具体研究范围和预期产出）",'
+                '{"title": "研究报告标题（学术风格，10-25字，提炼研究主题本质，如\'ReAct框架：推理与行动的协同机制\'）",'
+                '"research_goal": "一句话描述研究目标（含具体研究范围和预期产出）",'
                 '"evaluation_criteria": ["标准1", "标准2", "标准3"],'
                 '"search_matrix": {'
                 f'"concept": {example_arr},'
@@ -846,6 +825,7 @@ def create_research_graph(
     db: AsyncSession,
     client: AsyncOpenAI,
     tavily_api_key: str | None,
+    db_session_factory: async_sessionmaker[AsyncSession] | None = None,
 ):
     """
     Build and compile the research StateGraph with injected dependencies.
@@ -857,31 +837,59 @@ def create_research_graph(
     async def plan_node(state: ResearchState) -> dict:
         cfg = MODES.get(state.get("mode", "quick"), MODES["quick"])
         await adispatch_custom_event("plan", {"status": "planning"})
-        async with traced_span(
-            db,
-            "research.plan",
-            metadata={"query_snapshot": build_text_snapshot(state["query"])},
-        ):
-            plan_result = await _plan(
-                state["query"], client, state["model"],
-                queries_per_dim=cfg.queries_per_dim,
-                clarification_context=state.get("clarification_context"),
-                db=db,
-            )
-        all_queries = [q for qs in plan_result["search_matrix"].values() for q in qs]
-        report_title = plan_result.get("title") or state["query"][:25]
+
+        override = state.get("plan_override")
+        if override:
+            # Use pre-generated plan from /ai/deep-research/plan endpoint.
+            # Prefer the structured search_matrix when present (preserves dimension
+            # grouping); fall back to rechunking the flat sub_questions list.
+            if override.get("search_matrix"):
+                search_matrix = {
+                    dim: queries or [state["query"]]
+                    for dim, queries in override["search_matrix"].items()
+                }
+                sub_questions = [q for qs in search_matrix.values() for q in qs]
+            else:
+                sub_questions = override.get("sub_questions", [])
+                dims = ("concept", "latest", "evidence", "controversy")
+                chunk = max(1, len(sub_questions) // len(dims))
+                search_matrix = {
+                    dim: sub_questions[i * chunk: (i + 1) * chunk] or [state["query"]]
+                    for i, dim in enumerate(dims)
+                }
+            report_title = override.get("report_title") or state["query"][:25]
+            research_goal = override.get("research_goal", "")
+            evaluation_criteria = override.get("evaluation_criteria", [])
+        else:
+            async with traced_span(
+                db,
+                "research.plan",
+                metadata={"query_snapshot": build_text_snapshot(state["query"])},
+            ):
+                plan_result = await _plan(
+                    state["query"], client, state["model"],
+                    queries_per_dim=cfg.queries_per_dim,
+                    clarification_context=state.get("clarification_context"),
+                    db=db,
+                )
+            search_matrix = plan_result["search_matrix"]
+            report_title = plan_result.get("title") or state["query"][:25]
+            research_goal = plan_result["research_goal"]
+            evaluation_criteria = plan_result["evaluation_criteria"]
+            sub_questions = [q for qs in search_matrix.values() for q in qs]
+
         await adispatch_custom_event("plan", {
-            "research_goal": plan_result["research_goal"],
-            "sub_questions": all_queries,
-            "search_matrix": plan_result["search_matrix"],
-            "evaluation_criteria": plan_result["evaluation_criteria"],
+            "research_goal": research_goal,
+            "sub_questions": sub_questions,
+            "search_matrix": search_matrix,
+            "evaluation_criteria": evaluation_criteria,
             "report_title": report_title,
         })
         return {
             "report_title": report_title,
-            "research_goal": plan_result["research_goal"],
-            "evaluation_criteria": plan_result["evaluation_criteria"],
-            "search_matrix": plan_result["search_matrix"],
+            "research_goal": research_goal,
+            "evaluation_criteria": evaluation_criteria,
+            "search_matrix": search_matrix,
         }
 
     async def search_node(state: dict) -> dict:
@@ -890,23 +898,36 @@ def create_research_graph(
         query: str = state["query"]
         dimension: str = state["dimension"]
         await adispatch_custom_event("searching", {"query": query, "dimension": dimension})
-        async with traced_span(
-            db,
-            "research.search",
-            metadata={"query_snapshot": build_text_snapshot(query), "dimension": dimension},
-        ):
-            learning = await _research_one(
-                query=query,
-                dimension=dimension,
-                notebook_id=state["notebook_id"],
-                user_id=state["user_id"],
-                db=db,
-                client=client,
-                tavily_api_key=tavily_api_key,
-                model=state["model"],
-                max_web_results=cfg.web_results,
-                learning_max_chars=cfg.learning_max_chars,
-            )
+        if db_session_factory is None:
+            from app.database import AsyncSessionLocal
+
+            node_session_factory = AsyncSessionLocal
+        else:
+            node_session_factory = db_session_factory
+
+        async with node_session_factory() as node_db:
+            try:
+                async with traced_span(
+                    node_db,
+                    "research.search",
+                    metadata={"query_snapshot": build_text_snapshot(query), "dimension": dimension},
+                ):
+                    learning = await _research_one(
+                        query=query,
+                        dimension=dimension,
+                        notebook_id=state["notebook_id"],
+                        user_id=state["user_id"],
+                        db=node_db,
+                        client=client,
+                        tavily_api_key=tavily_api_key,
+                        model=state["model"],
+                        max_web_results=cfg.web_results,
+                        learning_max_chars=cfg.learning_max_chars,
+                    )
+                await node_db.commit()
+            except Exception:
+                await node_db.rollback()
+                raise
         await adispatch_custom_event("learning", {
             "question": query,
             "content": learning.content,

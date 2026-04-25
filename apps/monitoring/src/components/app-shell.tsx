@@ -50,9 +50,9 @@ export function AppShell({
   }
 
   return (
-    <div className="grid h-screen grid-cols-[220px_minmax(0,1fr)] overflow-hidden">
+    <div className="grid h-screen grid-cols-[200px_minmax(0,1fr)] overflow-hidden bg-background bg-ops-glow bg-no-repeat">
       {/* Sidebar */}
-      <aside className="flex h-full min-h-0 flex-col overflow-y-auto border-r border-border/40 bg-[#060f1c] px-3 py-5">
+      <aside className="flex h-full min-h-0 flex-col overflow-y-auto border-r border-white/[0.02] bg-black/20 backdrop-blur-3xl px-3 py-4">
         {/* Brand */}
         <div className="px-3">
           <p className="text-[10px] uppercase tracking-[0.35em] text-accent/60">LyraNote Ops</p>
@@ -69,10 +69,10 @@ export function AppShell({
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-all duration-300",
                   active
-                    ? "bg-accent/10 text-accent"
-                    : "text-muted hover:bg-white/5 hover:text-foreground",
+                    ? "bg-accent/10 text-accent shadow-[inset_0_1px_1px_rgba(255,255,255,0.05),0_0_15px_rgba(20,184,166,0.1)] border border-accent/20"
+                    : "text-muted hover:bg-white/[0.04] hover:text-foreground border border-transparent",
                 )}
               >
                 <Icon size={15} className="shrink-0" />
@@ -128,7 +128,7 @@ export function AppShell({
       {/* Main content area */}
       <main className="flex min-h-0 flex-col overflow-hidden">
         {/* Page header */}
-        <header className="flex shrink-0 items-center justify-between border-b border-border/30 px-8 py-5">
+        <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-white/[0.02] bg-transparent px-8 py-4 backdrop-blur-xl">
           <div>
             <p className="text-[10px] uppercase tracking-[0.28em] text-muted/50">MONITORING</p>
             <h1 className="mt-0.5 text-2xl font-semibold text-foreground">{title}</h1>
@@ -139,7 +139,7 @@ export function AppShell({
           <button
             type="button"
             onClick={() => void refetch()}
-            className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/40 px-3 py-2 text-xs text-muted transition-colors hover:border-border hover:bg-card hover:text-foreground"
+            className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-muted shadow-sm backdrop-blur transition-all hover:bg-white/[0.05] hover:text-foreground"
           >
             <RefreshCw size={13} />
             刷新
@@ -147,7 +147,7 @@ export function AppShell({
         </header>
 
         {/* Page content */}
-        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-background bg-ops-glow px-8 py-6">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto bg-transparent px-8 py-6">
           {children}
         </div>
       </main>

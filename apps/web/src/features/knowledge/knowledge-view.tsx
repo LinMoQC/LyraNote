@@ -23,6 +23,7 @@ import { useTranslations } from "next-intl";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 
 import { ImportSourceDialog } from "@/features/source/import-source-dialog";
+import { dedupeSourcesByLatest } from "@/features/source/source-list";
 import { SourceDetailDrawer } from "@/features/source/source-detail-drawer";
 import { KnowledgeGraphView } from "@/features/knowledge/knowledge-graph-view";
 import { getSourcesPage, type SourcePage } from "@/services/source-service";
@@ -257,6 +258,9 @@ export function KnowledgeView() {
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>
       lastPage.hasMore ? lastPage.offset + lastPage.limit : undefined,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     refetchInterval: (query) => {
       const pages = query.state.data?.pages ?? [];
       const hasProcessing = pages.some((p) =>
@@ -264,18 +268,14 @@ export function KnowledgeView() {
       );
       return hasProcessing ? REFETCH_INTERVAL_PROCESSING : false;
     },
+    refetchIntervalInBackground: true,
   });
 
   const allSources = useMemo(() => {
     const items = data?.pages.flatMap((p) => p.items) ?? []
-    const seen = new Set<string>()
-    return items.filter((item) => {
-      if (seen.has(item.id)) return false
-      seen.add(item.id)
-      return true
-    })
+    return dedupeSourcesByLatest(items)
   }, [data])
-  const total = data?.pages[0]?.total ?? 0;
+  const total = allSources.length;
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {

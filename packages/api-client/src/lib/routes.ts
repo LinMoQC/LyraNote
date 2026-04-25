@@ -47,6 +47,8 @@ export const CONFIG = {
   BASE: "/config",
   /** POST - 测试已保存的 LLM 配置 */
   TEST_LLM: "/config/test-llm",
+  /** POST - 测试已保存的小模型配置 */
+  TEST_UTILITY_LLM: "/config/test-utility-llm",
   /** POST - 测试已保存的 Embedding 配置 */
   TEST_EMBEDDING: "/config/test-embedding",
   /** POST - 测试已保存的 Reranker 配置 */
@@ -111,6 +113,8 @@ export const SOURCES = {
 export const CONVERSATIONS = {
   /** GET / POST - 笔记本下的对话列表 / 创建对话 */
   list: (notebookId: string) => `/notebooks/${notebookId}/conversations`,
+  /** GET / POST - 全局对话列表 / 创建（无笔记本） */
+  GLOBAL_LIST: "/conversations",
   /** DELETE - 删除对话 */
   detail: (conversationId: string) => `/conversations/${conversationId}`,
   /** GET - 对话消息列表 */
@@ -119,6 +123,15 @@ export const CONVERSATIONS = {
   saveMessage: (conversationId: string) => `/conversations/${conversationId}/messages/save`,
   /** POST - 流式消息 (SSE) */
   stream: (conversationId: string) => `/conversations/${conversationId}/messages/stream`,
+  /** POST - 启动可恢复的消息生成 */
+  startGeneration: (conversationId: string) => `/conversations/${conversationId}/messages/generations`,
+  /** GET - 消息生成状态 */
+  generationStatus: (generationId: string) => `/messages/generations/${generationId}`,
+  /** DELETE - 取消消息生成 */
+  cancelGeneration: (generationId: string) => `/messages/generations/${generationId}`,
+  /** GET - 消息生成事件流 (SSE) */
+  generationEvents: (generationId: string, from?: number) =>
+    `/messages/generations/${generationId}/events${from !== undefined ? `?from=${from}` : ""}`,
   /** POST - 解决 MCP 工具人工审批 */
   approveTool: (approvalId: string) => `/agent/approve/${approvalId}`,
 } as const;
@@ -208,6 +221,8 @@ export const MEMORY = {
   update: (id: string) => `/memory/${id}`,
   /** DELETE - 删除单条记忆 */
   delete: (id: string) => `/memory/${id}`,
+  /** POST - 回填历史对话中的记忆 */
+  BACKFILL: "/memory/backfill",
 } as const;
 
 // ── 知识图谱 ──────────────────────────────────────────────────────────────────

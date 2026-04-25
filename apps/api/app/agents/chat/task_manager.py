@@ -94,6 +94,13 @@ def get_generation_task(generation_id: str) -> asyncio.Task[None] | None:
     return _tasks.get(generation_id)
 
 
+def cancel_message_generation_task(generation_id: str) -> asyncio.Task[None] | None:
+    task = _tasks.get(generation_id)
+    if task is not None and not task.done():
+        task.cancel()
+    return task
+
+
 async def load_generation_events(generation_id: UUID, from_index: int = 0) -> list[dict]:
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -118,12 +125,14 @@ async def run_message_generation(
     trace_id: str | None,
 ) -> None:
     """Run the normal chat agent in the background and persist streaming progress."""
-    from app.agents.core.react_agent import run_agent
-    from app.agents.memory import get_notebook_summary
+    from app.agents.core.react_agent import (
+        classify_agent_execution_route,
+        run_agent,
+    )
     from app.services.conversation_service import (
         ConversationService,
         _extract_genui_from_content,
-        _load_user_memories_safely,
+        _load_prompt_context_safely,
     )
 
     buf = GenerationBuffer()
@@ -131,6 +140,15 @@ async def run_message_generation(
     trace_token = None
     run_token = None
     run = None
+    full_content: list[str] = []
+    full_reasoning: list[str] = []
+    citations: list[dict] = []
+    agent_steps: list[dict] = []
+    speed_metrics: dict | None = None
+    mind_map_data: dict | None = None
+    diagram_data: dict | None = None
+    mcp_result_data: dict | None = None
+    ui_elements_data: list[dict] = []
 
     try:
         generation_uuid = UUID(generation_id)
@@ -171,15 +189,21 @@ async def run_message_generation(
             async with traced_span(db, "chat.history_load", run=run):
                 history = await service._load_history(conversation.id)
 
-            notebook_summary = (
-                await get_notebook_summary(conversation.notebook_id, db)
-                if conversation.notebook_id else None
+            execution_route = classify_agent_execution_route(
+                query=content,
+                attachment_ids=attachment_ids,
+                tool_hint=tool_hint,
             )
+            scene = "research" if execution_route.mode == "multi" else "chat"
             async with traced_span(db, "chat.memory_load", run=run):
-                user_memories = await _load_user_memories_safely(
+                prompt_context = await _load_prompt_context_safely(
                     db,
                     user_id,
                     current_query=content,
+                    scene=scene,
+                    notebook_id=conversation.notebook_id,
+                    conversation_id=conversation.id,
+                    include_portrait=execution_route.mode == "multi",
                 )
             await update_observability_run(
                 db,
@@ -187,20 +211,12 @@ async def run_message_generation(
                 metadata={
                     "model": generation.model,
                     "history_turn_count": len(history),
-                    "memory_count": len(user_memories),
+                    "memory_count": len(prompt_context.all_memories),
                     "attachment_count": len(attachment_ids or []),
+                    "scene": scene,
                 },
             )
 
-            full_content: list[str] = []
-            full_reasoning: list[str] = []
-            citations: list[dict] = []
-            agent_steps: list[dict] = []
-            speed_metrics: dict | None = None
-            mind_map_data: dict | None = None
-            diagram_data: dict | None = None
-            mcp_result_data: dict | None = None
-            ui_elements_data: list[dict] = []
             next_event_index = generation.last_event_index + 1
             token_since_flush = 0
             last_flush_at = time.monotonic()
@@ -250,8 +266,7 @@ async def run_message_generation(
                     user_id=user_id,
                     history=history,
                     db=db,
-                    user_memories=user_memories,
-                    notebook_summary=notebook_summary,
+                    prompt_context=prompt_context,
                     global_search=True if conversation.notebook_id is None else global_search,
                     tool_hint=tool_hint,
                     attachment_ids=attachment_ids,
@@ -399,7 +414,7 @@ async def run_message_generation(
                                 metadata={
                                     **detail_summary,
                                     "tool_call_count": tool_call_count,
-                                    "scene": "research",
+                                    "scene": scene,
                                     "citations_count": len(citations),
                                     "execution_path": execution_path,
                                     "policy_trace": policy_trace,
@@ -415,10 +430,81 @@ async def run_message_generation(
                             )
                             await db.commit()
 
-                        service._dispatch_post_chat_tasks(conversation.id, "research", user_memories)
+                        service._dispatch_post_chat_tasks(
+                            conversation.id,
+                            scene,
+                            prompt_context.all_memories,
+                        )
                         break
 
                     await _persist_event(event)
+
+    except asyncio.CancelledError:
+        logger.info("Message generation %s cancelled", generation_id)
+        try:
+            async with AsyncSessionLocal() as db:
+                generation_uuid = UUID(generation_id)
+                generation = await db.get(MessageGeneration, generation_uuid)
+                if generation is not None and generation.status not in {"done", "error", "cancelled"}:
+                    assistant_message = await db.get(Message, generation.assistant_message_id)
+                    content_text = "".join(full_content)
+                    reasoning_text = "".join(full_reasoning).strip() or None
+                    has_visible_output = bool(
+                        content_text
+                        or reasoning_text
+                        or citations
+                        or agent_steps
+                        or speed_metrics
+                        or mind_map_data
+                        or diagram_data
+                        or mcp_result_data
+                        or ui_elements_data
+                    )
+
+                    generation.status = "cancelled"
+                    generation.completed_at = datetime.now(timezone.utc)
+                    generation.error_message = None
+
+                    if assistant_message is not None:
+                        if has_visible_output:
+                            assistant_message.content = content_text
+                            assistant_message.reasoning = reasoning_text
+                            assistant_message.citations = citations or None
+                            assistant_message.agent_steps = _snapshot_list(agent_steps)
+                            assistant_message.speed = speed_metrics
+                            assistant_message.mind_map = mind_map_data
+                            assistant_message.diagram = diagram_data
+                            assistant_message.mcp_result = mcp_result_data
+                            assistant_message.ui_elements = _snapshot_list(ui_elements_data)
+                            assistant_message.status = "completed"
+                        else:
+                            await db.delete(assistant_message)
+
+                    result = await db.execute(
+                        select(ObservabilityRun)
+                        .where(ObservabilityRun.generation_id == generation_uuid)
+                        .order_by(ObservabilityRun.started_at.desc())
+                        .limit(1)
+                    )
+                    run = result.scalar_one_or_none()
+                    if run is not None:
+                        detail_summary = await summarize_run_details(db, run.id)
+                        await finish_observability_run(
+                            db,
+                            run,
+                            status="cancelled",
+                            metadata={
+                                **detail_summary,
+                                "query_snapshot": build_text_snapshot(content),
+                                "final_answer_snapshot": build_text_snapshot(content_text),
+                                "reasoning_snapshot": build_text_snapshot(reasoning_text or ""),
+                            },
+                            error_message=None,
+                        )
+                    await db.commit()
+        except Exception:
+            logger.exception("Failed to persist cancelled state for generation %s", generation_id)
+        return
 
     except Exception as exc:
         logger.exception("Message generation %s failed", generation_id)

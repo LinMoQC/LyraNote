@@ -18,6 +18,8 @@ import {
 } from "@/schemas/chat-api";
 import type { Artifact, CitationData, Message } from "@/types";
 
+type RewriteAction = "polish" | "proofread" | "reformat" | "shorten";
+
 // ─── Conversation history (stub — messages are managed client-side) ──────────
 
 /**
@@ -53,6 +55,19 @@ export async function getInlineSuggestion(context: string): Promise<string> {
     note_context: "",
   });
   return data.suggestion;
+}
+
+export async function rewriteSelection(
+  selectedText: string,
+  action: RewriteAction,
+  noteContext: string = "",
+): Promise<string> {
+  const data = await http.post<{ result: string }>(AI.REWRITE, {
+    selected_text: selectedText,
+    action,
+    note_context: noteContext,
+  });
+  return data.result;
 }
 
 // ─── Streaming chat ───────────────────────────────────────────────────────────
@@ -217,6 +232,20 @@ export async function getMessageGenerationStatus(
     },
   );
   return MessageGenerationStatusSchema.parse(raw);
+}
+
+export async function cancelMessageGeneration(generationId: string): Promise<void> {
+  const response = await fetch(http.url(CONVERSATIONS.cancelGeneration(generationId)), {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      ...authHeaderFromCookie(),
+    },
+    keepalive: true,
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Cancel request failed: ${response.status}`);
+  }
 }
 
 export async function subscribeMessageGeneration(
@@ -557,7 +586,12 @@ export interface DeepResearchTaskStatus {
  */
 export async function createDeepResearch(
   query: string,
-  opts: { notebookId?: string; mode?: "quick" | "deep"; clarificationContext?: Array<{ question: string; answer: string }> },
+  opts: {
+    notebookId?: string
+    mode?: "quick" | "deep"
+    clarificationContext?: Array<{ question: string; answer: string }>
+    planOverride?: { subQuestions: string[]; searchMatrix?: Record<string, string[]>; researchGoal: string; evaluationCriteria: string[]; reportTitle: string }
+  },
 ): Promise<{ taskId: string; conversationId: string }> {
   const data = await http.post<{ task_id: string; conversation_id: string }>(
     AI.DEEP_RESEARCH,
@@ -566,9 +600,43 @@ export async function createDeepResearch(
       notebook_id: opts.notebookId ?? null,
       mode: opts.mode ?? "quick",
       clarification_context: opts.clarificationContext ?? null,
+      plan_override: opts.planOverride
+        ? {
+            sub_questions: opts.planOverride.subQuestions,
+            search_matrix: opts.planOverride.searchMatrix ?? null,
+            research_goal: opts.planOverride.researchGoal,
+            evaluation_criteria: opts.planOverride.evaluationCriteria,
+            report_title: opts.planOverride.reportTitle,
+          }
+        : null,
     },
   )
   return { taskId: data.task_id, conversationId: data.conversation_id }
+}
+
+/** 生成研究计划（同步，不创建任务，供用户确认后再提交） */
+export async function planDeepResearch(
+  query: string,
+  opts: { mode?: "quick" | "deep"; clarificationContext?: Array<{ question: string; answer: string }> },
+): Promise<{ subQuestions: string[]; searchMatrix?: Record<string, string[]>; researchGoal: string; evaluationCriteria: string[]; reportTitle: string }> {
+  const data = await http.post<{
+    sub_questions: string[]
+    search_matrix?: Record<string, string[]>
+    research_goal: string
+    evaluation_criteria: string[]
+    report_title: string
+  }>(AI.DEEP_RESEARCH_PLAN, {
+    query,
+    mode: opts.mode ?? "quick",
+    clarification_context: opts.clarificationContext ?? null,
+  })
+  return {
+    subQuestions: data.sub_questions,
+    searchMatrix: data.search_matrix,
+    researchGoal: data.research_goal,
+    evaluationCriteria: data.evaluation_criteria,
+    reportTitle: data.report_title,
+  }
 }
 
 /**

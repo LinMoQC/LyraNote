@@ -49,7 +49,7 @@ export function ClarifyingPanel({ questions, onSubmit, onSkip, isLoading }: Clar
 
   return (
     <div className="px-3 pb-3 md:px-6">
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-3xl 2xl:max-w-4xl">
         <m.div
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
@@ -200,7 +200,7 @@ export function ClarifyingLoading({ className }: ClarifyingLoadingProps) {
       transition={{ duration: 0.15 }}
       className={cn("px-3 pb-3 md:px-6", className)}
     >
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto max-w-3xl 2xl:max-w-4xl">
         <div className="flex items-center gap-2 rounded-xl border border-amber-500/15 bg-amber-500/[0.03] px-4 py-3">
           <Loader2 size={13} className="animate-spin text-amber-500/60" />
           <span className="text-xs text-amber-500/60">{t("generatingQuestions")}</span>

@@ -15,7 +15,7 @@ Directory layout (default ~/.lyranote/memory/):
 
 from __future__ import annotations
 
-import os
+import hashlib
 from datetime import datetime
 from pathlib import Path
 
@@ -198,6 +198,12 @@ def _parse_memory_doc_sections(content: str) -> list[dict]:
     """
     import re
 
+    def _section_key(heading: str) -> str:
+        normalized = re.sub(r"[^\w]+", "_", heading.strip().lower(), flags=re.UNICODE).strip("_")
+        if not normalized:
+            normalized = hashlib.sha1(heading.encode("utf-8")).hexdigest()[:12]
+        return "file_" + normalized[:60]
+
     items = []
     # Split on H2 headings
     sections = re.split(r"^## (.+)$", content, flags=re.MULTILINE)
@@ -215,7 +221,7 @@ def _parse_memory_doc_sections(content: str) -> list[dict]:
             continue
 
         # Derive a safe key from the heading
-        key = "file_" + re.sub(r"[^a-z0-9_]", "_", heading.lower())[:60].strip("_")
+        key = _section_key(heading)
         items.append({
             "key": key,
             "value": body[:500],
@@ -230,24 +236,40 @@ async def sync_memory_doc_to_db(user_id, db, force: bool = False) -> int:
     """
     Parse MEMORY.md and upsert each section as a source='file' memory record.
 
-    Normally only active when memory_mode='desktop'. Pass force=True to bypass
-    the mode check — used when the AI explicitly writes MEMORY.md via a skill
-    (update_memory_doc), so the content is always available in future conversations.
+    Synchronises the current MEMORY.md content into source='file' records.
+    Existing MEMORY.md-derived file records that no longer exist in the file
+    are deleted so the DB view matches the editable document.
     Returns the number of items synced.
     """
-    from app.config import settings
-    from app.agents.memory.extraction import _upsert_memory
+    from sqlalchemy import select
 
-    if not force and settings.memory_mode != "desktop":
-        return 0
+    from app.agents.memory.extraction import _upsert_memory
+    from app.models import UserMemory
 
     content = read_memory_doc()
-    if not content.strip():
-        return 0
-
     items = _parse_memory_doc_sections(content)
+    keyed_items = {item["key"]: item for item in items}
+
+    existing_records = (
+        await db.execute(
+            select(UserMemory).where(
+                UserMemory.user_id == user_id,
+                UserMemory.source == "file",
+                UserMemory.evidence == "MEMORY.md",
+            )
+        )
+    ).scalars().all()
+
+    deleted = 0
+    current_keys = set(keyed_items.keys())
+    for record in existing_records:
+        if record.key in current_keys:
+            continue
+        await db.delete(record)
+        deleted += 1
+
     count = 0
-    for item in items:
+    for item in keyed_items.values():
         try:
             await _upsert_memory(
                 db,
@@ -267,7 +289,7 @@ async def sync_memory_doc_to_db(user_id, db, force: bool = False) -> int:
                 "sync_memory_doc_to_db: failed to upsert key '%s': %s", item["key"], exc
             )
 
-    if count:
+    if count or deleted:
         await db.flush()
     return count
 

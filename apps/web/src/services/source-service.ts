@@ -5,8 +5,18 @@
  */
 import { http } from "@/lib/http-client";
 import { SOURCES } from "@/lib/api-routes";
-import { mapSource } from "@/lib/api-mappers";
 import type { Source } from "@/types";
+import {
+  getWebSourceService,
+} from "@/lib/api-client"
+import type {
+  ChunkStrategy,
+  RechunkOptions,
+  SourcePage,
+  SplitterType,
+} from "@lyranote/api-client"
+
+export type { ChunkStrategy, RechunkOptions, SourcePage, SplitterType }
 
 /**
  * 获取指定笔记本下的所有知识来源
@@ -14,8 +24,7 @@ import type { Source } from "@/types";
  * @returns 来源数组
  */
 export async function getSources(notebookId: string): Promise<Source[]> {
-  const data = await http.get<Record<string, unknown>[]>(SOURCES.list(notebookId));
-  return data.map(mapSource);
+  return getWebSourceService().getSources(notebookId)
 }
 
 /**
@@ -23,8 +32,7 @@ export async function getSources(notebookId: string): Promise<Source[]> {
  * @returns 来源数组
  */
 export async function getGlobalSources(): Promise<Source[]> {
-  const data = await http.get<Record<string, unknown>[]>(SOURCES.GLOBAL)
-  return data.map(mapSource)
+  return getWebSourceService().getGlobalSources()
 }
 
 /**
@@ -43,15 +51,6 @@ export async function getAllSources(): Promise<Source[]> {
   return [...globalSources, ...notebookSources.flat()];
 }
 
-/** 分页查询结果 */
-export interface SourcePage {
-  items: Source[]
-  total: number
-  offset: number
-  limit: number
-  hasMore: boolean
-}
-
 /**
  * 分页查询知识来源（支持类型过滤和搜索）
  * @param params - 分页参数、类型过滤和搜索关键词
@@ -63,20 +62,7 @@ export async function getSourcesPage(params: {
   type?: string
   search?: string
 }): Promise<SourcePage> {
-  const data = await http.get<{
-    items: Record<string, unknown>[]
-    total: number
-    offset: number
-    limit: number
-    has_more: boolean
-  }>(SOURCES.ALL, { params })
-  return {
-    items: data.items.map(mapSource),
-    total: data.total,
-    offset: data.offset,
-    limit: data.limit,
-    hasMore: data.has_more,
-  }
+  return getWebSourceService().getSourcesPage(params)
 }
 
 /**
@@ -133,17 +119,12 @@ export async function importGlobalSource(
  * @returns 操作结果
  */
 export async function deleteSource(sourceId: string): Promise<{ ok: boolean }> {
-  await http.delete(SOURCES.detail(sourceId));
+  await getWebSourceService().deleteSource(sourceId);
   return { ok: true };
 }
 
 /** 文本分块结构 */
-export interface Chunk {
-  id: string
-  chunk_index: number
-  content: string
-  token_count: number | null
-}
+export type Chunk = Awaited<ReturnType<ReturnType<typeof getWebSourceService>["getChunks"]>>[number]
 
 /**
  * 获取知识来源的所有文本分块
@@ -151,22 +132,7 @@ export interface Chunk {
  * @returns 分块数组
  */
 export async function getChunks(sourceId: string): Promise<Chunk[]> {
-  return http.get<Chunk[]>(SOURCES.chunks(sourceId))
-}
-
-/** 分块粒度策略 */
-export type ChunkStrategy = "coarse" | "standard" | "fine" | "custom"
-
-/** 切割器类型 */
-export type SplitterType = "auto" | "semantic" | "recursive"
-
-export interface RechunkOptions {
-  strategy?: ChunkStrategy
-  chunk_size?: number
-  chunk_overlap?: number
-  splitter_type?: SplitterType
-  separators?: string[]
-  min_chunk_size?: number
+  return getWebSourceService().getChunks(sourceId)
 }
 
 /**
@@ -182,7 +148,7 @@ export async function rechunkSource(
     typeof strategyOrOptions === "string"
       ? { strategy: strategyOrOptions }
       : strategyOrOptions
-  await http.post(SOURCES.rechunk(sourceId), body)
+  await getWebSourceService().rechunk(sourceId, body)
 }
 
 /**
@@ -194,5 +160,5 @@ export async function updateSource(
   sourceId: string,
   payload: { notebook_id?: string; title?: string },
 ): Promise<void> {
-  await http.patch(SOURCES.detail(sourceId), payload)
+  await getWebSourceService().updateSource(sourceId, payload)
 }

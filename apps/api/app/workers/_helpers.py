@@ -29,7 +29,7 @@ def _load_db_settings_sync() -> None:
         engine = _cae(settings.database_url, poolclass=NullPool)
         factory = _asm(bind=engine, class_=AsyncSession, expire_on_commit=False)
         async with factory() as db:
-            from app.domains.setup.router import load_settings_from_db
+            from app.services.config_service import load_settings_from_db
             await load_settings_from_db(db)
         await engine.dispose()
 

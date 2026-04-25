@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from app.agents.memory import build_prompt_context_bundle
 from app.domains.ai.routers.research import create_deep_research, save_deep_research_sources
 from app.domains.ai.schemas import DeepResearchRequest, SaveDeepResearchSourcesRequest
 from app.models import Conversation, Message, ResearchTask
@@ -35,8 +36,8 @@ async def test_create_deep_research_without_notebook_uses_none_notebook_id() -> 
         return None
 
     with patch(
-        "app.agents.memory.build_memory_context",
-        new=AsyncMock(return_value=[]),
+        "app.agents.memory.load_prompt_context",
+        new=AsyncMock(return_value=build_prompt_context_bundle(scene="research")),
     ), patch(
         "app.domains.ai.routers.research.run_research_task",
         new=AsyncMock(return_value=None),

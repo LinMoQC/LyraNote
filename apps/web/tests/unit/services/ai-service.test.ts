@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CONVERSATIONS } from "@/lib/api-routes"
 import {
+  cancelMessageGeneration,
   getMessageGenerationStatus,
   saveDeepResearchSources,
   sendMessageStream,
@@ -206,6 +207,24 @@ describe("ai-service thinking payload", () => {
     expect(http.fetchJson).toHaveBeenCalledWith(
       CONVERSATIONS.generationStatus(generationId),
       expect.objectContaining({ method: "GET" }),
+    )
+  })
+
+  it("deletes the durable generation when cancelling", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 204,
+    })
+
+    await cancelMessageGeneration(generationId)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      CONVERSATIONS.cancelGeneration(generationId),
+      expect.objectContaining({
+        method: "DELETE",
+        credentials: "include",
+        keepalive: true,
+      }),
     )
   })
 

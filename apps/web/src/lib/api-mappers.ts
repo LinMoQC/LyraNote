@@ -48,6 +48,7 @@ export function mapSource(raw: Raw): Source {
     status: ((SOURCE_STATUSES as readonly string[]).includes(raw.status as string)
       ? raw.status
       : "processing") as SourceStatus,
+    updatedAt: (raw.updated_at as string) ?? undefined,
     metadata: (raw.metadata_ as Record<string, unknown>) ?? undefined,
   };
 }

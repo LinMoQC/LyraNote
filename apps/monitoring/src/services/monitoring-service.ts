@@ -31,6 +31,7 @@ export interface TraceRun {
   run_type: string;
   name: string;
   status: string;
+  user_id: string | null;
   conversation_id: string | null;
   generation_id: string | null;
   task_id: string | null;
@@ -46,8 +47,11 @@ export interface TraceRun {
 export interface TraceSpan {
   id: string;
   run_id: string;
+  parent_span_id: string | null;
   trace_id: string;
   span_name: string;
+  component: string | null;
+  span_kind: string | null;
   status: string;
   duration_ms: number | null;
   error_message: string | null;
@@ -135,6 +139,8 @@ export interface FailureItem {
   status: string;
   message: string | null;
   trace_id: string | null;
+  trace_available: boolean;
+  trace_missing_reason: string | null;
   title?: string | null;
   conversation_id?: string | null;
   notebook_id?: string | null;
@@ -166,6 +172,8 @@ export interface WorkloadItem {
   kind: string;
   id: string;
   trace_id: string | null;
+  trace_available: boolean;
+  trace_missing_reason: string | null;
   status: string;
   started_at: string;
   finished_at: string | null;
@@ -187,9 +195,63 @@ export function getOverview(window = "24h") {
   return http.get<MonitoringOverview>(MONITORING.OVERVIEW, { params: { window } });
 }
 
-export function getTraces(window = "24h", type?: string, status?: string, cursor?: string, limit = 20) {
+export interface MonitoringCorrelationParams {
+  user_id?: string;
+  conversation_id?: string;
+  generation_id?: string;
+  task_id?: string;
+  task_run_id?: string;
+  notebook_id?: string;
+}
+
+export interface TraceQueryParams extends MonitoringCorrelationParams {
+  window?: string;
+  type?: string;
+  status?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export interface FailureQueryParams extends MonitoringCorrelationParams {
+  window?: string;
+  kind?: string;
+}
+
+export interface WorkloadQueryParams extends MonitoringCorrelationParams {
+  kind?: string;
+  status?: string;
+  offset?: number;
+  limit?: number;
+}
+
+export function getTraces(params: TraceQueryParams = {}) {
+  const {
+    window = "24h",
+    type,
+    status,
+    cursor,
+    limit = 20,
+    user_id,
+    conversation_id,
+    generation_id,
+    task_id,
+    task_run_id,
+    notebook_id,
+  } = params;
   return http.get<TraceListResponse>(MONITORING.TRACES, {
-    params: { window, type, status, cursor, limit },
+    params: {
+      window,
+      type,
+      status,
+      cursor,
+      limit,
+      user_id,
+      conversation_id,
+      generation_id,
+      task_id,
+      task_run_id,
+      notebook_id,
+    },
   });
 }
 
@@ -197,14 +259,60 @@ export function getTraceDetail(traceId: string) {
   return http.get<TraceDetail>(MONITORING.traceDetail(traceId));
 }
 
-export function getFailures(window = "24h", kind?: string) {
-  return http.get<FailureList>(MONITORING.FAILURES, { params: { window, kind } });
+export function getFailures(params: FailureQueryParams = {}) {
+  const {
+    window = "24h",
+    kind,
+    user_id,
+    conversation_id,
+    generation_id,
+    task_id,
+    task_run_id,
+    notebook_id,
+  } = params;
+  return http.get<FailureList>(MONITORING.FAILURES, {
+    params: {
+      window,
+      kind,
+      user_id,
+      conversation_id,
+      generation_id,
+      task_id,
+      task_run_id,
+      notebook_id,
+    },
+  });
 }
 
 export function getWorkers() {
   return http.get<WorkerHeartbeat[]>(MONITORING.WORKERS);
 }
 
-export function getWorkloads(kind?: string, status?: string, offset = 0, limit = 20) {
-  return http.get<WorkloadList>(MONITORING.WORKLOADS, { params: { kind, status, offset, limit } });
+export function getWorkloads(params: WorkloadQueryParams = {}) {
+  const {
+    kind,
+    status,
+    offset = 0,
+    limit = 20,
+    user_id,
+    conversation_id,
+    generation_id,
+    task_id,
+    task_run_id,
+    notebook_id,
+  } = params;
+  return http.get<WorkloadList>(MONITORING.WORKLOADS, {
+    params: {
+      kind,
+      status,
+      offset,
+      limit,
+      user_id,
+      conversation_id,
+      generation_id,
+      task_id,
+      task_run_id,
+      notebook_id,
+    },
+  });
 }

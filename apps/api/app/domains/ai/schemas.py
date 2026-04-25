@@ -47,11 +47,25 @@ class ClarifyResponse(BaseModel):
     questions: list[ClarifyQuestion]
 
 
+class DeepResearchPlanRequest(BaseModel):
+    query: str
+    mode: Literal["quick", "deep"] = "quick"
+    clarification_context: list[dict] | None = None
+
+
+class DeepResearchPlanResponse(BaseModel):
+    sub_questions: list[str]
+    research_goal: str
+    evaluation_criteria: list[str]
+    report_title: str
+
+
 class DeepResearchRequest(BaseModel):
     query: str
     notebook_id: str | None = None
     mode: Literal["quick", "deep"] = "quick"
     clarification_context: list[dict] | None = None
+    plan_override: DeepResearchPlanResponse | None = None
 
 
 class SaveDeepResearchSourcesRequest(BaseModel):

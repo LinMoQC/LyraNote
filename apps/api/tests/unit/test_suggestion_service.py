@@ -61,17 +61,39 @@ def _mock_utility_client(content: str):
 
 
 class TestSuggestionService:
-    async def test_get_user_suggestions_returns_fallback_without_generating(self):
+    async def test_get_user_suggestions_warms_cache_on_miss(self):
         user_id = uuid.uuid4()
         redis = _FakeRedis()
+        db = _FakeDB([
+            _FakeResult([("论文A", "摘要A")]),
+            _FakeResult([("对话A",)]),
+        ])
+        utility_client, create_mock = _mock_utility_client('["问题1","问题2","问题3","问题4"]')
+        service = SuggestionService(db, redis_client=redis, utility_client=utility_client)
+
+        suggestions = await service.get_user_suggestions(user_id)
+        cached = await service._read_cached_payload(str(user_id))
+
+        assert suggestions == ["问题1", "问题2", "问题3", "问题4"]
+        assert cached is not None
+        assert cached["suggestions"] == ["问题1", "问题2", "问题3", "问题4"]
+        create_mock.assert_awaited_once()
+
+    async def test_get_user_suggestions_returns_fallback_when_miss_has_no_context(self):
+        user_id = uuid.uuid4()
+        redis = _FakeRedis()
+        db = _FakeDB([
+            _FakeResult([]),
+            _FakeResult([]),
+        ])
         utility_client = SimpleNamespace(
             chat=SimpleNamespace(
                 completions=SimpleNamespace(
-                    create=AsyncMock(side_effect=AssertionError("LLM must not be called in request path"))
+                    create=AsyncMock(side_effect=AssertionError("LLM should not run without context"))
                 )
             )
         )
-        service = SuggestionService(_FakeDB([]), redis_client=redis, utility_client=utility_client)
+        service = SuggestionService(db, redis_client=redis, utility_client=utility_client)
 
         suggestions = await service.get_user_suggestions(user_id)
 

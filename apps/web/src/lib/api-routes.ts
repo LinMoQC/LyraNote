@@ -127,6 +127,8 @@ export const CONVERSATIONS = {
   startGeneration: (conversationId: string) => `/conversations/${conversationId}/messages/generations`,
   /** GET - 消息生成状态 */
   generationStatus: (generationId: string) => `/messages/generations/${generationId}`,
+  /** DELETE - 取消消息生成 */
+  cancelGeneration: (generationId: string) => `/messages/generations/${generationId}`,
   /** GET - 消息生成事件流 (SSE) */
   generationEvents: (generationId: string, from?: number) =>
     `/messages/generations/${generationId}/events${from !== undefined ? `?from=${from}` : ""}`,
@@ -145,10 +147,14 @@ export const AI = {
   SUGGESTIONS: "/ai/suggestions",
   /** POST - 写作辅助上下文 */
   WRITING_CONTEXT: "/ai/writing-context",
+  /** POST - 选中文本改写 */
+  REWRITE: "/ai/rewrite",
   /** POST - 行内润色 (SSE) */
   POLISH: "/ai/polish",
   /** POST - 创建深度研究任务 */
   DEEP_RESEARCH: "/ai/deep-research",
+  /** POST - 生成研究计划（同步，不创建任务） */
+  DEEP_RESEARCH_PLAN: "/ai/deep-research/plan",
   /** POST - 深度研究前置澄清问题 */
   DEEP_RESEARCH_CLARIFY: "/ai/deep-research/clarify",
   /** GET - 深度研究任务状态 */

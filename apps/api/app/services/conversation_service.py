@@ -14,6 +14,7 @@ import logging
 import re
 import random
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import NotFoundError
 from app.models import Conversation, Message, MessageGeneration, Notebook
 from app.trace import get_trace_id
+from app.utils.async_tasks import create_logged_task
 
 logger = logging.getLogger(__name__)
 
@@ -70,33 +72,42 @@ def _extract_genui_from_content(content: str) -> tuple[str, dict | None]:
 
 
 async def _load_user_memories_safely(
+    *args,
+    **kwargs,
+):
+    raise RuntimeError("_load_user_memories_safely has been replaced by _load_prompt_context_safely")
+
+
+async def _load_prompt_context_safely(
     db: AsyncSession,
     user_id: UUID,
     *,
-    current_query: str | None = None,
-    scene: str = "research",
-) -> list[dict]:
+    current_query: str,
+    scene: str = "chat",
+    notebook_id: UUID | None = None,
+    conversation_id: UUID | None = None,
+    include_portrait: bool = False,
+):
     """
-    Load user memories behind a savepoint so schema drift or query failures
-    don't abort the outer conversation transaction.
+    Load the prompt context bundle behind a savepoint so memory sync / retrieval
+    failures do not abort the outer conversation transaction.
     """
-    from app.agents.memory import build_memory_context, get_user_memories
+    from app.agents.memory import build_prompt_context_bundle, load_prompt_context
 
     try:
         async with db.begin_nested():
-            if current_query is not None:
-                return await build_memory_context(
-                    user_id,
-                    current_query,
-                    db,
-                    top_k=5,
-                    scene=scene,
-                )
-            return await get_user_memories(user_id, db)
+            return await load_prompt_context(
+                user_id=user_id,
+                query=current_query,
+                db=db,
+                scene=scene,
+                notebook_id=notebook_id,
+                conversation_id=conversation_id,
+                include_portrait=include_portrait,
+            )
     except Exception as exc:
-        mode = "build_memory_context" if current_query is not None else "get_user_memories"
-        logger.warning("%s failed: %s", mode, exc)
-        return []
+        logger.warning("load_prompt_context failed: %s", exc)
+        return build_prompt_context_bundle(scene=scene)
 
 
 class ConversationService:
@@ -201,10 +212,16 @@ class ConversationService:
         from app.agents.rag.graph_retrieval import graph_augmented_context
         from app.agents.rag.retrieval import retrieve_chunks
         from app.agents.writing.composer import compose_answer
-        from app.agents.memory import get_notebook_summary
 
-        user_memories = await _load_user_memories_safely(self.db, self.user_id)
-        notebook_summary = await get_notebook_summary(conv.notebook_id, self.db)
+        prompt_context = await _load_prompt_context_safely(
+            self.db,
+            self.user_id,
+            current_query=content,
+            scene="chat",
+            notebook_id=conv.notebook_id,
+            conversation_id=conv.id,
+            include_portrait=False,
+        )
         if conv.notebook_id:
             chunks, graph_ctx = await asyncio.gather(
                 retrieve_chunks(
@@ -228,9 +245,7 @@ class ConversationService:
             content,
             chunks,
             history,
-            user_memories=user_memories,
-            notebook_summary=notebook_summary,
-            db=self.db,
+            prompt_context=prompt_context,
             extra_graph_context=graph_ctx or None,
         )
 
@@ -351,6 +366,48 @@ class ConversationService:
             "completed_at": generation.completed_at,
         }
 
+    async def cancel_message_generation(self, generation_id: UUID) -> None:
+        from app.agents.chat import cancel_message_generation_task
+
+        generation = await self._get_owned_generation(generation_id)
+        if generation.status in {"done", "error", "cancelled"}:
+            return
+
+        task = cancel_message_generation_task(str(generation.id))
+        if task is not None:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            await self.db.refresh(generation)
+            if generation.status == "cancelled":
+                return
+
+        assistant_message = await self.db.get(Message, generation.assistant_message_id)
+        has_visible_output = bool(
+            (assistant_message.content if assistant_message else "")
+            or (assistant_message.reasoning if assistant_message else None)
+            or (assistant_message.citations if assistant_message else None)
+            or (assistant_message.agent_steps if assistant_message else None)
+            or (assistant_message.speed if assistant_message else None)
+            or (assistant_message.mind_map if assistant_message else None)
+            or (assistant_message.diagram if assistant_message else None)
+            or (assistant_message.mcp_result if assistant_message else None)
+            or (assistant_message.ui_elements if assistant_message else None)
+        )
+
+        generation.status = "cancelled"
+        generation.completed_at = datetime.now(timezone.utc)
+        generation.error_message = None
+
+        if assistant_message is not None:
+            if has_visible_output:
+                assistant_message.status = "completed"
+            else:
+                await self.db.delete(assistant_message)
+
+        await self.db.commit()
+
     async def subscribe_message_generation(
         self,
         generation_id: UUID,
@@ -391,36 +448,17 @@ class ConversationService:
         from app.agents.memory import get_conversation_summary, RAW_HISTORY_WINDOW
 
         summary_text = await get_conversation_summary(conversation_id, self.db)
-
-        if summary_text:
-            result = await self.db.execute(
-                select(Message)
-                .where(Message.conversation_id == conversation_id)
-                .where(or_(Message.status != "streaming", Message.content != ""))
-                .order_by(Message.created_at.desc(), Message.role.asc())
-                .limit(RAW_HISTORY_WINDOW)
-            )
-            recent = list(reversed(result.scalars().all()))
-            history: list[dict] = [
-                {
-                    "role": "system",
-                    "content": (
-                        "【对话历史摘要】以下是本次会话较早期的对话压缩摘要，"
-                        "请结合它理解用户的研究背景和上下文：\n\n" + summary_text
-                    ),
-                }
-            ]
-            history.extend({"role": m.role, "content": m.content} for m in recent)
-            return history
+        limit = RAW_HISTORY_WINDOW if summary_text else 20
 
         result = await self.db.execute(
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .where(or_(Message.status != "streaming", Message.content != ""))
-            .order_by(Message.created_at.asc(), Message.role.desc())
-            .limit(20)
+            .order_by(Message.created_at.desc(), Message.role.asc())
+            .limit(limit)
         )
-        return [{"role": m.role, "content": m.content} for m in result.scalars().all()]
+        recent = list(reversed(result.scalars().all()))
+        return [{"role": m.role, "content": m.content} for m in recent]
 
     # ── Post-chat background tasks ────────────────────────────────────────────
 
@@ -430,14 +468,34 @@ class ConversationService:
         scene: str,
         user_memories: list[dict],
     ) -> None:
-        asyncio.create_task(self._extract_memories_safe(conversation_id))
-        asyncio.create_task(self._reflect_safe(conversation_id, scene, user_memories))
-        asyncio.create_task(self._compress_safe(conversation_id))
-        asyncio.create_task(self._maybe_flush_diary(conversation_id))
+        create_logged_task(
+            self._extract_memories_safe(conversation_id),
+            logger=logger,
+            description=f"extract memories for conversation {conversation_id}",
+        )
+        create_logged_task(
+            self._reflect_safe(conversation_id, scene, user_memories),
+            logger=logger,
+            description=f"reflect on conversation {conversation_id}",
+        )
+        create_logged_task(
+            self._compress_safe(conversation_id),
+            logger=logger,
+            description=f"compress conversation {conversation_id}",
+        )
+        create_logged_task(
+            self._maybe_flush_diary(conversation_id),
+            logger=logger,
+            description=f"maybe flush diary for conversation {conversation_id}",
+        )
 
         from app.config import settings
         if settings.memory_evaluation_sample_rate > 0 and random.random() < settings.memory_evaluation_sample_rate:
-            asyncio.create_task(self._evaluate_safe(conversation_id))
+            create_logged_task(
+                self._evaluate_safe(conversation_id),
+                logger=logger,
+                description=f"evaluate memories for conversation {conversation_id}",
+            )
 
     async def _extract_memories_safe(self, conversation_id: UUID) -> None:
         from app.agents.memory import extract_memories
@@ -485,25 +543,8 @@ class ConversationService:
             if msg_count >= MEMORY_FLUSH_THRESHOLD:
                 from app.workers.tasks import flush_conversation_to_diary
                 flush_conversation_to_diary.delay(str(conversation_id))
-
-                from app.config import settings
-                if settings.memory_mode == "desktop":
-                    from datetime import datetime, timezone
-                    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                    asyncio.create_task(self._sync_diary_safe(today))
         except Exception as exc:
             logger.warning("Diary flush error: %s", exc)
-
-    async def _sync_diary_safe(self, date_str: str) -> None:
-        from app.agents.memory.file_storage import sync_diary_to_db
-        from app.database import AsyncSessionLocal
-        try:
-            async with AsyncSessionLocal() as session:
-                synced = await sync_diary_to_db(self.user_id, date_str, session)
-                if synced:
-                    await session.commit()
-        except Exception as exc:
-            logger.warning("Diary sync error: %s", exc)
 
     async def _evaluate_safe(self, conversation_id: UUID) -> None:
         from app.agents.research.evaluation import evaluate_conversation

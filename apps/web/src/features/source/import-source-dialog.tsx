@@ -8,6 +8,7 @@ import {
 import { useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
+import { lyraQueryKeys } from "@/lib/query-keys"
 import { cn } from "@/lib/utils"
 import { getNotebooks } from "@/services/notebook-service"
 import { importSource, importGlobalSource } from "@/services/source-service"
@@ -37,7 +38,7 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
   }
 
   const { data: notebooks = [] } = useQuery({
-    queryKey: ["notebooks"],
+    queryKey: lyraQueryKeys.notebooks.list(),
     queryFn: getNotebooks,
     enabled: !notebookIdProp && !isGlobal && isOpen,
   })
@@ -102,7 +103,9 @@ export function ImportSourceDialog({ notebookId: notebookIdProp, global: isGloba
         ])
       }
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["sources", notebookId] }),
+        queryClient.invalidateQueries({
+          queryKey: lyraQueryKeys.sources.list({ notebookId, scope: "notebook" }),
+        }),
         queryClient.invalidateQueries({ queryKey: ["all-sources"] }),
         queryClient.invalidateQueries({ queryKey: ["global-sources"] }),
       ])

@@ -16,6 +16,7 @@ Supports three MCP transport types:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -55,6 +56,8 @@ class MCPClientManager:
         try:
             return await self._run(config, "list_tools")
         except BaseException as exc:
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             msg = _exc_msg(exc)
             logger.warning("MCP get_tools failed for server '%s': %s", config.name, msg)
             return []
@@ -74,6 +77,8 @@ class MCPClientManager:
             try:
                 return await self._run(config, "call_tool", tool_name=tool_name, arguments=arguments)
             except BaseException as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 last_exc = exc
                 if attempt == 0:
                     logger.warning(

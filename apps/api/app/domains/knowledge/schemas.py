@@ -17,7 +17,7 @@ class SuggestResponse(BaseModel):
 
 class RewriteRequest(BaseModel):
     selected_text: str
-    action: Literal["polish", "shorten", "expand"]
+    action: Literal["polish", "proofread", "reformat", "shorten", "expand"]
     note_context: str = ""
 
 

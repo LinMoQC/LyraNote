@@ -53,18 +53,69 @@ export { createNoteService } from "./services/notes";
 export type { NoteService, NoteUpdatePayload } from "./services/notes";
 
 export { createSourceService } from "./services/sources";
-export type { SourceService } from "./services/sources";
+export type {
+  SourceService,
+  SourcePage,
+  SourcePageParams,
+  SourceUpdatePayload,
+  ChunkStrategy,
+  SplitterType,
+  RechunkOptions,
+} from "./services/sources";
 
 export { createConversationService } from "./services/conversations";
 export type {
   ConversationService,
-  StreamChatPayload,
+  ConversationListParams,
+  ConversationMessageParams,
+  ConversationStreamPayload,
+  ConversationStreamEvent,
 } from "./services/conversations";
+
+export { createConfigService } from "./services/config";
+export type {
+  ConfigService,
+  AppConfigMap,
+  TestLlmResult,
+  TestEmbeddingResult,
+  TestRerankerResult,
+  TestEmailResult,
+} from "./services/config";
+
+export { createMemoryService } from "./services/memory";
+export type {
+  MemoryService,
+  MemoryDocOut,
+  MemoryEntry,
+  MemoryGrouped,
+  MemoryBackfillResult,
+} from "./services/memory";
+
+export { createSkillService } from "./services/skills";
+export type { SkillService, SkillItem } from "./services/skills";
+
+export { createMcpService } from "./services/mcp";
+export type {
+  McpService,
+  McpServerDetail,
+  McpToolInfo,
+  McpTestResult,
+  CreateMcpServerPayload,
+  UpdateMcpServerPayload,
+} from "./services/mcp";
+
+export { createUploadService } from "./services/upload";
+export type { UploadService } from "./services/upload";
+
+export { lyraQueryKeys } from "./lib/query-keys";
+export type {
+  ConversationListParams as LyraConversationListParams,
+  ConversationMessageParams as LyraConversationMessageParams,
+  SourceListParams,
+} from "./lib/query-keys";
 
 export {
   createInsightService,
-  createSkillService,
-  createMemoryService,
   createTaskService,
   createAiService,
 } from "./services/ai";

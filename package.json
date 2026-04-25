@@ -39,6 +39,11 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "pnpm": {
+    "overrides": {
+      "solid-js": "1.9.12"
+    }
+  },
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",

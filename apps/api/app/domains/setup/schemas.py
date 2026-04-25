@@ -46,7 +46,6 @@ class SetupInitRequest(BaseModel):
     ai_name: str = "Lyra"
     user_occupation: str = ""
     user_preferences: str = ""
-    custom_system_prompt: str = ""
 
     @field_validator("username")
     @classmethod

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react"
 import { GitBranch, GripVertical, Trash2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import type { MindMapData } from "@/types"
-import { mindMapToMarkdown } from "@/components/message-render/mind-map-view"
+import { mindMapToMarkdown } from "@lyranote/ui/message-render"
 
 // ── React node view ──────────────────────────────────────────────────────────
 

@@ -36,6 +36,10 @@ class ActivitySnapshot(BaseModel):
     note_title: str | None = None
     editor_word_count: int | None = None
     active_source_id: str | None = None
+    copilot_open: bool = False
+    is_mobile: bool = False
+    typing_recently: bool = False
+    last_interaction_ms: int | None = None
     timestamp_ms: int | None = None
 
 

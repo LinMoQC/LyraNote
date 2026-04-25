@@ -4,7 +4,7 @@
  *              返回统一的 get/post/patch/put/delete/stream/fetchJson 接口。
  *
  *              三端使用方式：
- *              - Web：baseURL = NEXT_PUBLIC_API_BASE_URL，getToken = () => cookie 中的 session
+ *              - Web：baseURL = NEXT_PUBLIC_API_BASE_URL，credentials = include（依赖 httpOnly cookie）
  *              - Desktop：baseURL = 用户配置的 server URL，getToken = () => localStorage token
  *              - Mobile：baseURL = 用户配置的 server URL，getToken = () => SecureStore token
  */
@@ -31,6 +31,10 @@ export interface HttpClientConfig {
   baseURL: string;
   /** 返回当前 Bearer token，无 token 时返回 null */
   getToken: () => string | null | Promise<string | null>;
+  /** 是否让 axios 自动携带 cookie（Web 跨端口 API 场景） */
+  withCredentials?: boolean;
+  /** 原生 fetch 使用的 credentials 策略 */
+  credentials?: RequestCredentials;
   /** 401 时的处理回调 */
   onUnauthorized?: () => void;
   /** 系统未初始化时的处理回调 */
@@ -41,12 +45,24 @@ export interface HttpClientConfig {
 
 export const CODE_NOT_CONFIGURED = 1001;
 
+function shouldSetJsonContentType(body: BodyInit | null | undefined) {
+  if (body == null) return false;
+  if (typeof FormData !== "undefined" && body instanceof FormData) return false;
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) return false;
+  if (typeof Blob !== "undefined" && body instanceof Blob) return false;
+  if (typeof body === "string") return false;
+  if (body instanceof ArrayBuffer) return false;
+  if (ArrayBuffer.isView(body)) return false;
+  return true;
+}
+
 // ── HttpClient ────────────────────────────────────────────────────────────────
 
 export class HttpClient {
   private ax: AxiosInstance;
   readonly baseURL: string;
   private getToken: HttpClientConfig["getToken"];
+  private requestCredentials?: RequestCredentials;
   private onUnauthorized?: () => void;
   private onNotConfigured?: () => void;
   private onError?: (message: string) => void;
@@ -54,6 +70,7 @@ export class HttpClient {
   constructor(config: HttpClientConfig) {
     this.baseURL = config.baseURL;
     this.getToken = config.getToken;
+    this.requestCredentials = config.credentials;
     this.onUnauthorized = config.onUnauthorized;
     this.onNotConfigured = config.onNotConfigured;
     this.onError = config.onError;
@@ -61,6 +78,7 @@ export class HttpClient {
     this.ax = axios.create({
       baseURL: config.baseURL,
       headers: { "Content-Type": "application/json" },
+      withCredentials: config.withCredentials,
     });
 
     this.ax.interceptors.request.use(async (cfg) => {
@@ -152,6 +170,7 @@ export class HttpClient {
       headers,
       body: JSON.stringify(body),
       signal: opts?.signal,
+      credentials: this.requestCredentials,
     });
 
     if (res.status === 401) this.onUnauthorized?.();
@@ -166,10 +185,16 @@ export class HttpClient {
   async fetchJson<T>(path: string, init: RequestInit = {}): Promise<T> {
     const token = await Promise.resolve(this.getToken());
     const headers = new Headers(init.headers ?? {});
-    if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
+    if (!headers.has("Content-Type") && shouldSetJsonContentType(init.body)) {
+      headers.set("Content-Type", "application/json");
+    }
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    const res = await fetch(this.url(path), { ...init, headers });
+    const res = await fetch(this.url(path), {
+      ...init,
+      headers,
+      credentials: init.credentials ?? this.requestCredentials,
+    });
 
     if (res.status === 401) this.onUnauthorized?.();
     if (!res.ok) throw new Error(`Request failed: ${res.status}`);

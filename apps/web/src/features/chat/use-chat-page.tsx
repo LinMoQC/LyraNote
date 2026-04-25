@@ -6,12 +6,12 @@
  *              使 ChatView 只负责布局渲染。
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, MessageSquare } from "lucide-react";
 import { useTranslations } from "next-intl";
 
-import { useAuth } from "@/features/auth/auth-provider";
+import { useAuthUser } from "@/features/auth/auth-provider";
 import { useToast } from "@/hooks/use-toast";
 import { useFileAttachments } from "@/hooks/use-file-attachments";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
@@ -21,6 +21,7 @@ import { useChatStream } from "@/hooks/use-chat-stream";
 import { useUiStore } from "@/store/use-ui-store";
 import { useDeepResearchStore } from "@/store/use-deep-research-store";
 import { http } from "@/lib/http-client";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { CHAT_TOOL_DEFS } from "@/lib/chat-tools";
 import { LLM_MODELS } from "@/lib/constants";
 import { getErrorMessage } from "@/lib/request-error";
@@ -43,7 +44,7 @@ import {
   saveActiveConversation,
   saveConversationMessages,
 } from "@/features/chat/chat-persistence";
-import type { ArtifactPayload } from "@/components/genui";
+import type { ArtifactPayload } from "@lyranote/ui/genui";
 import type { Notebook } from "@/types";
 import type { LocalMessage } from "./chat-types";
 import { CONVERSATIONS_PAGE_SIZE, MESSAGES_PAGE_SIZE } from "./chat-types";
@@ -59,7 +60,7 @@ import {
 import type { ChatInputHandle } from "@/components/chat-input";
 
 export function useChatPage() {
-  const { user } = useAuth();
+  const user = useAuthUser();
   const queryClient = useQueryClient();
   const { success: toastOk } = useToast();
   const t = useTranslations("chat");
@@ -99,7 +100,11 @@ export function useChatPage() {
   const [drMode, setDrMode] = useState<"quick" | "deep">("quick");
   const [thinkingEnabled, setThinkingEnabled] = useState(true);
 
-  const { data: appConfig } = useQuery({ queryKey: ["app-config"], queryFn: getConfig, staleTime: 60_000 });
+  const { data: appConfig } = useQuery({
+    queryKey: lyraQueryKeys.config.current(),
+    queryFn: getConfig,
+    staleTime: 60_000,
+  });
   const currentModelId = appConfig?.llm_model ?? "";
   const isThinkingModel = LLM_MODELS.find((m) => m.value === currentModelId)?.thinking ?? false;
 
@@ -150,17 +155,20 @@ export function useChatPage() {
 
   // ── Data queries ─────────────────────────────────────────────────────────
   const { data: notebooks = [] } = useQuery({
-    queryKey: ["notebooks"],
+    queryKey: lyraQueryKeys.notebooks.list(),
     queryFn: getNotebooks,
     enabled: menuOpen,
     staleTime: 1000 * 60 * 5,
   });
 
-  const toolItems = CHAT_TOOL_DEFS.map((tool) => ({
-    id: tool.hint,
-    label: th(tool.key),
-    icon: tool.icon,
-  }));
+  const toolItems = useMemo(
+    () => CHAT_TOOL_DEFS.map((tool) => ({
+      id: tool.hint,
+      label: th(tool.key),
+      icon: tool.icon,
+    })),
+    [th],
+  );
 
   const { data: dynamicSuggestions, isLoading: suggestionsLoading } = useQuery({
     queryKey: ["chat-suggestions"],
@@ -177,6 +185,7 @@ export function useChatPage() {
   const dr = useDeepResearch({
     activeConvId,
     drMode,
+    selectedNotebookId: selectedNotebook?.id,
     streaming,
     streamLifecycle,
     streamAbortRef,
@@ -206,7 +215,11 @@ export function useChatPage() {
 
   // ── Conversation list ────────────────────────────────────────────────────
   const { data: conversations } = useQuery({
-    queryKey: ["conversations", conversationOffset],
+    queryKey: lyraQueryKeys.conversations.list({
+      scope: "global",
+      offset: conversationOffset,
+      limit: CONVERSATIONS_PAGE_SIZE,
+    }),
     queryFn: () => getGlobalConversations({
       offset: conversationOffset,
       limit: CONVERSATIONS_PAGE_SIZE,
@@ -245,7 +258,7 @@ export function useChatPage() {
   const deleteMut = useMutation({
     mutationFn: (id: string) => deleteConversation(id),
     onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.conversations.all() });
       clearConversationMessages(id);
       setConversationList((prev) => {
         const next = prev.filter((item) => item.id !== id);
@@ -388,7 +401,7 @@ export function useChatPage() {
       return;
     }
     const hasDeepResearchMessages = messages.some((m) => Boolean(m.deepResearch));
-    if (!isDeepResearch && !hasDeepResearchMessages && !dr.clarifyingState && !dr.isFetchingClarifications) {
+    if (!isDeepResearch && !hasDeepResearchMessages) {
       try { localStorage.removeItem(DR_MESSAGES_KEY); } catch { /* ignore */ }
       return;
     }
@@ -396,7 +409,7 @@ export function useChatPage() {
       localStorage.setItem(DR_MESSAGES_KEY, JSON.stringify(messages));
     } catch { /* ignore quota */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, activeConvId, isDeepResearch, dr.clarifyingState, dr.isFetchingClarifications]);
+  }, [messages, activeConvId, isDeepResearch]);
 
   useEffect(() => {
     if (!activeConvId) return;
@@ -548,6 +561,7 @@ export function useChatPage() {
     query: string;
     deepResearch: boolean;
     drMode: "quick" | "deep";
+    notebookId?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -556,7 +570,7 @@ export function useChatPage() {
     autoTriggered.current = true;
     pendingChatPayload.current = null;
 
-    const { q, tool: toolParam, attachments: attachmentsParam, notebook: notebookParam,
+    const { q, tool: toolParam, attachments: attachmentsParam, notebook: notebookParam, notebook_id: notebookIdParam,
       deep_research: deepResearchParam, dr_mode: drModeParam, thinking_enabled: thinkingParam } = payload;
 
     setActiveConvId(null);
@@ -611,6 +625,7 @@ export function useChatPage() {
       query: finalQuery,
       deepResearch: deepResearchEnabled,
       drMode: resolvedDrMode,
+      notebookId: notebookIdParam,
     };
   }, [
     chat, dr, streamLifecycle,
@@ -625,7 +640,7 @@ export function useChatPage() {
     if (pending.deepResearch && pending.drMode !== drMode) return;
     pendingAutoSendRef.current = null;
     if (pending.deepResearch) {
-      dr.handleDeepResearch(pending.query);
+      dr.handleDeepResearch(pending.query, pending.notebookId);
     } else {
       chat.handleSend(pending.query);
     }

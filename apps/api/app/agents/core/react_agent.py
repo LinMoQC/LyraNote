@@ -27,6 +27,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.memory import PromptContextBundle, build_prompt_context_bundle
 from app.agents.core.attachment_text import extract_attachment_text
 from app.agents.core.brain import AgentBrain
 from app.agents.core.engine import AgentEngine
@@ -120,8 +121,7 @@ async def run_agent(
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
+    prompt_context: PromptContextBundle | None = None,
     global_search: bool = False,
     tool_hint: str | None = None,
     attachment_ids: list[str] | None = None,
@@ -161,8 +161,7 @@ async def run_agent(
                     user_id=user_id,
                     history=history,
                     db=db,
-                    user_memories=user_memories,
-                    notebook_summary=notebook_summary,
+                    prompt_context=prompt_context,
                     global_search=global_search,
                 ):
                     yield event
@@ -179,8 +178,7 @@ async def run_agent(
         user_id=user_id,
         history=history,
         db=db,
-        user_memories=user_memories,
-        notebook_summary=notebook_summary,
+        prompt_context=prompt_context,
         global_search=global_search,
         tool_hint=tool_hint,
         attachment_ids=attachment_ids,
@@ -210,28 +208,23 @@ async def _run_agent_multi(
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
+    prompt_context: PromptContextBundle | None = None,
     global_search: bool = False,
 ) -> AsyncGenerator[dict, None]:
     """Run the LangGraph multi-agent graph and stream SSE events."""
     from app.agents.graph.multi_agent_graph import MULTI_AGENT_GRAPH
-    from app.agents.portrait.loader import load_latest_portrait
     from app.agents.graph.orchestrator import MultiAgentState
 
-    # Pre-load user portrait to inject into orchestrator context
-    user_portrait: dict | None = None
-    try:
-        user_portrait = await load_latest_portrait(db, user_id)
-    except Exception:
-        pass
+    prompt_context = prompt_context or build_prompt_context_bundle(scene="research")
 
     initial_state: MultiAgentState = {
         "query": query,
         "messages": history,
-        "user_memories": user_memories,
-        "user_portrait": user_portrait,
-        "notebook_summary": notebook_summary,
+        "user_memories": prompt_context.all_memories,
+        "user_portrait": prompt_context.portrait,
+        "notebook_summary": prompt_context.notebook_summary,
+        "prompt_context": prompt_context,
+        "active_scene": prompt_context.scene,
         "notebook_id": notebook_id,
         "user_id": str(user_id),
         "db": db,
@@ -272,8 +265,7 @@ async def _run_agent_single(
     user_id: UUID,
     history: list[dict],
     db: AsyncSession,
-    user_memories: list[dict] | None = None,
-    notebook_summary: dict | None = None,
+    prompt_context: PromptContextBundle | None = None,
     global_search: bool = False,
     tool_hint: str | None = None,
     attachment_ids: list[str] | None = None,
@@ -318,9 +310,7 @@ async def _run_agent_single(
         mcp_skill_map=mcp_skill_map,
     )
     system_prompt = await build_system_prompt(
-        user_memories,
-        notebook_summary,
-        db=db,
+        prompt_context or build_prompt_context_bundle(scene="chat"),
         tool_schemas=tool_schemas,
         active_skills=active_skills,
     )
@@ -378,8 +368,10 @@ async def _run_agent_single(
         max_steps=MAX_ITERATIONS,
         query=query,
         global_search=global_search,
-        active_scene="research",
-        context_budget_chars=context_budget_for_scene("research"),
+        active_scene=(prompt_context.scene if prompt_context else "chat"),
+        context_budget_chars=context_budget_for_scene(
+            prompt_context.scene if prompt_context else "chat"
+        ),
     )
     brain = AgentBrain(has_tools=bool(tool_schemas), max_steps=MAX_ITERATIONS)
     engine = AgentEngine(

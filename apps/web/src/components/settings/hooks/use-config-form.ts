@@ -32,7 +32,7 @@ export function useConfigForm() {
   }, []);
 
   const set = (key: keyof AppConfigMap, v: string) =>
-    setForm((f) => ({ ...f, [key]: v as never }));
+    setForm((f: Partial<AppConfigMap>) => ({ ...f, [key]: v as never }));
 
   async function save(fields: Partial<AppConfigMap>) {
     setSaving(true);

@@ -84,4 +84,4 @@ async def test_exec_call_rag_records_separate_rag_and_graph_spans(
         "chat.rag.retrieve",
         "chat.graph.retrieve",
     ]
-    assert all(span.status == "success" for span in spans)
+    assert all(span.status == "succeeded" for span in spans)

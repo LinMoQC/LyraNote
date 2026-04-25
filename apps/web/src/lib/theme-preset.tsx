@@ -17,16 +17,6 @@ const ThemePresetContext = createContext<ThemePresetContextValue>({
   setThemePreset: () => {},
 });
 
-function readCookiePreset(): ThemePreset {
-  if (typeof window === "undefined") return "lyra";
-  try {
-    const match = document.cookie.match(/(?:^|;\s*)lyra:theme-preset=([^;]*)/);
-    return match?.[1] === "notion" ? "notion" : "lyra";
-  } catch {
-    return "lyra";
-  }
-}
-
 function applyPreset(preset: ThemePreset) {
   const root = document.documentElement;
   if (preset === "lyra") {
@@ -36,8 +26,15 @@ function applyPreset(preset: ThemePreset) {
   }
 }
 
-export function ThemePresetProvider({ children }: { children: React.ReactNode }) {
-  const [themePreset, setThemePresetState] = useState<ThemePreset>(readCookiePreset);
+export function ThemePresetProvider({
+  children,
+  defaultPreset,
+}: {
+  children: React.ReactNode;
+  /** Mirrors `cookies().get("lyra:theme-preset")` from RootLayout so SSR matches hydration. */
+  defaultPreset: ThemePreset;
+}) {
+  const [themePreset, setThemePresetState] = useState<ThemePreset>(defaultPreset);
 
   useEffect(() => {
     applyPreset(themePreset);

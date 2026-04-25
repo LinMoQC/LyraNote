@@ -7,17 +7,21 @@
  */
 
 import { AnimatePresence, m } from "framer-motion";
+import { Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
+import { useCallback } from "react";
 
 import { ChatInput, ChatToolbar } from "@/components/chat-input";
 import { AttachmentPreviewBar } from "@/components/chat-input/attachment-preview-bar";
 import { cn } from "@/lib/utils";
-import { DeepResearchProgress } from "@/components/deep-research/deep-research-progress";
+import { DrPlanCard } from "@/components/deep-research/dr-plan-card";
+import { DrProgressCard } from "@/components/deep-research/dr-progress-card";
+import { DrResearchDrawer } from "@/components/deep-research/dr-research-drawer";
+import { DeepResearchSaveNoteDialog } from "@/components/deep-research/dr-save-note-dialog";
 import { ChatInputContainer, ChatMessageList } from "@/features/chat/chat-layout";
-import { ArtifactPanel } from "@/components/genui";
-import { ClarifyingPanel, ClarifyingLoading } from "@/components/deep-research/clarifying-panel";
-import { ApprovalCard } from "@/components/message-render/approval-card";
+import { ArtifactPanel } from "@lyranote/ui/genui";
 import { approveToolCall } from "@/services/ai-service";
+import { ApprovalCard } from "@lyranote/ui/message-render";
 
 import { ChatEmptyState } from "./chat-empty-state";
 import { ChatSidebarPanel } from "./chat-sidebar-panel";
@@ -28,6 +32,23 @@ export function ChatView() {
   const p = useChatPage();
   const t = useTranslations("chat");
   const tc = useTranslations("common");
+  const tDr = useTranslations("deepResearch");
+  const { fileInputRef, fileAttachments, setIsDeepResearch, setThinkingEnabled } = p;
+  const handleToolbarFileClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, [fileInputRef]);
+  const handleToggleDeepResearch = useCallback(() => {
+    setIsDeepResearch((v: boolean) => !v);
+  }, [setIsDeepResearch]);
+  const handleToggleThinking = useCallback(() => {
+    setThinkingEnabled((v: boolean) => !v);
+  }, [setThinkingEnabled]);
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      fileAttachments.addFiles(e.target.files);
+    }
+    e.target.value = "";
+  }, [fileAttachments]);
 
   return (
     <div className="flex h-full dark:border border-border/40">
@@ -42,8 +63,16 @@ export function ChatView() {
         onLoadMore={p.loadMoreConversations}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+        <AnimatePresence mode="popLayout" initial={false}>
         {p.messages.length > 0 || p.pendingChatPayload.current || p.pendingAutoSendRef.current ? (
+          <m.div
+            key="chat-messages"
+            className="flex min-h-0 flex-1 flex-col"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+          >
           <ChatMessageList>
             {p.hasMoreMessages && p.activeConvId && (
               <div className="flex justify-center">
@@ -59,7 +88,7 @@ export function ChatView() {
             <AnimatePresence initial={false}>
               {p.messages.map((msg: import("./chat-types").LocalMessage, idx: number) => (
                 <ChatMessageBubble
-                  key={msg.id}
+                  key={msg._animKey ?? msg.id}
                   msg={msg}
                   isLastAssistant={msg.role === "assistant" && idx === p.messages.length - 1}
                   streaming={p.streaming}
@@ -73,6 +102,9 @@ export function ChatView() {
                   onFeedback={p.handleFeedback}
                   onRegenerate={p.stableRegenerate}
                   onFollowUp={p.stableFollowUp}
+                  onSaveDeepResearchNote={
+                    msg.deepResearch ? p.dr.handleSaveAsNote : undefined
+                  }
                   onSaveDeepResearchSources={
                     msg.deepResearch &&
                     p.dr.taskId &&
@@ -98,22 +130,33 @@ export function ChatView() {
             )}
 
             <AnimatePresence>
-              {p.dr.drProgress && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
-                <m.div
-                  key="dr-progress-live"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="px-4 pb-4"
-                >
-                  <DeepResearchProgress
+              {/* Plan loading indicator */}
+              {p.dr.isPlanLoading && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
+                <m.div key="dr-plan-loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-2 px-5 pb-4 text-[12px] text-muted-foreground/50">
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>{tDr("planLoading")}</span>
+                </m.div>
+              )}
+
+              {/* Plan confirmation card */}
+              {p.dr.planData && !p.dr.isPlanLoading && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
+                <m.div key="dr-plan-card" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pb-4">
+                  <DrPlanCard
+                    plan={p.dr.planData}
+                    mode={p.drMode}
+                    onConfirm={p.dr.confirmPlan}
+                    onCancel={p.dr.cancelPlan}
+                  />
+                </m.div>
+              )}
+
+              {/* Compact progress card while researching */}
+              {p.dr.drProgress && !p.dr.planData && !p.dr.isPlanLoading && (!p.activeConvId || p.activeConvId === p.drConversationId) && (
+                <m.div key="dr-progress-live" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="px-4 pb-4">
+                  <DrProgressCard
                     progress={p.dr.drProgress}
-                    onSaveNote={p.dr.handleSaveAsNote}
-                    onSaveSources={p.dr.handleSaveSources}
-                    onFollowUp={(q) => p.chat.handleSend(q)}
-                    onRate={p.dr.handleDrRate}
-                    onCopy={p.copy}
-                    savedMessageId={p.dr.deliverableMessageIdRef.current}
+                    mode={p.drMode}
+                    onOpenDrawer={() => p.dr.setDrawerOpen(true)}
                   />
                 </m.div>
               )}
@@ -121,23 +164,26 @@ export function ChatView() {
 
             <div ref={p.bottomRef} />
           </ChatMessageList>
+          </m.div>
         ) : (
+          <m.div
+            key="chat-empty"
+            className="flex min-h-0 flex-1 flex-col"
+            exit={{
+              opacity: 0,
+              scale: 0.97,
+              y: -30,
+              filter: "blur(6px)",
+              transition: { duration: 0.25, ease: [0.4, 0, 1, 1] },
+            }}
+          >
           <ChatEmptyState
             suggestionsLoading={p.suggestionsLoading}
             dynamicSuggestions={p.dynamicSuggestions}
             onSend={p.chat.handleSend}
           />
+          </m.div>
         )}
-
-        <AnimatePresence>
-          {p.dr.isFetchingClarifications && <ClarifyingLoading />}
-          {p.dr.clarifyingState && (
-            <ClarifyingPanel
-              questions={p.dr.clarifyingState.questions}
-              onSubmit={p.dr.submitClarifications}
-              onSkip={() => p.dr.submitClarifications({})}
-            />
-          )}
         </AnimatePresence>
 
         <ChatInputContainer>
@@ -147,7 +193,7 @@ export function ChatView() {
             onChange={p.setInput}
             onSubmit={p.handleSubmit}
             placeholder={p.isDeepResearch ? t("deepResearchPlaceholder") : t("placeholder")}
-            disabled={p.fileAttachments.isUploading || !!p.dr.clarifyingState || p.dr.isFetchingClarifications}
+            disabled={p.fileAttachments.isUploading}
             streaming={p.streaming}
             onCancel={p.chat.handleCancelStreaming}
             variant="default"
@@ -177,22 +223,17 @@ export function ChatView() {
                   multiple
                   accept=".pdf,.doc,.docx,.txt,.md,.markdown,.png,.jpg,.jpeg,.webp,text/markdown"
                   className="hidden"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      p.fileAttachments.addFiles(e.target.files);
-                    }
-                    e.target.value = "";
-                  }}
+                  onChange={handleFileInputChange}
                 />
                 <ChatToolbar
-                  onFileClick={() => p.fileInputRef.current?.click()}
+                  onFileClick={handleToolbarFileClick}
                   isDeepResearch={p.isDeepResearch}
-                  onToggleDeepResearch={() => p.setIsDeepResearch((v: boolean) => !v)}
+                  onToggleDeepResearch={handleToggleDeepResearch}
                   drMode={p.drMode}
                   onDrModeChange={p.setDrMode}
                   isThinkingModel={p.isThinkingModel}
                   thinkingEnabled={p.thinkingEnabled}
-                  onToggleThinking={() => p.setThinkingEnabled((v: boolean) => !v)}
+                  onToggleThinking={handleToggleThinking}
                   onMenuOpenChange={p.setMenuOpen}
                   tools={p.toolItems}
                   selectedToolId={p.selectedToolId}
@@ -233,6 +274,28 @@ export function ChatView() {
       />
 
       <ArtifactPanel artifact={p.artifactState} onClose={() => p.setArtifactState(null)} />
+
+      {/* Deep research right-side drawer */}
+      <DrResearchDrawer
+        open={p.dr.drawerOpen}
+        progress={p.dr.drProgress}
+        mode={p.drMode}
+        isActive={!!p.dr.drProgress && p.dr.drProgress.status !== "done"}
+        onClose={() => p.dr.setDrawerOpen(false)}
+        onSaveNote={p.dr.handleSaveAsNote}
+        onSaveSources={p.dr.handleSaveSources}
+        onFollowUp={(q) => p.chat.handleSend(q)}
+        onRate={p.dr.handleDrRate}
+        onCopy={p.copy}
+        savedMessageId={p.dr.deliverableMessageIdRef.current}
+      />
+
+      <DeepResearchSaveNoteDialog
+        open={!!p.dr.pendingSaveNoteRequest}
+        reportTitle={p.dr.pendingSaveNoteRequest?.title}
+        onClose={p.dr.cancelPendingSaveNote}
+        onSelectNotebook={p.dr.confirmPendingSaveNote}
+      />
     </div>
   );
 }

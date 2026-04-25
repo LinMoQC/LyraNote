@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import { ArrowLeft, ChevronDown, ChevronUp, Expand, X } from "lucide-react"
@@ -382,8 +382,43 @@ interface TabDef {
 function timelineDotClass(status: string) {
   if (status === "error" || status === "failed") return "bg-danger shadow-danger/20"
   if (status === "running") return "bg-accent shadow-accent/20"
+  if (status === "cancelled") return "bg-white/60 shadow-white/10"
   if (status === "stuck" || status === "stale") return "bg-warning shadow-warning/20"
   return "bg-success shadow-success/20"
+}
+
+const COMPONENT_LABELS: Record<string, string> = {
+  api: "API",
+  worker: "Worker",
+  ingest: "Ingestion",
+  llm: "LLM",
+  tool: "Tool",
+}
+
+function buildSpanDepthMap(spans: Array<{ id: string; parent_span_id: string | null }>) {
+  const parentMap = new Map(spans.map((span) => [span.id, span.parent_span_id]))
+  const depthMap = new Map<string, number>()
+
+  function resolveDepth(spanId: string): number {
+    const cached = depthMap.get(spanId)
+    if (cached !== undefined) return cached
+
+    const parentId = parentMap.get(spanId)
+    if (!parentId || !parentMap.has(parentId)) {
+      depthMap.set(spanId, 0)
+      return 0
+    }
+
+    const depth = Math.min(4, resolveDepth(parentId) + 1)
+    depthMap.set(spanId, depth)
+    return depth
+  }
+
+  spans.forEach((span) => {
+    resolveDepth(span.id)
+  })
+
+  return depthMap
 }
 
 // ---------------------------------------------------------------------------
@@ -405,6 +440,24 @@ export function TraceDetailPage({ traceId }: { traceId: string }) {
     (runMetadata.final_answer_snapshot as TextSnapshot | undefined) ??
     (runMetadata.final_report_snapshot as TextSnapshot | undefined)
   const reasoningSnapshot = runMetadata.reasoning_snapshot as TextSnapshot | undefined
+  const spanList = detail?.spans ?? []
+  const spanDepthMap = useMemo(
+    () => buildSpanDepthMap(spanList),
+    [spanList],
+  )
+  const spanLanes = useMemo(() => {
+    const grouped = new Map<string, typeof spanList>()
+    for (const span of spanList) {
+      const component = span.component ?? "worker"
+      const existing = grouped.get(component) ?? []
+      existing.push(span)
+      grouped.set(component, existing)
+    }
+    return Array.from(grouped.entries()).map(([component, spans]) => ({
+      component,
+      spans,
+    }))
+  }, [spanList])
 
   const tabs: TabDef[] = [
     { id: "spans", label: "Span 时间线", count: detail?.spans.length ?? 0 },
@@ -551,55 +604,84 @@ export function TraceDetailPage({ traceId }: { traceId: string }) {
           {/* ---- Spans tab ---- */}
           {activeTab === "spans" && (
             <div className="space-y-3">
-              {(detail?.spans ?? []).map((span, index, spans) => (
-                <div key={span.id} className="relative grid grid-cols-[18px_minmax(0,1fr)] gap-3 sm:grid-cols-[22px_minmax(0,1fr)] sm:gap-4">
-                  {index < spans.length - 1 ? (
-                    <div className="absolute left-[9px] top-5 bottom-[-12px] w-px bg-border/30 sm:left-[11px]" />
-                  ) : null}
-
-                  <div className="relative z-10 flex justify-center pt-2">
-                    <div
-                      className={cn(
-                        "h-3.5 w-3.5 rounded-full border-2 border-background shadow-[0_0_0_4px_rgba(11,19,32,0.95)]",
-                        timelineDotClass(span.status),
-                      )}
-                    />
+              {spanLanes.map((lane) => (
+                <div key={lane.component} className="rounded-xl border border-border/30 bg-black/10 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3 border-b border-border/20 pb-2">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted/55">
+                      {COMPONENT_LABELS[lane.component] ?? lane.component}
+                    </p>
+                    <span className="rounded-full bg-white/[0.05] px-2 py-0.5 text-[10px] text-muted/55">
+                      {lane.spans.length} spans
+                    </span>
                   </div>
+                  <div className="space-y-3">
+                    {lane.spans.map((span, index) => {
+                      const depth = spanDepthMap.get(span.id) ?? 0
+                      return (
+                        <div
+                          key={span.id}
+                          className="relative grid grid-cols-[18px_minmax(0,1fr)] gap-3 sm:grid-cols-[22px_minmax(0,1fr)] sm:gap-4"
+                          style={{ marginLeft: `${depth * 18}px` }}
+                        >
+                          {index < lane.spans.length - 1 ? (
+                            <div className="absolute left-[9px] top-5 bottom-[-12px] w-px bg-border/30 sm:left-[11px]" />
+                          ) : null}
 
-                  <div className="min-w-0 rounded-xl border border-border/40 bg-card/30 px-4 py-3.5">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-md border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted/55">
-                            Span {index + 1}
-                          </span>
-                          <p className="min-w-0 break-all text-sm font-medium text-foreground">
-                            {span.span_name}
-                          </p>
+                          <div className="relative z-10 flex justify-center pt-2">
+                            <div
+                              className={cn(
+                                "h-3.5 w-3.5 rounded-full border-2 border-background shadow-[0_0_0_4px_rgba(11,19,32,0.95)]",
+                                timelineDotClass(span.status),
+                              )}
+                            />
+                          </div>
+
+                          <div className="min-w-0 rounded-xl border border-border/40 bg-card/30 px-4 py-3.5">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="rounded-md border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted/55">
+                                    {span.span_kind ?? "phase"}
+                                  </span>
+                                  {depth > 0 ? (
+                                    <span className="rounded-md border border-accent/20 bg-accent/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-accent/80">
+                                      Child
+                                    </span>
+                                  ) : null}
+                                  <p className="min-w-0 break-all text-sm font-medium text-foreground">
+                                    {span.span_name}
+                                  </p>
+                                </div>
+                                <p className="mt-1 text-[11px] text-muted/45">
+                                  {formatDateTime(span.started_at)}
+                                </p>
+                              </div>
+                              <div className="shrink-0">
+                                <StatusBadge status={span.status} />
+                              </div>
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-muted/60">
+                              <span className="rounded-md bg-white/[0.04] px-2 py-1 tabular text-muted/75">
+                                耗时 {formatDuration(span.duration_ms)}
+                              </span>
+                              <span className="rounded-md bg-white/[0.04] px-2 py-1 text-muted/55">
+                                {span.component ?? "worker"}
+                              </span>
+                              <span className="rounded-md bg-white/[0.04] px-2 py-1 text-muted/55">
+                                {span.error_message ? "执行异常" : "执行完成"}
+                              </span>
+                            </div>
+
+                            {span.error_message ? (
+                              <p className="mt-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-xs leading-6 text-danger/80 break-words">
+                                {span.error_message}
+                              </p>
+                            ) : null}
+                          </div>
                         </div>
-                        <p className="mt-1 text-[11px] text-muted/45">
-                          {formatDateTime(span.started_at)}
-                        </p>
-                      </div>
-                      <div className="shrink-0">
-                        <StatusBadge status={span.status} />
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-2 text-xs text-muted/60">
-                      <span className="rounded-md bg-white/[0.04] px-2 py-1 tabular text-muted/75">
-                        耗时 {formatDuration(span.duration_ms)}
-                      </span>
-                      <span className="rounded-md bg-white/[0.04] px-2 py-1 text-muted/55">
-                        {span.error_message ? "执行异常" : "执行完成"}
-                      </span>
-                    </div>
-
-                    {span.error_message ? (
-                      <p className="mt-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-xs leading-6 text-danger/80 break-words">
-                        {span.error_message}
-                      </p>
-                    ) : null}
+                      )
+                    })}
                   </div>
                 </div>
               ))}

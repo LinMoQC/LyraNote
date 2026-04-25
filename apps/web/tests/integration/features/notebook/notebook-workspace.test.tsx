@@ -8,10 +8,11 @@ let mobileMatches = true;
 const setMobileHeaderMode = vi.fn();
 const invalidateQueries = vi.fn();
 const setActiveSourceId = vi.fn();
+let proactiveStoreState: Record<string, unknown>;
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) =>
-    values?.text ? `${key}:${values.text}` : key,
+    values?.text ? `${key}:${values.text}` : values?.name ? `${key}:${values.name}` : key,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -24,6 +25,9 @@ vi.mock("framer-motion", () => ({
   m: {
     div: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => (
       <div {...props}>{children}</div>
+    ),
+    button: ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) => (
+      <button {...props}>{children}</button>
     ),
   },
 }));
@@ -72,8 +76,28 @@ vi.mock("@/features/notebook/mobile-workspace-sheet", () => ({
 }));
 
 vi.mock("@/features/editor/note-editor", () => ({
-  NoteEditor: ({ isMobileLayout }: { isMobileLayout?: boolean }) => (
-    <div data-testid={`note-editor-${isMobileLayout ? "mobile" : "desktop"}`}>editor</div>
+  NoteEditor: ({
+    isMobileLayout,
+    onEditorAction,
+  }: {
+    isMobileLayout?: boolean;
+    onEditorAction?: (payload: Record<string, unknown>) => void;
+  }) => (
+    <div data-testid={`note-editor-${isMobileLayout ? "mobile" : "desktop"}`}>
+      editor
+      <button
+        data-testid={`trigger-editor-action-${isMobileLayout ? "mobile" : "desktop"}`}
+        onClick={() => onEditorAction?.({
+          scope: "selection",
+          action: "customEdit",
+          text: "Selected text",
+          intent: "Make it tighter",
+        })}
+        type="button"
+      >
+        trigger
+      </button>
+    </div>
   ),
 }));
 
@@ -94,11 +118,17 @@ vi.mock("@/features/copilot/copilot-panel", () => ({
   CopilotPanel: ({
     presentation = "fixed",
     isOpen,
+    pendingPrompt,
   }: {
     presentation?: "fixed" | "sheet";
     isOpen: boolean;
+    pendingPrompt?: { text: string } | null;
   }) => (
-    <div data-testid={`copilot-panel-${presentation}`} data-open={String(isOpen)}>
+    <div
+      data-testid={`copilot-panel-${presentation}`}
+      data-open={String(isOpen)}
+      data-prompt={pendingPrompt?.text ?? ""}
+    >
       copilot
     </div>
   ),
@@ -133,13 +163,12 @@ vi.mock("@/store/use-notebook-store", () => ({
   useNotebookStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
     activeSourceId: null,
     setActiveSourceId,
+    setCopilotPanelOpen: vi.fn(),
   }),
 }));
 
 vi.mock("@/store/use-proactive-store", () => ({
-  useProactiveStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    setWritingContext: vi.fn(),
-  }),
+  useProactiveStore: (selector: (state: Record<string, unknown>) => unknown) => selector(proactiveStoreState),
 }));
 
 vi.mock("@/services/note-service", () => ({
@@ -164,6 +193,12 @@ describe("NotebookWorkspace", () => {
     setMobileHeaderMode.mockReset();
     invalidateQueries.mockReset();
     setActiveSourceId.mockReset();
+    proactiveStoreState = {
+      suggestions: [],
+      setWritingContext: vi.fn(),
+      hideSuggestion: vi.fn(),
+      dismissSuggestion: vi.fn(),
+    };
     localStorage.clear();
     global.ResizeObserver = class {
       observe() {}
@@ -228,5 +263,67 @@ describe("NotebookWorkspace", () => {
       expect(screen.queryByTestId("copilot-panel-fixed")).not.toBeInTheDocument();
       expect(screen.getByTestId("mobile-workspace-sheet")).toHaveAttribute("data-active-sheet", "none");
     });
+  });
+
+  it("routes structured editor actions into the copilot prompt flow on desktop", async () => {
+    mobileMatches = false;
+
+    render(
+      <NotebookWorkspace
+        notebookId="nb-1"
+        title="Notebook"
+        initialMessages={[]}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("trigger-editor-action-desktop"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("copilot-panel-fixed")).toHaveAttribute("data-open", "true");
+      expect(screen.getByTestId("copilot-panel-fixed")).toHaveAttribute(
+        "data-prompt",
+        expect.stringContaining("customEditPrompt:Selected text"),
+      );
+    });
+  });
+
+  it("renders only surfaced proactive cards inside the workspace toaster", () => {
+    proactiveStoreState = {
+      ...proactiveStoreState,
+      suggestions: [
+        {
+          id: "inbox-1",
+          type: "insight",
+          origin: "proactive_insight",
+          delivery: "inbox",
+          fingerprint: "insight:inbox",
+          message: "Inbox only insight",
+          createdAt: 1,
+          read: false,
+        },
+        {
+          id: "surface-1",
+          type: "source_indexed",
+          origin: "source_indexed",
+          delivery: "surface",
+          fingerprint: "source:1",
+          sourceName: "Paper A",
+          createdAt: 2,
+          surfacedAt: 2,
+          read: false,
+        },
+      ],
+    };
+
+    render(
+      <NotebookWorkspace
+        notebookId="nb-1"
+        title="Notebook"
+        initialMessages={[]}
+      />
+    );
+
+    expect(screen.getByText("sourceIndexed:Paper A")).toBeInTheDocument();
+    expect(screen.queryByText("Inbox only insight")).not.toBeInTheDocument();
   });
 });

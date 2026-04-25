@@ -4,8 +4,9 @@ import { ReactNode } from "react"
 import Link from "next/link"
 import { useSearchParams, useRouter, usePathname } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight, ExternalLink, Layers, Zap, Clock } from "lucide-react"
+import { ChevronLeft, ChevronRight, ExternalLink, Layers, Zap, Clock, Database } from "lucide-react"
 
+import { CorrelationFilterPanel } from "@/components/correlation-filter-panel"
 import { FilterBar } from "@/components/filter-bar"
 import { MetricCard } from "@/components/metric-card"
 import { ProtectedView } from "@/components/protected-view"
@@ -20,12 +21,14 @@ const kindIconMap: Record<string, ReactNode> = {
   chat_generation: <Zap size={14} />,
   research_task: <Layers size={14} />,
   scheduled_task_run: <Clock size={14} />,
+  source_ingest: <Database size={14} />,
 }
 
 const kindColorMap: Record<string, "teal" | "blue" | "yellow" | "green"> = {
   chat_generation: "teal",
   research_task: "blue",
   scheduled_task_run: "yellow",
+  source_ingest: "green",
 }
 
 const PAGE_SIZE = 12
@@ -39,10 +42,18 @@ export function WorkloadsPage() {
   const status = searchParams.get("status") ?? undefined
   const page = parseInt(searchParams.get("page") ?? "1", 10)
   const offset = (page - 1) * PAGE_SIZE
+  const correlationParams = {
+    user_id: searchParams.get("user_id") ?? undefined,
+    conversation_id: searchParams.get("conversation_id") ?? undefined,
+    generation_id: searchParams.get("generation_id") ?? undefined,
+    task_id: searchParams.get("task_id") ?? undefined,
+    task_run_id: searchParams.get("task_run_id") ?? undefined,
+    notebook_id: searchParams.get("notebook_id") ?? undefined,
+  }
 
   const workloadsQuery = useQuery({
-    queryKey: ["monitoring", "workloads", kind, status, offset, PAGE_SIZE],
-    queryFn: () => getWorkloads(kind, status, offset, PAGE_SIZE),
+    queryKey: ["monitoring", "workloads", kind, status, offset, PAGE_SIZE, correlationParams],
+    queryFn: () => getWorkloads({ kind, status, offset, limit: PAGE_SIZE, ...correlationParams }),
   })
 
   const items = workloadsQuery.data?.items ?? []
@@ -74,6 +85,7 @@ export function WorkloadsPage() {
                 { label: "聊天生成", value: "chat_generation" },
                 { label: "研究任务", value: "research_task" },
                 { label: "定时任务", value: "scheduled_task_run" },
+                { label: "来源导入", value: "source_ingest" },
               ],
             },
             {
@@ -83,13 +95,14 @@ export function WorkloadsPage() {
                 { label: "全部", value: "" },
                 { label: "running", value: "running" },
                 { label: "stuck", value: "stuck" },
-                { label: "done", value: "done" },
+                { label: "succeeded", value: "succeeded" },
                 { label: "failed", value: "failed" },
-                { label: "error", value: "error" },
+                { label: "cancelled", value: "cancelled" },
               ],
             },
           ]}
         />
+        <CorrelationFilterPanel resetKeys={["page"]} />
 
         {workloadsQuery.data?.summary.length ? (
           <div className="grid shrink-0 gap-4 md:grid-cols-3">
@@ -141,7 +154,7 @@ export function WorkloadsPage() {
                       {/* Meta */}
                       <div className="flex items-center gap-3 text-xs text-muted/60">
                         <span className="tabular hidden sm:block">{formatDateTime(item.started_at)}</span>
-                        {item.trace_id ? (
+                        {item.trace_available && item.trace_id ? (
                           <Link
                             href={`${TRACES_ROUTE}/${item.trace_id}`}
                             className="flex items-center gap-1 text-accent/70 transition-colors hover:text-accent"
@@ -149,7 +162,11 @@ export function WorkloadsPage() {
                             <ExternalLink size={12} />
                             Trace
                           </Link>
-                        ) : null}
+                        ) : (
+                          <span className="rounded-full border border-warning/20 bg-warning/10 px-2 py-0.5 text-[11px] text-warning/80">
+                            {item.trace_missing_reason === "legacy_source_ingest_without_trace" ? "历史数据无 Trace" : "暂无 Trace"}
+                          </span>
+                        )}
                         <StatusBadge status={item.status} />
                       </div>
                     </article>

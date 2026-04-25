@@ -6,7 +6,7 @@
  *              通过 React Context 向子组件分发认证数据。
  */
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { http } from "@/lib/http-client"
 import { AUTH } from "@/lib/api-routes"
 
@@ -31,12 +31,19 @@ interface AuthContextValue {
   refetch: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextValue>({
-  user: null,
-  isLoading: true,
+interface AuthMethods {
+  logout: () => Promise<void>
+  refetch: () => Promise<void>
+}
+
+const EMPTY_AUTH_METHODS: AuthMethods = {
   logout: async () => {},
   refetch: async () => {},
-})
+}
+
+const AuthUserContext = createContext<AuthUser | null>(null)
+const AuthIsLoadingContext = createContext(true)
+const AuthMethodsContext = createContext<AuthMethods>(EMPTY_AUTH_METHODS)
 
 /**
  * 认证状态 Provider 组件
@@ -82,11 +89,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const methods = useMemo<AuthMethods>(() => ({
+    logout,
+    refetch: fetchUser,
+  }), [logout, fetchUser])
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, logout, refetch: fetchUser }}>
-      {children}
-    </AuthContext.Provider>
+    <AuthMethodsContext.Provider value={methods}>
+      <AuthIsLoadingContext.Provider value={isLoading}>
+        <AuthUserContext.Provider value={user}>
+          {children}
+        </AuthUserContext.Provider>
+      </AuthIsLoadingContext.Provider>
+    </AuthMethodsContext.Provider>
   )
+}
+
+export function useAuthUser() {
+  return useContext(AuthUserContext)
+}
+
+export function useAuthIsLoading() {
+  return useContext(AuthIsLoadingContext)
+}
+
+export function useAuthMethods() {
+  return useContext(AuthMethodsContext)
 }
 
 /**
@@ -94,5 +122,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
  * @returns {{ user, isLoading, logout, refetch }} 认证状态和操作方法
  */
 export function useAuth() {
-  return useContext(AuthContext)
+  const user = useAuthUser()
+  const isLoading = useAuthIsLoading()
+  const { logout, refetch } = useAuthMethods()
+  return { user, isLoading, logout, refetch } satisfies AuthContextValue
 }

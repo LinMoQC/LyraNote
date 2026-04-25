@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import type { Notebook } from "@/types";
@@ -92,7 +92,7 @@ function getSecondaryPanelLayout(anchor: HTMLDivElement | null, preferredWidth: 
   };
 }
 
-export function ChatToolbar({
+export const ChatToolbar = memo(function ChatToolbar({
   onFileClick,
   isDeepResearch,
   onToggleDeepResearch,
@@ -540,4 +540,6 @@ export function ChatToolbar({
       )}
     </div>
   );
-}
+});
+
+ChatToolbar.displayName = "ChatToolbar";

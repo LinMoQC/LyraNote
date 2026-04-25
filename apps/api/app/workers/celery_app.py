@@ -6,6 +6,7 @@ Import this module to get the configured celery_app, or use:
 
 from celery import Celery
 from celery.schedules import crontab
+from kombu import Queue
 
 from app.config import settings
 
@@ -23,30 +24,60 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     worker_hijack_root_logger=False,
+    task_default_queue="celery",
+    task_default_exchange="celery",
+    task_default_routing_key="celery",
+    task_create_missing_queues=True,
+    task_queues=(
+        Queue("celery"),
+        Queue("ingestion"),
+        Queue("scheduled"),
+        Queue("maintenance"),
+    ),
+    task_routes={
+        "ingest_source": {"queue": "ingestion"},
+        "extract_knowledge_graph": {"queue": "maintenance"},
+        "rebuild_knowledge_graph": {"queue": "maintenance"},
+        "index_note": {"queue": "ingestion"},
+        "postprocess_indexed_source": {"queue": "maintenance"},
+        "execute_scheduled_task": {"queue": "scheduled"},
+        "check_scheduled_tasks": {"queue": "maintenance"},
+        "expire_stuck_sources": {"queue": "maintenance"},
+        "precompute_ai_suggestions": {"queue": "maintenance"},
+        "decay_all_user_memories": {"queue": "maintenance"},
+        "synthesize_all_user_portraits": {"queue": "maintenance"},
+        "cleanup_observability": {"queue": "maintenance"},
+    },
     beat_schedule={
         "decay-stale-memories-daily": {
             "task": "decay_all_user_memories",
             "schedule": 86400.0,
+            "options": {"queue": "maintenance"},
         },
         "check-scheduled-tasks": {
             "task": "check_scheduled_tasks",
             "schedule": 60.0,
+            "options": {"queue": "maintenance"},
         },
         "weekly-portrait-synthesis": {
             "task": "synthesize_all_user_portraits",
             "schedule": crontab(hour=3, day_of_week=1),  # Every Monday at 03:00 UTC
+            "options": {"queue": "maintenance"},
         },
         "expire-stuck-sources": {
             "task": "expire_stuck_sources",
             "schedule": 600.0,  # every 10 minutes
+            "options": {"queue": "maintenance"},
         },
         "precompute-ai-suggestions": {
             "task": "precompute_ai_suggestions",
             "schedule": 600.0,  # every 10 minutes
+            "options": {"queue": "maintenance"},
         },
         "cleanup-observability-daily": {
             "task": "cleanup_observability",
             "schedule": crontab(hour=4, minute=0),
+            "options": {"queue": "maintenance"},
         },
     },
 )
@@ -86,7 +117,7 @@ def _start_heartbeat_thread(component: str) -> None:
 def _on_setup_logger(**_kwargs):
     """Override Celery's default logging with our unified formatter."""
     from app.logging_config import setup_logging
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
 
 
 @worker_process_init.connect
@@ -94,7 +125,7 @@ def _on_worker_init(**_kwargs):
     """Runs in each forked worker process: load DB config (API keys etc.)."""
     from app.logging_config import setup_logging
     from app.workers._helpers import _load_db_settings_sync
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
     _load_db_settings_sync()
     _start_heartbeat_thread("worker")
 
@@ -104,6 +135,6 @@ def _on_beat_init(**_kwargs):
     from app.logging_config import setup_logging
     from app.workers._helpers import _load_db_settings_sync
 
-    setup_logging(debug=settings.debug)
+    setup_logging(debug=settings.debug, logs_dir=settings.logs_dir)
     _load_db_settings_sync()
     _start_heartbeat_thread("beat")

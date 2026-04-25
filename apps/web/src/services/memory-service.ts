@@ -1,5 +1,12 @@
-import { http } from "@/lib/http-client"
-import { MEMORY } from "@/lib/api-routes"
+import type {
+  MemoryDocOut,
+  MemoryEntry,
+  MemoryGrouped,
+} from "@lyranote/api-client"
+
+import { getWebMemoryService } from "@/lib/api-client"
+
+export type { MemoryDocOut, MemoryEntry, MemoryGrouped } from "@lyranote/api-client"
 
 /**
  * @file AI 记忆服务
@@ -8,47 +15,24 @@ import { MEMORY } from "@/lib/api-routes"
 
 // ── Memory document (Markdown) ───────────────────────────────────────────────
 
-export interface MemoryDocOut {
-  content_md: string
-  updated_at: string | null
-}
-
 export async function getMemoryDoc(): Promise<MemoryDocOut> {
-  return http.get<MemoryDocOut>(MEMORY.DOC)
+  return getWebMemoryService().getMemoryDoc()
 }
 
 export async function updateMemoryDoc(content_md: string): Promise<void> {
-  await http.patch(MEMORY.DOC, { content_md })
+  await getWebMemoryService().updateMemoryDoc(content_md)
 }
 
 // ── Structured memory entries ────────────────────────────────────────────────
 
-export interface MemoryEntry {
-  id: string
-  key: string
-  value: string
-  confidence: number
-  memory_type: "preference" | "fact" | "skill"
-  memory_kind: "profile" | "preference" | "project_state" | "reference"
-  access_count: number
-  last_accessed_at: string | null
-  expires_at: string | null
-}
-
-export interface MemoryGrouped {
-  preference: MemoryEntry[]
-  fact: MemoryEntry[]
-  skill: MemoryEntry[]
-}
-
 export async function getMemories(): Promise<MemoryGrouped> {
-  return http.get<MemoryGrouped>(MEMORY.LIST)
+  return getWebMemoryService().getMemories()
 }
 
 export async function updateMemory(id: string, value: string): Promise<MemoryEntry> {
-  return http.put<MemoryEntry>(MEMORY.update(id), { value })
+  return getWebMemoryService().updateMemory(id, value)
 }
 
 export async function deleteMemory(id: string): Promise<void> {
-  await http.delete(MEMORY.delete(id))
+  await getWebMemoryService().deleteMemory(id)
 }

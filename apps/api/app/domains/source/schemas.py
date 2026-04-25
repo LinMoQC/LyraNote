@@ -9,6 +9,11 @@ class SourceImportUrl(BaseModel):
     title: str | None = None
 
 
+class SourceImportPath(BaseModel):
+    path: str
+    sha256: str | None = None
+
+
 class SourceOut(BaseModel):
     id: UUID
     notebook_id: UUID

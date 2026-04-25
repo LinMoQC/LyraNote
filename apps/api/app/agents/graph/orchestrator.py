@@ -28,6 +28,7 @@ class MultiAgentState(TypedDict, total=False):
     user_portrait: dict | None          # L4 用户画像（由 orchestrator 预加载）
     notebook_summary: dict | None       # 笔记本摘要
     active_scene: str                   # 当前场景标签
+    prompt_context: Any                 # 标准化 prompt 上下文 bundle
 
     # ── 运行时传递（不可序列化，不适合持久化） ──────────────────────────────
     notebook_id: str
@@ -198,6 +199,7 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     汇总节点：将深度研究专家的输出合成为流式回答。
     """
     from langchain_core.callbacks.manager import adispatch_custom_event
+    from app.agents.memory import build_prompt_context_bundle
     from app.agents.writing.composer import build_system_prompt, _build_context
 
     query: str = state.get("query", "")
@@ -205,6 +207,7 @@ async def synthesis_node(state: MultiAgentState) -> dict:
     user_memories = state.get("user_memories")
     notebook_summary = state.get("notebook_summary")
     user_portrait = state.get("user_portrait")
+    prompt_context = state.get("prompt_context")
     db = state.get("db")
     specialist: dict = state.get("specialist_result") or {}
     synthesis_packet = state.get("synthesis_packet") or _build_synthesis_packet(state)
@@ -217,11 +220,15 @@ async def synthesis_node(state: MultiAgentState) -> dict:
 
     # ── 构建系统 prompt（含画像）─────────────────────────────────────────────
     try:
+        if prompt_context is None:
+            prompt_context = build_prompt_context_bundle(
+                scene=state.get("active_scene", "research"),
+                user_memories=user_memories,
+                notebook_summary=notebook_summary,
+                portrait=user_portrait,
+            )
         system_prompt = await build_system_prompt(
-            user_memories=user_memories,
-            notebook_summary=notebook_summary,
-            db=db,
-            user_portrait=user_portrait,
+            prompt_context=prompt_context,
             tool_schemas=[],
         )
     except Exception:

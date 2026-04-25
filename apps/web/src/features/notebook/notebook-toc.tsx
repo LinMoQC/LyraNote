@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, m } from "framer-motion";
 import type { Editor } from "@tiptap/react";
 import { AlignLeft } from "lucide-react";
 import { useTranslations } from "next-intl";
@@ -163,17 +164,31 @@ export function NotebookTOC({
     } catch { /* detached node */ }
   };
 
+  // Auto-scroll TOC container to keep active item in view
+  // Use manual scrollTop instead of scrollIntoView to avoid bubbling up to parent scroll containers
+  useEffect(() => {
+    if (!activeId || !containerRef.current) return;
+    const activeEl = containerRef.current.querySelector(`[data-active="true"]`) as HTMLElement | null;
+    if (activeEl) {
+      const container = containerRef.current;
+      const targetScrollTop = activeEl.offsetTop - container.clientHeight / 2 + activeEl.offsetHeight / 2;
+      container.scrollTop = Math.max(0, targetScrollTop);
+    }
+  }, [activeId]);
+
   if (!headings.length) {
     return (
       <div
         className={cn(
-          "flex h-full flex-col items-center justify-center gap-2 px-4",
-          isSheet ? "w-full" : "w-[180px] border-l border-border/20",
+          "font-notebook-ui flex flex-col items-center justify-center gap-3 px-4",
+          isSheet ? "w-full" : "w-[200px] h-[200px] border-l border-border/20",
         )}
         data-testid={`notebook-toc-${variant}`}
       >
-        <AlignLeft size={14} className="text-muted-foreground/15" />
-        <p className="text-center text-[11px] text-muted-foreground/25">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/30">
+          <AlignLeft size={16} className="text-muted-foreground/30" />
+        </div>
+        <p className="text-center text-[12px] font-normal text-muted-foreground/45">
           {t("tocEmpty")}
         </p>
       </div>
@@ -182,68 +197,108 @@ export function NotebookTOC({
 
   return (
     <div
-      ref={containerRef}
       className={cn(
-        "h-full overflow-y-auto",
-        isSheet ? "w-full px-1" : "w-[180px] border-l border-border/20",
+        "font-notebook-ui relative flex flex-col overflow-hidden rounded-2xl bg-sidebar/30 transition-all",
+        isSheet
+          ? "w-full max-h-[60vh] px-2"
+          : "my-12 max-h-[45vh] w-full border border-border/20",
       )}
       data-testid={`notebook-toc-${variant}`}
     >
-      <nav className="flex flex-col pt-8">
-        {headings.map((h) => {
-          const isActive = activeId === h.id;
-          return (
-            <button
-              key={h.id}
-              type="button"
-              onClick={() => scrollToHeading(h)}
-              className={cn(
-                "group relative flex w-full cursor-pointer items-start py-[5px] pr-3 text-left transition-all duration-150",
-                h.level === 1 && "pl-4",
-                h.level === 2 && "pl-7",
-                h.level === 3 && "pl-10",
-              )}
-            >
-              <span
+      {/* Scrollable list area */}
+      <div
+        ref={containerRef}
+        className="sidebar-scroll flex-1 overflow-y-auto px-1 pt-4 pb-2"
+      >
+        <nav className="relative flex flex-col">
+
+
+          {headings.map((h) => {
+            const isActive = activeId === h.id;
+            return (
+              <button
+                key={h.id}
+                type="button"
+                data-active={isActive ? "true" : "false"}
+                onClick={() => scrollToHeading(h)}
                 className={cn(
-                  "line-clamp-2 leading-[1.4] transition-colors duration-150",
-                  h.level === 1 && "text-[12px] font-medium",
-                  h.level === 2 && "text-[11.5px]",
-                  h.level === 3 && "text-[11px]",
-                  isActive
-                    ? "text-foreground/90"
-                    : "text-muted-foreground/40 group-hover:text-muted-foreground/70",
+                  "group relative flex w-full cursor-pointer items-start py-[6px] pr-4 text-left transition-all duration-200",
+                  h.level === 1 && "pl-5",
+                  h.level === 2 && "pl-8",
+                  h.level === 3 && "pl-11",
+                  isActive && "bg-violet-400/10 rounded-sm",
                 )}
               >
-                {isActive && (
-                  <span className="mr-1.5 inline-block h-1.5 w-1.5 translate-y-[-1px] rounded-full bg-violet-400" />
+                {/* Active Marker on Line */}
+                {isActive && !isSheet && (
+                  <div className="absolute left-4.5 top-[10px] h-3.5 w-[2.5px] -translate-x-[1px] rounded-full bg-violet-400 shadow-[0_0_10px_rgba(167,139,250,0.6)] z-10" />
                 )}
-                {h.text}
-              </span>
-            </button>
-          );
-        })}
-      </nav>
 
-      {/* Reading progress circle — right below the list */}
-      <div className="flex items-center gap-2 px-4 pt-4 pb-6">
-        <div className="relative h-4 w-4 flex-shrink-0">
-          <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
-            <circle cx="8" cy="8" r="6" fill="none" strokeWidth="1.5" className="stroke-muted/40" />
-            <circle
-              cx="8" cy="8" r="6"
-              fill="none"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              className="stroke-violet-400/70 transition-all duration-300"
-              strokeDasharray={`${2 * Math.PI * 6}`}
-              strokeDashoffset={`${2 * Math.PI * 6 * (1 - progress / 100)}`}
-            />
-          </svg>
+                <span
+                  className={cn(
+                    "line-clamp-2 leading-[1.45] transition-all duration-200",
+                    h.level === 1 && "text-[12px] font-medium tracking-tight",
+                    h.level === 2 && "text-[12px] font-normal",
+                    h.level === 3 && "text-[11.5px] font-normal",
+                    isActive
+                      ? "translate-x-1 font-medium text-foreground"
+                      : "text-muted-foreground/55 group-hover:translate-x-0.5 group-hover:text-muted-foreground/85",
+                  )}
+                >
+                  {h.text}
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Footer: Progress & Back to Top — Stable Left Alignment */}
+      <div className="flex items-center px-4 pt-4 pb-5 bg-muted/5 border-t border-border/10">
+        <div className="flex items-center gap-1">
+          <div className="relative h-4 w-4 flex-shrink-0">
+            <svg className="h-4 w-4 -rotate-90" viewBox="0 0 16 16">
+              <circle cx="8" cy="8" r="6" fill="none" strokeWidth="1.5" className="stroke-muted/15" />
+              <circle
+                cx="8" cy="8" r="6"
+                fill="none"
+                strokeWidth="2"
+                strokeLinecap="round"
+                className="stroke-violet-400/80 transition-all duration-500 ease-out"
+                strokeDasharray={`${2 * Math.PI * 6}`}
+                strokeDashoffset={`${2 * Math.PI * 6 * (1 - progress / 100)}`}
+              />
+            </svg>
+          </div>
+          <span className="text-[11px] font-medium tabular-nums tracking-wider text-muted-foreground/50">
+            {progress}%
+          </span>
         </div>
-        <span className="text-[10px] tabular-nums text-muted-foreground/35">
-          {progress}%
-        </span>
+
+        {/* Back to Top - Pushed to right but doesn't affect progress position */}
+        <div className="ml-auto pr-1">
+          <AnimatePresence>
+            {progress > 5 && (
+              <m.button
+                initial={{ opacity: 0, x: 5 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 5 }}
+                onClick={() => {
+                  const scrollParent = editor?.view.dom.closest(".overflow-y-auto") as HTMLElement | null;
+                  scrollParent?.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="flex items-center gap-1 text-muted-foreground/40 transition-colors hover:text-violet-400"
+              >
+                <div className="flex h-4 w-4 items-center justify-center">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                    <path d="M8 12V4M8 4L4 8M8 4L12 8" />
+                  </svg>
+                </div>
+                <span className="text-[10px] font-medium leading-none">{t("scrollToTop")}</span>
+              </m.button>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

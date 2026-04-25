@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
 import {
+  cancelMessageGeneration,
   getMessageGenerationStatus,
   sendMessageStream,
   subscribeMessageGeneration,
@@ -16,6 +17,7 @@ import { saveActiveConversation } from "@/features/chat/chat-persistence";
 import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { useAgentStreamEvents } from "@/hooks/use-agent-stream-events";
 import type { DiagramData, MindMapData, MCPResultData } from "@/types";
 import type { LocalMessage, MessageAttachment } from "@/features/chat/chat-types";
@@ -197,7 +199,7 @@ export function useChatStream({
       setStreaming(false);
       streamLifecycle.finish();
       resetGenerationTracking();
-      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.conversations.all() });
 
       // Refresh from server AFTER streaming ends — prevents full content
       // appearing all at once by overwriting the drain queue mid-flight.
@@ -254,8 +256,8 @@ export function useChatStream({
     }
     if (event.type === "note_created") {
       queryClient.invalidateQueries({ queryKey: ["note"] });
-      queryClient.invalidateQueries({ queryKey: ["notes"] });
-      queryClient.invalidateQueries({ queryKey: ["notebooks"] });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notes.all() });
+      queryClient.invalidateQueries({ queryKey: lyraQueryKeys.notebooks.all() });
       const noteTitle = event.note_title ?? t("aiDraft");
       notifySuccess(t("noteCreated", { title: noteTitle }));
       if (event.notebook_id) {
@@ -331,8 +333,10 @@ export function useChatStream({
     setDrProgress(null);
 
     if (!skipUserBubble) {
+      const userLocalId = `local-${Date.now()}`;
       const userMsg: LocalMessage = {
-        id: `local-${Date.now()}`,
+        id: userLocalId,
+        _animKey: userLocalId,
         role: "user",
         content: text,
         timestamp: new Date(),
@@ -345,7 +349,7 @@ export function useChatStream({
 
     const assistantId = `local-asst-${Date.now()}`;
     assistantIdRef.current = assistantId;
-    setMessages((prev) => [...prev, { id: assistantId, role: "assistant", content: "", timestamp: new Date() }]);
+    setMessages((prev) => [...prev, { id: assistantId, _animKey: assistantId, role: "assistant", content: "", timestamp: new Date() }]);
     setStreaming(true);
     streamLifecycle.start();
     streamAbortRef.current?.abort();
@@ -423,8 +427,10 @@ export function useChatStream({
 
   const handleCancelStreaming = useCallback(() => {
     if (!streaming) return;
+    const generationId = activeGenerationIdRef.current;
     streamAbortRef.current?.abort();
     stopTokenDrain();
+    resetGenerationTracking();
     streamLifecycle.finish();
     setStreaming(false);
     // If the assistant placeholder never received any tokens, remove it
@@ -436,7 +442,11 @@ export function useChatStream({
       }
       return prev;
     });
-  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain, setMessages]);
+    if (!generationId) return;
+    void cancelMessageGeneration(generationId).catch((error) => {
+      notifyError(getErrorMessage(error, t("streamFailed")));
+    });
+  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain, setMessages, resetGenerationTracking, t]);
 
   const recoverGeneration = useCallback(async (
     conversationId: string,

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
@@ -89,7 +91,6 @@ class Settings(BaseSettings):
     ai_name: str = ""
     user_occupation: str = ""
     user_preferences: str = ""
-    custom_system_prompt: str = ""
 
     # Memory file storage (file-based, desktop-app friendly)
     # Default: ~/.lyranote/memory/  — override via MEMORY_DIR env var
@@ -113,6 +114,10 @@ class Settings(BaseSettings):
     app_base_url: str = "http://localhost:8000"
     api_prefix: str = "/api/v1"  # used for OAuth redirect_uri (routes are mounted under this)
     frontend_url: str = "http://localhost:3000"
+    runtime_profile: Literal["server", "desktop"] = "server"
+    desktop_stdout_events: bool = False
+    desktop_state_dir_override: str = ""
+    logs_dir_override: str = ""
 
     @property
     def oauth_base_url(self) -> str:
@@ -137,6 +142,22 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",")]
+
+    @property
+    def is_desktop_runtime(self) -> bool:
+        return self.runtime_profile == "desktop"
+
+    @property
+    def desktop_state_dir(self) -> Path:
+        if self.desktop_state_dir_override.strip():
+            return Path(self.desktop_state_dir_override).expanduser().resolve()
+        return (Path.home() / ".lyranote" / "desktop").resolve()
+
+    @property
+    def logs_dir(self) -> Path:
+        if self.logs_dir_override.strip():
+            return Path(self.logs_dir_override).expanduser().resolve()
+        return (Path(__file__).resolve().parent.parent / "logs").resolve()
 
 
 settings = Settings()

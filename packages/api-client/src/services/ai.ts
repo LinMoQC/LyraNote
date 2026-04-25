@@ -1,8 +1,8 @@
 /**
- * @file AI 洞察、技能、记忆、任务服务
+ * @file AI 洞察、任务、生成物服务
  */
 import type { HttpClient } from "../lib/client";
-import { INSIGHTS, SKILLS, MEMORY, TASKS, AI } from "../lib/routes";
+import { INSIGHTS, TASKS, AI } from "../lib/routes";
 import type { Artifact, Insight, Task } from "@lyranote/types";
 import { mapArtifact } from "../lib/mappers";
 
@@ -11,27 +11,6 @@ export function createInsightService(http: HttpClient) {
     getInsights: (): Promise<Insight[]> => http.get<Insight[]>(INSIGHTS.LIST),
     readInsight: (id: string): Promise<void> => http.post(INSIGHTS.read(id)),
     readAll: (): Promise<void> => http.post(INSIGHTS.READ_ALL),
-  };
-}
-
-export function createSkillService(http: HttpClient) {
-  return {
-    getSkills: (): Promise<unknown[]> => http.get<unknown[]>(SKILLS.LIST),
-    toggleSkill: (name: string, enabled: boolean): Promise<void> =>
-      http.put(SKILLS.toggle(name), { enabled }),
-  };
-}
-
-export function createMemoryService(http: HttpClient) {
-  return {
-    getMemoryDoc: (): Promise<{ content: string }> =>
-      http.get<{ content: string }>(MEMORY.DOC),
-    updateMemoryDoc: (content: string): Promise<void> =>
-      http.patch(MEMORY.DOC, { content }),
-    getMemoryList: (): Promise<unknown[]> => http.get<unknown[]>(MEMORY.LIST),
-    updateMemory: (id: string, payload: unknown): Promise<void> =>
-      http.put(MEMORY.update(id), payload),
-    deleteMemory: (id: string): Promise<void> => http.delete(MEMORY.delete(id)),
   };
 }
 

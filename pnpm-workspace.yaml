@@ -7,3 +7,4 @@ packages:
   - 'packages/cli'
   - 'packages/types'
   - 'packages/api-client'
+  - 'packages/ui'

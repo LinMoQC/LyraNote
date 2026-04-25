@@ -16,7 +16,7 @@ export default async function AppHomePage() {
     <div className="flex min-h-full flex-col items-center justify-center border-border/40 px-4 dark:border md:px-8">
 
       {/* Desktop layout */}
-      <div className="hidden w-full max-w-2xl space-y-8 md:block">
+      <div className="hidden w-full max-w-3xl space-y-8 md:block 2xl:max-w-4xl">
 
         {/* Greeting */}
         <div className="space-y-1">

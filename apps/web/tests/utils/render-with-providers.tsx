@@ -6,13 +6,14 @@ import type { PropsWithChildren, ReactElement } from "react";
 
 import { setI18nMessages } from "@/lib/i18n";
 import { ThemeProvider, type ColorTheme } from "@/lib/theme";
-import { ThemePresetProvider } from "@/lib/theme-preset";
+import { ThemePresetProvider, type ThemePreset } from "@/lib/theme-preset";
 import { createTestQueryClient } from "@test/utils/create-test-query-client";
 
 interface ExtendedRenderOptions extends Omit<RenderOptions, "wrapper"> {
   locale?: string;
   timeZone?: string;
   defaultTheme?: ColorTheme;
+  defaultThemePreset?: ThemePreset;
   messages?: AbstractIntlMessages;
   queryClient?: QueryClient;
 }
@@ -22,9 +23,12 @@ function TestProviders({
   locale,
   timeZone,
   defaultTheme,
+  defaultThemePreset,
   messages,
   queryClient,
-}: PropsWithChildren<Required<Omit<ExtendedRenderOptions, keyof RenderOptions>>>) {
+}: PropsWithChildren<
+  Required<Omit<ExtendedRenderOptions, keyof RenderOptions>> & { defaultThemePreset: ThemePreset }
+>) {
   setI18nMessages(messages as Record<string, unknown>);
 
   return (
@@ -37,7 +41,7 @@ function TestProviders({
     >
       <QueryClientProvider client={queryClient}>
         <ThemeProvider defaultTheme={defaultTheme}>
-          <ThemePresetProvider>{children}</ThemePresetProvider>
+          <ThemePresetProvider defaultPreset={defaultThemePreset}>{children}</ThemePresetProvider>
         </ThemeProvider>
       </QueryClientProvider>
     </NextIntlClientProvider>
@@ -50,6 +54,7 @@ export function renderWithProviders(
     locale = "zh",
     timeZone = "Asia/Shanghai",
     defaultTheme = "dark",
+    defaultThemePreset = "lyra",
     messages = {},
     queryClient = createTestQueryClient(),
     ...renderOptions
@@ -61,6 +66,7 @@ export function renderWithProviders(
         locale={locale}
         timeZone={timeZone}
         defaultTheme={defaultTheme}
+        defaultThemePreset={defaultThemePreset}
         messages={messages}
         queryClient={queryClient}
       >

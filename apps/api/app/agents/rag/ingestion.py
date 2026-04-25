@@ -13,12 +13,16 @@ Parsing improvements (v1.0):
 
 import logging
 import os
+import zipfile
+from io import BytesIO
+from xml.etree import ElementTree as ET
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Chunk, Source
+from app.services.monitoring_service import traced_span
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +38,7 @@ async def ingest(
     db: AsyncSession,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-    splitter_type: str = "auto",
+    splitter_type: str = "recursive",
     separators: list[str] | None = None,
     min_chunk_size: int = 50,
 ) -> None:
@@ -47,7 +51,14 @@ async def ingest(
     await db.flush()
 
     try:
-        text, chunk_metadata = await _extract_text_with_metadata(source)
+        async with traced_span(
+            db,
+            "source_ingest.parse",
+            component="ingest",
+            span_kind="phase",
+            metadata={"source_type": source.type, "storage_backend": source.storage_backend},
+        ):
+            text, chunk_metadata = await _extract_text_with_metadata(source)
 
         if not text or len(text.strip()) < 50:
             source.status = "failed"
@@ -59,14 +70,26 @@ async def ingest(
 
         source.raw_text = text
 
-        chunks_with_meta = _chunk_text_with_metadata(
-            text, chunk_metadata,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            splitter_type=splitter_type,
-            separators=separators,
-            min_chunk_size=min_chunk_size,
-        )
+        async with traced_span(
+            db,
+            "source_ingest.chunk",
+            component="ingest",
+            span_kind="phase",
+            metadata={
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "splitter_type": splitter_type,
+                "min_chunk_size": min_chunk_size,
+            },
+        ):
+            chunks_with_meta = _chunk_text_with_metadata(
+                text, chunk_metadata,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                splitter_type=splitter_type,
+                separators=separators,
+                min_chunk_size=min_chunk_size,
+            )
         chunk_texts = [c["text"] for c in chunks_with_meta]
         chunk_metas = [c["metadata"] for c in chunks_with_meta]
 
@@ -74,63 +97,46 @@ async def ingest(
 
         batch_size = 100
         all_embeddings: list[list[float]] = []
-        for i in range(0, len(chunk_texts), batch_size):
-            batch = chunk_texts[i : i + batch_size]
-            vecs = await embed_texts(batch)
-            all_embeddings.extend(vecs)
-
-        # Delete existing chunks before re-indexing
-        existing = await db.execute(select(Chunk).where(Chunk.source_id == source.id))
-        for c in existing.scalars().all():
-            await db.delete(c)
-
-        for idx, (text_chunk, vec, meta) in enumerate(
-            zip(chunk_texts, all_embeddings, chunk_metas)
+        async with traced_span(
+            db,
+            "source_ingest.embed",
+            component="ingest",
+            span_kind="phase",
+            metadata={"chunk_count": len(chunk_texts), "batch_size": batch_size},
         ):
-            chunk = Chunk(
-                source_id=source.id,
-                notebook_id=source.notebook_id,
-                content=text_chunk,
-                chunk_index=idx,
-                embedding=vec,
-                token_count=len(text_chunk.split()),
-                metadata_=meta if meta else None,
-            )
-            db.add(chunk)
+            for i in range(0, len(chunk_texts), batch_size):
+                batch = chunk_texts[i : i + batch_size]
+                vecs = await embed_texts(batch)
+                all_embeddings.extend(vecs)
 
-        source.summary = await _generate_summary(text[:3000])
-        source.status = "indexed"
-        await db.flush()
+        async with traced_span(
+            db,
+            "source_ingest.index",
+            component="ingest",
+            span_kind="phase",
+            metadata={"chunk_count": len(chunk_texts)},
+        ):
+            existing = await db.execute(select(Chunk).where(Chunk.source_id == source.id))
+            for c in existing.scalars().all():
+                await db.delete(c)
 
-        from app.agents.memory import refresh_notebook_summary
-        try:
-            await refresh_notebook_summary(source.notebook_id, db)
-        except Exception as mem_exc:
-            logger.warning("Notebook summary refresh failed: %s", mem_exc)
-
-        try:
-            from app.workers.tasks import extract_knowledge_graph
-            extract_knowledge_graph.delay(str(source.id))
-        except Exception:
-            pass
-
-        try:
-            from app.models import ProactiveInsight, Notebook as NbModel
-            nb_result = await db.execute(
-                select(NbModel.user_id).where(NbModel.id == source.notebook_id)
-            )
-            user_id = nb_result.scalar_one_or_none()
-            if user_id:
-                insight = ProactiveInsight(
-                    user_id=user_id,
+            for idx, (text_chunk, vec, meta) in enumerate(
+                zip(chunk_texts, all_embeddings, chunk_metas)
+            ):
+                chunk = Chunk(
+                    source_id=source.id,
                     notebook_id=source.notebook_id,
-                    insight_type="source_indexed",
-                    title=f"「{source.title or '新资料'}」已完成索引",
-                    content=source.summary[:200] if source.summary else None,
+                    content=text_chunk,
+                    chunk_index=idx,
+                    embedding=vec,
+                    token_count=len(text_chunk.split()),
+                    metadata_=meta if meta else None,
                 )
-                db.add(insight)
-        except Exception:
-            pass
+                db.add(chunk)
+
+            source.summary = _build_fallback_summary(text)
+            source.status = "indexed"
+            await db.flush()
 
     except Exception as exc:
         source.status = "failed"
@@ -142,6 +148,21 @@ async def ingest(
 def _sanitize(text: str) -> str:
     """Remove null bytes and other characters rejected by PostgreSQL UTF-8."""
     return text.replace("\x00", "")
+
+
+def _source_extension(source: Source) -> str:
+    candidate = source.storage_key or source.file_path or source.title or ""
+    return os.path.splitext(candidate)[1].lower()
+
+
+def _build_fallback_summary(text: str, limit: int = 200) -> str:
+    """Create a lightweight preview summary without an extra LLM roundtrip."""
+    condensed = " ".join(text.split())
+    if not condensed:
+        return ""
+    if len(condensed) <= limit:
+        return condensed
+    return condensed[: limit - 3].rstrip() + "..."
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +177,9 @@ async def _extract_text_with_metadata(source: Source) -> tuple[str, list[dict]]:
     that is later used when chunking to attach context to each chunk.
     """
     from app.providers.storage import storage as get_storage
+    ext = _source_extension(source)
 
-    if source.type == "pdf":
+    if source.type == "pdf" or ext == ".pdf":
         if source.storage_key:
             content = await get_storage().download(source.storage_key)
             raw, meta = _parse_pdf_bytes(content)
@@ -165,7 +187,16 @@ async def _extract_text_with_metadata(source: Source) -> tuple[str, list[dict]]:
             raw, meta = _parse_pdf_file(source.file_path)
         else:
             raw, meta = "", []
-    elif source.type in ("md", "txt"):
+    elif ext == ".docx":
+        if source.storage_key:
+            content = await get_storage().download(source.storage_key)
+            raw, meta = _parse_docx_bytes(content)
+        elif source.file_path:
+            with open(source.file_path, "rb") as f:
+                raw, meta = _parse_docx_bytes(f.read())
+        else:
+            raw, meta = "", []
+    elif source.type in ("md", "txt", "doc"):
         if source.storage_key:
             content = await get_storage().download(source.storage_key)
             raw = content.decode("utf-8", errors="ignore")
@@ -220,6 +251,28 @@ def _parse_pdf_file(file_path: str) -> tuple[str, list[dict]]:
     """Parse PDF from local file path. Delegates to _parse_pdf_bytes."""
     with open(file_path, "rb") as f:
         return _parse_pdf_bytes(f.read())
+
+
+def _parse_docx_bytes(content: bytes) -> tuple[str, list[dict]]:
+    """
+    Parse DOCX bytes by reading the underlying WordprocessingML document.
+    This avoids treating the ZIP payload as plain text and extracting binary garbage.
+    """
+    namespace = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+
+    with zipfile.ZipFile(BytesIO(content)) as docx_zip:
+        xml = docx_zip.read("word/document.xml")
+
+    root = ET.fromstring(xml)
+    paragraphs: list[str] = []
+
+    for paragraph in root.findall(".//w:p", namespace):
+        texts = [node.text or "" for node in paragraph.findall(".//w:t", namespace)]
+        line = "".join(texts).strip()
+        if line:
+            paragraphs.append(line)
+
+    return "\n\n".join(paragraphs), []
 
 
 def _parse_pdf_bytes_pypdf(content: bytes) -> str:
@@ -321,7 +374,7 @@ def _chunk_text_with_metadata(
     Split text into chunks and attach per-chunk metadata.
 
     splitter_type controls which splitter is used:
-      auto     – try SemanticChunker first, fall back to recursive
+      auto     – 默认使用递归切分，保证导入链路稳定
       semantic – force SemanticChunker
       recursive – force RecursiveCharacterTextSplitter
 
@@ -355,8 +408,8 @@ def _split_text(
         return _semantic_split(text, chunk_size, chunk_overlap)
     if splitter_type == "recursive":
         return _recursive_split(text, chunk_size, chunk_overlap, separators=separators)
-    # auto: try semantic, fall back to recursive
-    return _semantic_split_with_fallback(text, chunk_size, chunk_overlap, separators=separators)
+    # auto: prefer the stable recursive splitter for background ingestion.
+    return _recursive_split(text, chunk_size, chunk_overlap, separators=separators)
 
 
 def _semantic_split(text: str, chunk_size: int, chunk_overlap: int) -> list[str]:

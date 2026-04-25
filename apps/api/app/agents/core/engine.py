@@ -19,7 +19,11 @@ from typing import Any
 from app.agents.core.brain import AgentBrain
 from app.agents.core.hooks import PostToolHook, default_post_tool_hooks
 from app.agents.core.llm_backend import DefaultLLMBackend, LLMBackend
-from app.agents.core.retry import classify_llm_error, max_retries_for, sleep_before_retry
+from app.agents.core.retry import (
+    classify_llm_error,
+    max_retries_for,
+    sleep_before_retry,
+)
 from app.agents.core.instructions import (
     CallLLMInstruction,
     CallRAGInstruction,
@@ -90,8 +94,8 @@ def _split_mcp_html(result: str) -> tuple[str, str | None]:
         return result, None
     end = result.find(_MCP_HTML_END, start)
     if end == -1:
-        return result[:start].rstrip(), result[start + len(_MCP_HTML_START):]
-    html = result[start + len(_MCP_HTML_START):end]
+        return result[:start].rstrip(), result[start + len(_MCP_HTML_START) :]
+    html = result[start + len(_MCP_HTML_START) : end]
     text = result[:start].rstrip()
     return text, html
 
@@ -114,6 +118,7 @@ def _try_parse_mcp_json(tool_name: str, result: str) -> dict | None:
     text_part, html = _split_mcp_html(result)
     if html is not None:
         import json as _json
+
         payload: dict = {"tool": tool_name, "html_content": html.strip()}
         # Optionally attach any JSON from the text part
         stripped_text = text_part.strip()
@@ -130,6 +135,7 @@ def _try_parse_mcp_json(tool_name: str, result: str) -> dict | None:
         return None
     try:
         import json
+
         data = json.loads(stripped)
     except (json.JSONDecodeError, ValueError):
         return None
@@ -207,7 +213,9 @@ class AgentEngine:
         # None → use the default registered hooks. Pass an explicit list to override
         # (useful for testing or extending with custom post-processing).
         self._post_tool_hooks: list[PostToolHook] = (
-            post_tool_hooks if post_tool_hooks is not None else default_post_tool_hooks()
+            post_tool_hooks
+            if post_tool_hooks is not None
+            else default_post_tool_hooks()
         )
 
     async def run(self, state: AgentState) -> AsyncGenerator[dict, None]:
@@ -261,20 +269,25 @@ class AgentEngine:
             if key.endswith("::{}")
         }
         tool_schemas = (
-            [s for s in self.tool_schemas
-             if s.get("function", {}).get("name") not in cached_no_arg_tools]
+            [
+                s
+                for s in self.tool_schemas
+                if s.get("function", {}).get("name") not in cached_no_arg_tools
+            ]
             if cached_no_arg_tools
             else self.tool_schemas
         )
 
         if state.step_count >= state.max_steps - 2 and state.step_count > 0:
-            state.messages.append({
-                "role": "user",
-                "content": (
-                    f"[系统提示] 你已使用 {state.step_count}/{state.max_steps} 步。"
-                    "请尽快整合已有信息回答用户，避免不必要的额外工具调用。"
-                ),
-            })
+            state.messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"[系统提示] 你已使用 {state.step_count}/{state.max_steps} 步。"
+                        "请尽快整合已有信息回答用户，避免不必要的额外工具调用。"
+                    ),
+                }
+            )
 
         t0 = time.monotonic()
         llm_started_at = utcnow()
@@ -316,7 +329,10 @@ class AgentEngine:
                         elif chunk["type"] == "tool_calls":
                             got_tool_calls = True
                             if output_parts:
-                                yield {"type": "thought", "content": "".join(output_parts)}
+                                yield {
+                                    "type": "thought",
+                                    "content": "".join(output_parts),
+                                }
                             state.messages.append(chunk["raw_assistant"])
                             state.pending_tool_calls = chunk["calls"]
                 break  # success — exit retry loop
@@ -361,9 +377,17 @@ class AgentEngine:
                     finished_at=utcnow(),
                     duration_ms=int(elapsed * 1000),
                 )
-                logger.error("LLM call failed (class=%s, attempts=%d): %s", error_class, _llm_attempt + 1, exc)
+                logger.error(
+                    "LLM call failed (class=%s, attempts=%d): %s",
+                    error_class,
+                    _llm_attempt + 1,
+                    exc,
+                )
                 state.phase = "error"
-                yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
+                yield {
+                    "type": "error",
+                    "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})",
+                }
                 yield {"type": "done"}
                 return
 
@@ -376,7 +400,10 @@ class AgentEngine:
             prompt=state.messages,
             response={"content": final_output, "reasoning": final_reasoning},
             finish_reason="tool_calls" if got_tool_calls else "stop",
-            metadata={"message_count": len(state.messages), "step_count": state.step_count},
+            metadata={
+                "message_count": len(state.messages),
+                "step_count": state.step_count,
+            },
             input_tokens=estimate_message_tokens(state.messages),
             output_tokens=estimate_tokens(final_output),
             reasoning_tokens=estimate_tokens(final_reasoning),
@@ -400,7 +427,11 @@ class AgentEngine:
         else:
             # Model answered directly — tokens already streamed, emit closing events.
             # Prefer actual token count from API usage; fall back to text-length estimate.
-            output_tokens = api_output_tokens if api_output_tokens is not None else estimate_tokens(final_output)
+            output_tokens = (
+                api_output_tokens
+                if api_output_tokens is not None
+                else estimate_tokens(final_output)
+            )
             tps = output_tokens / elapsed if elapsed > 0 else 0
             yield {
                 "type": "speed",
@@ -423,9 +454,15 @@ class AgentEngine:
             # already in the message history from a previous step.
             is_cached = state.is_tool_cached(tc["name"], tc.get("arguments", {}))
             if not is_cached:
-                yield {"type": "tool_call", "tool": tc["name"], "input": tc["arguments"]}
+                yield {
+                    "type": "tool_call",
+                    "tool": tc["name"],
+                    "input": tc["arguments"],
+                }
             else:
-                state.add_policy_trace("tool_cache_hit", "duplicate_tool_call_blocked", tc["name"])
+                state.add_policy_trace(
+                    "tool_cache_hit", "duplicate_tool_call_blocked", tc["name"]
+                )
                 yield {
                     "type": "agent_trace",
                     "event": "tool_cache_hit",
@@ -441,7 +478,10 @@ class AgentEngine:
             started = time.monotonic()
             cache_key = state.tool_cache_key(tc["name"], args)
             if cache_key in state.tool_result_cache:
-                logger.debug("Tool '%s' already called with same args — returning cached result", tc["name"])
+                logger.debug(
+                    "Tool '%s' already called with same args — returning cached result",
+                    tc["name"],
+                )
                 finished_at = utcnow()
                 return {
                     "result": state.tool_result_cache[cache_key],
@@ -455,7 +495,9 @@ class AgentEngine:
             if state.tool_failure_counts.get(tc["name"], 0) >= 2:
                 skip_result = f"[系统已阻止重复调用工具 {tc['name']}：此前已连续失败 2 次，请改用其他工具或直接回答]"
                 state.tool_result_cache[cache_key] = skip_result
-                state.add_policy_trace("tool_blocked", "tool_failure_attempt_limit", tc["name"])
+                state.add_policy_trace(
+                    "tool_blocked", "tool_failure_attempt_limit", tc["name"]
+                )
                 finished_at = utcnow()
                 return {
                     "result": skip_result,
@@ -467,19 +509,30 @@ class AgentEngine:
                     "duration_ms": int((time.monotonic() - started) * 1000),
                 }
             try:
-                state.tool_call_counts[tc["name"]] = state.tool_call_counts.get(tc["name"], 0) + 1
+                state.tool_call_counts[tc["name"]] = (
+                    state.tool_call_counts.get(tc["name"], 0) + 1
+                )
                 result = await execute_tool(tc, self.tool_ctx)
             except BaseException as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 from app.mcp.client import _exc_msg
+
                 msg = _exc_msg(exc)
-                logger.error("Tool '%s' raised error: %s", tc["name"], msg, exc_info=True)
+                logger.error(
+                    "Tool '%s' raised error: %s", tc["name"], msg, exc_info=True
+                )
                 result = f"[工具 {tc['name']} 调用失败: {msg}]"
-                state.tool_failure_counts[tc["name"]] = state.tool_failure_counts.get(tc["name"], 0) + 1
+                state.tool_failure_counts[tc["name"]] = (
+                    state.tool_failure_counts.get(tc["name"], 0) + 1
+                )
                 status = "error"
                 error_message = msg
             else:
                 if result.strip().startswith("[工具") and "调用失败" in result:
-                    state.tool_failure_counts[tc["name"]] = state.tool_failure_counts.get(tc["name"], 0) + 1
+                    state.tool_failure_counts[tc["name"]] = (
+                        state.tool_failure_counts.get(tc["name"], 0) + 1
+                    )
                     status = "error"
                     error_message = result[:2000]
                 else:
@@ -513,7 +566,8 @@ class AgentEngine:
 
         read_results = (
             await asyncio.gather(*[_resolve(tc) for tc in read_calls])
-            if read_calls else []
+            if read_calls
+            else []
         )
         write_results: list[dict] = []
         for tc in write_calls:
@@ -556,8 +610,13 @@ class AgentEngine:
             _DEFAULT_MICRO_COMPACT_LIMIT = 3000
             try:
                 from app.skills.registry import skill_registry as _sr
+
                 _skill = _sr.resolve(tc["name"])
-                _limit = (_skill.meta.max_result_chars if _skill is not None else _DEFAULT_MICRO_COMPACT_LIMIT)
+                _limit = (
+                    _skill.meta.max_result_chars
+                    if _skill is not None
+                    else _DEFAULT_MICRO_COMPACT_LIMIT
+                )
             except Exception:
                 _limit = _DEFAULT_MICRO_COMPACT_LIMIT
             # max_result_chars=0 means "never truncate" (e.g. read_skill_guide body)
@@ -565,11 +624,13 @@ class AgentEngine:
                 msg_result = result[:_limit] + "\n…[内容已截断，完整结果已存入上下文]"
             else:
                 msg_result = result
-            state.messages.append({
-                "role": "tool",
-                "tool_call_id": tc["id"],
-                "content": msg_result,
-            })
+            state.messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": msg_result,
+                }
+            )
             followup_tool = _extract_followup_tool_hint(result)
             result_count = None
             if tc["name"] in {"search_notebook_knowledge", "web_search"}:
@@ -595,14 +656,18 @@ class AgentEngine:
             )
             if followup_tool:
                 state.recommended_next_tool = followup_tool
-                state.add_policy_trace("mcp_followup", "tool_result_requested_followup", followup_tool)
-                state.messages.append({
-                    "role": "user",
-                    "content": (
-                        f"[系统提示] 上一步工具结果明确要求下一步优先使用 `{followup_tool}`。"
-                        "不要重复调用刚才的工具。"
-                    ),
-                })
+                state.add_policy_trace(
+                    "mcp_followup", "tool_result_requested_followup", followup_tool
+                )
+                state.messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"[系统提示] 上一步工具结果明确要求下一步优先使用 `{followup_tool}`。"
+                            "不要重复调用刚才的工具。"
+                        ),
+                    }
+                )
                 yield {
                     "type": "agent_trace",
                     "event": "mcp_followup",
@@ -624,13 +689,15 @@ class AgentEngine:
         # ignore in-result instructions (e.g. "Do NOT call me again").
         if pre_cached:
             names = ", ".join(f"`{n}`" for n in sorted(pre_cached))
-            state.messages.append({
-                "role": "user",
-                "content": (
-                    f"[系统提示] 工具 {names} 已经调用过，其结果已在上方对话中。"
-                    f"请不要再次调用这些工具。根据已有结果，直接调用下一步工具或回答用户。"
-                ),
-            })
+            state.messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"[系统提示] 工具 {names} 已经调用过，其结果已在上方对话中。"
+                        f"请不要再次调用这些工具。根据已有结果，直接调用下一步工具或回答用户。"
+                    ),
+                }
+            )
             yield {
                 "type": "agent_trace",
                 "event": "tool_cache_guard",
@@ -663,7 +730,7 @@ class AgentEngine:
         # re-derive it from state: if snip_count < _MAX_SNIP_PASSES and tokens are in
         # the snip band, this is a snip pass; otherwise it is a summarize pass.
         # In practice the Brain already decided the mode — we just need to honour it.
-        _SNIP_DROP_COUNT = 4   # messages to drop per snip pass
+        _SNIP_DROP_COUNT = 4  # messages to drop per snip pass
         _SNIP_THRESHOLD = 4000  # must match brain.SNIP_TOKEN_THRESHOLD
 
         msgs = state.messages
@@ -697,7 +764,8 @@ class AgentEngine:
         # Determine which layer to run based on current compression state.
         use_snip = (
             state.snip_count < 2
-            and state.estimate_tokens() <= 8000  # haven't breached LLM compress threshold
+            and state.estimate_tokens()
+            <= 8000  # haven't breached LLM compress threshold
         )
 
         # ── Layer 2: snipCompact ────────────────────────────────────────────
@@ -732,8 +800,7 @@ class AgentEngine:
         }
 
         middle_text = "\n".join(
-            f"[{m.get('role', '?')}] {str(m.get('content', ''))[:500]}"
-            for m in middle
+            f"[{m.get('role', '?')}] {str(m.get('content', ''))[:500]}" for m in middle
         )
         compress_prompt = [
             {
@@ -747,7 +814,9 @@ class AgentEngine:
         llm_started_at = utcnow()
         llm_started = time.monotonic()
         try:
-            summary = await self._llm.chat(compress_prompt, _get_utility_model(), 0, 300)
+            summary = await self._llm.chat(
+                compress_prompt, _get_utility_model(), 0, 300
+            )
         except Exception:
             logger.warning("Context compression failed, continuing without compression")
             await record_completed_llm_call(
@@ -862,9 +931,14 @@ class AgentEngine:
             state.pending_tool_calls = instruction.tool_calls
             state.phase = "llm_result"
         else:
-            yield {"type": "token", "content": "\n\n> 工具调用已被拒绝，AI 将直接回答。"}
+            yield {
+                "type": "token",
+                "content": "\n\n> 工具调用已被拒绝，AI 将直接回答。",
+            }
             state.pending_tool_calls = []
-            state.phase = "llm_result"  # empty pending → Brain returns StreamAnswerInstruction
+            state.phase = (
+                "llm_result"  # empty pending → Brain returns StreamAnswerInstruction
+            )
 
     async def _exec_call_rag(
         self, instruction: CallRAGInstruction, state: AgentState
@@ -878,8 +952,18 @@ class AgentEngine:
             try:
                 result = await awaitable
             except Exception as exc:
-                return exc, started_at, utcnow(), int((time.monotonic() - started) * 1000)
-            return result, started_at, utcnow(), int((time.monotonic() - started) * 1000)
+                return (
+                    exc,
+                    started_at,
+                    utcnow(),
+                    int((time.monotonic() - started) * 1000),
+                )
+            return (
+                result,
+                started_at,
+                utcnow(),
+                int((time.monotonic() - started) * 1000),
+            )
 
         rag_task = _time_call(
             retrieve_chunks(
@@ -913,7 +997,11 @@ class AgentEngine:
                 "global_search": self.tool_ctx.global_search,
                 "query_snapshot": build_text_snapshot(instruction.query),
                 "hit_count": 0 if isinstance(chunks, Exception) else len(chunks),
-                "source_count": 0 if isinstance(chunks, Exception) else len({c.get("source_id") for c in chunks if c.get("source_id")}),
+                "source_count": (
+                    0
+                    if isinstance(chunks, Exception)
+                    else len({c.get("source_id") for c in chunks if c.get("source_id")})
+                ),
             },
             error_message=str(chunks) if isinstance(chunks, Exception) else None,
             started_at=rag_started_at,
@@ -927,7 +1015,9 @@ class AgentEngine:
             metadata={
                 "global_search": self.tool_ctx.global_search,
                 "query_snapshot": build_text_snapshot(instruction.query),
-                "output_snapshot": build_text_snapshot("" if isinstance(graph_ctx, Exception) else graph_ctx),
+                "output_snapshot": build_text_snapshot(
+                    "" if isinstance(graph_ctx, Exception) else graph_ctx
+                ),
             },
             error_message=str(graph_ctx) if isinstance(graph_ctx, Exception) else None,
             started_at=graph_started_at,
@@ -957,7 +1047,9 @@ class AgentEngine:
             tool_results = [c["content"] for c in chunks]
             self.tool_ctx.collected_citations = state.citations
             state.needs_verification = True
-            state.verification_reason = "本轮依赖检索资料，请在回答前核对引用编号、资料内容与最终结论是否一致。"
+            state.verification_reason = (
+                "本轮依赖检索资料，请在回答前核对引用编号、资料内容与最终结论是否一致。"
+            )
         else:
             tool_results = []
 
@@ -975,10 +1067,11 @@ class AgentEngine:
     ) -> AsyncGenerator[dict, None]:
         """Insert a lightweight verification reminder into the conversation."""
         checklist = [
-            "在给出最终回答前，请先自检：",
+            f"[系统提示] 请在回答前快速自检，然后直接回答用户的原始问题「{state.query}」：",
             "- 若引用了资料，检查每个关键结论是否都有对应来源支撑；",
             "- 若工具已经生成了结构化结果，不要忽略工具输出后另起一套结论；",
             "- 若依据不足，要明确说明信息缺口，不要假装已经验证完成。",
+            "注意：这是系统自检指令，不是用户消息。请勿对此进行回复或确认，直接回答用户问题。",
         ]
         if instruction.reason:
             checklist.insert(1, f"- 额外提醒：{instruction.reason}")
@@ -1008,7 +1101,9 @@ class AgentEngine:
         from app.agents.core.policy import build_clarification_prompt
 
         prompt = build_clarification_prompt(state.query, state.active_scene)
-        state.add_policy_trace("clarify", "query_is_too_ambiguous", instruction.reason or prompt)
+        state.add_policy_trace(
+            "clarify", "query_is_too_ambiguous", instruction.reason or prompt
+        )
         yield {
             "type": "agent_trace",
             "event": "clarify",
@@ -1020,7 +1115,9 @@ class AgentEngine:
         yield {"type": "done"}
         state.phase = "done"
 
-    async def _exec_stream_answer(self, state: AgentState) -> AsyncGenerator[dict, None]:
+    async def _exec_stream_answer(
+        self, state: AgentState
+    ) -> AsyncGenerator[dict, None]:
         """Text-only streaming answer — used only for the has_tools=False RAG path
         and after terminal tools.  Normal tool-use responses are handled directly
         by _exec_call_llm."""
@@ -1039,24 +1136,38 @@ class AgentEngine:
                 max_total_chars=state.context_budget_chars,
             )
             last_user = next(
-                (i for i in range(len(clean) - 1, -1, -1) if clean[i].get("role") == "user"),
+                (
+                    i
+                    for i in range(len(clean) - 1, -1, -1)
+                    if clean[i].get("role") == "user"
+                ),
                 -1,
             )
             if last_user >= 0:
-                clean.insert(last_user, {
-                    "role": "user",
-                    "content": f"以下是检索到的参考资料：\n\n{combined}",
-                })
-                clean.insert(last_user + 1, {
-                    "role": "assistant",
-                    "content": "好的，我已阅读参考资料，请继续。",
-                })
+                clean.insert(
+                    last_user,
+                    {
+                        "role": "user",
+                        "content": f"以下是检索到的参考资料：\n\n{combined}",
+                    },
+                )
+                clean.insert(
+                    last_user + 1,
+                    {
+                        "role": "assistant",
+                        "content": "好的，我已阅读参考资料，请继续。",
+                    },
+                )
 
         # After compression + filtering, the original query may have been lost.
         # Ensure it is always the last user message so the AI knows what to answer.
         if state.query:
             last_msg = clean[-1] if clean else None
-            if not last_msg or last_msg.get("role") != "user" or last_msg.get("content") != state.query:
+            if (
+                not last_msg
+                or last_msg.get("role") != "user"
+                or last_msg.get("content") != state.query
+            ):
                 clean.append({"role": "user", "content": state.query})
 
         t0 = time.monotonic()
@@ -1072,7 +1183,9 @@ class AgentEngine:
                 "chat.llm.stream",
                 metadata={"thinking_enabled": self.thinking_enabled},
             ):
-                async for chunk in self._llm.chat_stream(clean, thinking_enabled=self.thinking_enabled):
+                async for chunk in self._llm.chat_stream(
+                    clean, thinking_enabled=self.thinking_enabled
+                ):
                     if chunk.get("type") == "token":
                         token_count += 1
                         output_parts.append(str(chunk.get("content") or ""))
@@ -1103,7 +1216,10 @@ class AgentEngine:
                 duration_ms=int((time.monotonic() - t0) * 1000),
             )
             logger.error("Stream answer failed: %s", exc)
-            yield {"type": "error", "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})"}
+            yield {
+                "type": "error",
+                "content": f"AI 服务暂时不可用，请稍后重试。({type(exc).__name__})",
+            }
             yield {"type": "done"}
             state.phase = "error"
             return

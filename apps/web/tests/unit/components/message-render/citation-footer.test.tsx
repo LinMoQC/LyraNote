@@ -1,14 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { CitationFooter } from "@/components/message-render/citation-footer";
+import { CitationFooter } from "@lyranote/ui/message-render";
 import type { CitationData } from "@/types";
-
-vi.mock("next-intl", () => ({
-  useTranslations: () => (key: string, values?: Record<string, number>) =>
-    key === "citationSources" ? `Sources ${values?.count ?? 0}` : key,
-}));
+import { renderWithProviders } from "@test/utils/render-with-providers";
 
 describe("CitationFooter", () => {
   it("renders duplicate citations without duplicate key warnings", async () => {
@@ -31,7 +27,13 @@ describe("CitationFooter", () => {
       },
     ];
 
-    render(<CitationFooter citations={citations} namespace="chat" />);
+    renderWithProviders(<CitationFooter citations={citations} namespace="chat" />, {
+      messages: {
+        chat: {
+          citationSources: "Sources {count}",
+        },
+      },
+    });
 
     await user.click(screen.getByRole("button", { name: "Sources 2" }));
 

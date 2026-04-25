@@ -3,11 +3,15 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
+import CharacterCount from "@tiptap/extension-character-count";
 import StarterKit from "@tiptap/starter-kit";
 
 import { t } from "@/lib/i18n";
 import { GhostText } from "@/lib/tiptap-ghost-text";
 import { MindMapExtension } from "@/lib/tiptap-mind-map";
+import { SlashCommand } from "@/lib/tiptap-slash-command";
+import { CalloutExtension } from "@/lib/tiptap-callout";
+import { GenUIBlockExtension } from "@/lib/tiptap-genui";
 
 export const tiptapExtensions = [
   StarterKit.configure({
@@ -21,6 +25,10 @@ export const tiptapExtensions = [
     placeholder: t("editor.startWriting", "Start writing…"),
     emptyEditorClass: "is-editor-empty"
   }),
+  CharacterCount,
   GhostText,
   MindMapExtension,
+  CalloutExtension,
+  GenUIBlockExtension,
+  SlashCommand,
 ];

@@ -44,7 +44,7 @@ export function FilterBar({ fields }: { fields: FilterField[] }) {
               id={`filter-${field.key}`}
               value={searchParams.get(field.key) ?? ""}
               onChange={(event) => updateParam(field.key, event.target.value)}
-              className="appearance-none cursor-pointer rounded-lg border border-border/50 bg-card/50 py-1.5 pl-3 pr-8 text-sm text-foreground outline-none transition-colors focus:border-accent/50"
+              className="appearance-none cursor-pointer rounded-lg border border-white/[0.08] bg-black/40 py-1.5 pl-3 pr-8 text-sm text-foreground shadow-sm backdrop-blur outline-none transition-all duration-300 hover:bg-white/[0.04] focus:border-accent/50 focus:bg-white/[0.03] focus:shadow-[0_0_15px_rgba(20,184,166,0.1)]"
             >
               {field.options.map((option) => (
                 <option key={option.value} value={option.value}>

@@ -5,9 +5,12 @@ import { AlertCircle, CheckCircle2, FileAudio, FileText, Globe, Loader2, Notepad
 
 import { startTransition, useEffect, useRef } from "react";
 
+import { createSuggestionFingerprint, shouldAutoSurfaceSource } from "@/features/copilot/proactive-surface-policy";
+import { lyraQueryKeys } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 import { getSourceSuggestions } from "@/services/ai-service";
 import { getSources } from "@/services/source-service";
+import { dedupeSourcesByLatest } from "@/features/source/source-list";
 import { useNotebookStore } from "@/store/use-notebook-store";
 import { useProactiveStore } from "@/store/use-proactive-store";
 import { useUiStore } from "@/store/use-ui-store";
@@ -74,8 +77,8 @@ function SourceItem({ source }: { source: Source }) {
         <div className="min-w-0 flex-1">
           <p
             className={cn(
-              "truncate text-[13px] font-medium leading-tight",
-              isActive ? "text-foreground" : "text-foreground/80"
+              "truncate text-[13px] leading-snug",
+              isActive ? "font-medium text-foreground" : "font-normal text-muted-foreground/85"
             )}
           >
             {source.title}
@@ -122,32 +125,46 @@ export function SourcesPanel({
   const prevSourcesRef = useRef<Source[]>([]);
 
   const { data: sources = [], isLoading } = useQuery({
-    queryKey: ["sources", notebookId],
+    queryKey: lyraQueryKeys.sources.list({ notebookId, scope: "notebook" }),
     queryFn: () => getSources(notebookId),
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
     refetchInterval: (query) => {
       const list = query.state.data ?? []
       return list.some((s) => s.status === "processing" || s.status === "pending")
         ? 4000
         : false
     },
+    refetchIntervalInBackground: true,
   })
+
+  const visibleSources = dedupeSourcesByLatest(sources);
 
   // Detect processing → indexed transitions and trigger AI suggestions
   useEffect(() => {
     const prev = prevSourcesRef.current;
-    if (prev.length === 0 && sources.length > 0) {
-      prevSourcesRef.current = sources;
+    if (prev.length === 0 && visibleSources.length > 0) {
+      prevSourcesRef.current = visibleSources;
       return;
     }
 
-    for (const source of sources) {
+    for (const source of visibleSources) {
       if (source.status !== "indexed") continue;
       const prevSource = prev.find((s) => s.id === source.id);
       if (prevSource && (prevSource.status === "processing" || prevSource.status === "pending")) {
         getSourceSuggestions(source.id)
           .then((data) => {
+            const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
             addSuggestion({
               type: "source_indexed",
+              origin: "source_indexed",
+              delivery: shouldAutoSurfaceSource(isMobile) ? "surface" : "inbox",
+              fingerprint: createSuggestionFingerprint("source_indexed", {
+                sourceId: source.id,
+                sourceName: source.title || t("unknownSource"),
+                summary: data.summary || undefined,
+              }),
               sourceId: source.id,
               sourceName: source.title || t("unknownSource"),
               summary: data.summary || undefined,
@@ -158,29 +175,27 @@ export function SourcesPanel({
       }
     }
 
-    prevSourcesRef.current = sources;
-  }, [sources, addSuggestion]);
+    prevSourcesRef.current = visibleSources;
+  }, [visibleSources, addSuggestion, t]);
 
-  const indexed = sources.filter((s) => s.status === "indexed");
-  const processing = sources.filter((s) => s.status === "processing" || s.status === "pending");
-  const failed = sources.filter((s) => s.status === "failed");
+  const indexed = visibleSources.filter((s) => s.status === "indexed");
+  const processing = visibleSources.filter((s) => s.status === "processing" || s.status === "pending");
+  const failed = visibleSources.filter((s) => s.status === "failed");
 
   const isSheet = variant === "sheet";
 
   return (
     <aside
       className={cn(
-        "flex h-full flex-col overflow-hidden bg-card/20",
-        isSheet
-          ? "w-full"
-          : "w-[260px] flex-shrink-0 border-r border-border/25",
+        "font-notebook-ui flex h-full flex-col overflow-hidden text-[13px] font-normal leading-normal antialiased",
+        isSheet ? "w-full bg-card/20" : "w-[260px] flex-shrink-0 border-r border-border/25 bg-sidebar/45",
       )}
       data-testid={`sources-panel-${variant}`}
     >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3">
-          <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("sourcesHeader", { count: sources.length })}
+          <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/55">
+            {t("sourcesHeader", { count: visibleSources.length })}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -245,7 +260,7 @@ export function SourcesPanel({
               </div>
             )}
 
-            {sources.length === 0 && (
+            {visibleSources.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <p className="text-sm text-muted-foreground">{t("noSources")}</p>
                 <button

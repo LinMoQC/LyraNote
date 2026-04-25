@@ -2,9 +2,26 @@ import type { Config } from "tailwindcss";
 
 const config: Config = {
   darkMode: ["class"],
-  content: ["./src/**/*.{ts,tsx}"],
+  content: [
+    "./src/**/*.{ts,tsx}",
+    "../../packages/ui/src/**/*.{ts,tsx}",
+  ],
   theme: {
     extend: {
+      fontFamily: {
+        "notebook-ui": [
+          "var(--font-notebook-ui)",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
+        "notebook-document": [
+          "var(--font-notebook-document)",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
+        ],
+      },
       colors: {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",

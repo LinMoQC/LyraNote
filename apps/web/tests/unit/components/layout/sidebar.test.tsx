@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Sidebar } from "@/components/layout/sidebar";
+import { getInsights } from "@/services/ai-service";
+import { getNotebooks } from "@/services/notebook-service";
 import { useUiStore } from "@/store/use-ui-store";
 
 vi.mock("next-intl", () => ({
@@ -46,11 +48,11 @@ vi.mock("@/hooks/use-media-query", () => ({
 }));
 
 vi.mock("@/services/notebook-service", () => ({
-  getNotebooks: vi.fn().mockImplementation(() => new Promise(() => {})),
+  getNotebooks: vi.fn(),
 }));
 
 vi.mock("@/services/ai-service", () => ({
-  getInsights: vi.fn().mockImplementation(() => new Promise(() => {})),
+  getInsights: vi.fn(),
   markInsightRead: vi.fn(),
   markAllInsightsRead: vi.fn(),
 }));
@@ -65,6 +67,8 @@ vi.mock("@/components/ui/skeleton", () => ({
 
 describe("Sidebar", () => {
   beforeEach(() => {
+    vi.mocked(getNotebooks).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(getInsights).mockImplementation(() => new Promise(() => {}));
     useUiStore.setState({
       sidebarCollapsed: false,
       sidebarMobileOpen: false,
@@ -79,5 +83,19 @@ describe("Sidebar", () => {
     expect(aside?.className).toContain("-translate-x-full");
     expect(aside?.className).toContain("md:translate-x-0");
     expect(screen.getByText("LyraNote")).toBeInTheDocument();
+  });
+
+  it("uses the collapsed desktop width class when sidebar is collapsed", () => {
+    useUiStore.setState({
+      sidebarCollapsed: true,
+      sidebarMobileOpen: false,
+    });
+
+    const { container } = render(<Sidebar />);
+    const aside = container.querySelector("aside");
+
+    expect(aside).toBeTruthy();
+    expect(aside?.className).toContain("md:w-16");
+    expect(aside?.className).not.toContain("md:w-[240px]");
   });
 });

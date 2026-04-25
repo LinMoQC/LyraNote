@@ -9,7 +9,7 @@ export function ChatSidebar({ children }: { children: ReactNode }) {
 export function ChatMessageList({ children }: { children: ReactNode }) {
   return (
     <div className="flex-1 overflow-y-auto px-3 py-4 no-scrollbar md:px-6 md:py-6">
-      <div className="mx-auto max-w-2xl space-y-4 md:space-y-6">{children}</div>
+      <div className="mx-auto max-w-3xl space-y-4 md:space-y-6 2xl:max-w-4xl">{children}</div>
     </div>
   );
 }
@@ -51,7 +51,7 @@ export function VirtualizedMessageList({
   return (
     <div ref={parentRef} className="flex-1 overflow-y-auto px-3 py-4 no-scrollbar md:px-6 md:py-6">
       <div
-        className="relative mx-auto max-w-2xl"
+        className="relative mx-auto max-w-3xl 2xl:max-w-4xl"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
         {virtualizer.getVirtualItems().map((virtualItem) => (
@@ -81,7 +81,7 @@ export { VIRTUAL_THRESHOLD };
 export function ChatInputContainer({ children }: { children: ReactNode }) {
   return (
     <div className="flex-shrink-0 px-3 py-3 md:px-6 md:py-5">
-      <div className="mx-auto max-w-2xl">{children}</div>
+      <div className="mx-auto max-w-3xl 2xl:max-w-4xl">{children}</div>
     </div>
   );
 }

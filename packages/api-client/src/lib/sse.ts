@@ -61,13 +61,21 @@ export async function readSseStream(
 }
 
 function parseSseEvent(data: Record<string, unknown>): SseChunk {
-  if (data.type === "token" && typeof data.content === "string") {
+  if (
+    (data.type === "token" || data.type === "text" || data.type === "content") &&
+    typeof data.content === "string"
+  ) {
     return { type: "token", content: data.content };
   }
   if (data.type === "citations" && Array.isArray(data.citations)) {
     return { type: "citations", citations: data.citations };
   }
-  if (data.type === "agent_step") {
+  if (
+    data.type === "agent_step" ||
+    data.type === "thought" ||
+    data.type === "tool_call" ||
+    data.type === "tool_result"
+  ) {
     return { type: "agent_step", step: data.step ?? data };
   }
   if (data.type === "mind_map") {

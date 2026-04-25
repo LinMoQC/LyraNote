@@ -8,12 +8,14 @@ Pattern:
 
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import logging
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
@@ -21,8 +23,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.exceptions import ConflictError, NotFoundError
+from app.database import enqueue_after_commit
+from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models import Chunk, Notebook, Source
+from app.services.monitoring_service import (
+    create_observability_run,
+    record_completed_span,
+    record_instant_span,
+)
+from app.trace import generate_trace_id, get_trace_id
+from app.utils.async_tasks import create_logged_task
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +40,7 @@ _CONTENT_TYPES = {
     ".pdf": "application/pdf",
     ".md": "text/markdown",
     ".txt": "text/plain",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 
 
@@ -137,7 +148,11 @@ class SourceService:
         ))
 
     def _dispatch_refresh_summary(self, notebook_id: UUID) -> None:
-        asyncio.create_task(self._refresh_summary_safe(notebook_id))
+        create_logged_task(
+            self._refresh_summary_safe(notebook_id),
+            logger=logger,
+            description=f"refresh notebook summary after source change {notebook_id}",
+        )
 
     async def _refresh_summary_safe(self, notebook_id: UUID) -> None:
         from app.agents.memory import refresh_notebook_summary
@@ -155,6 +170,99 @@ class SourceService:
             while chunk := await f.read(65536):
                 yield chunk
 
+    async def _create_source_ingest_run(
+        self,
+        source: Source,
+        *,
+        origin: str,
+    ):
+        trace_id = get_trace_id() or generate_trace_id()
+        run = await create_observability_run(
+            self.db,
+            trace_id=trace_id,
+            run_type="source_ingest",
+            name="source.ingest",
+            status="running",
+            user_id=self.user_id,
+            task_id=source.id,
+            notebook_id=source.notebook_id,
+            metadata={
+                "origin": origin,
+                "source_id": str(source.id),
+                "source_title": source.title,
+                "source_type": source.type,
+                "source_url": source.url,
+            },
+        )
+        return trace_id, run
+
+    def _enqueue_ingestion(
+        self,
+        source_id: UUID,
+        *,
+        trace_id: str,
+        run_id: UUID,
+        job_kind: str = "import",
+        job_label: str | None = None,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        splitter_type: str | None = None,
+        separators: list[str] | None = None,
+        min_chunk_size: int | None = None,
+    ) -> None:
+        def _dispatch() -> None:
+            if settings.is_desktop_runtime:
+                from app.services.desktop_runtime_service import desktop_job_manager
+
+                desktop_job_manager.enqueue_source_ingest(
+                    user_id=str(self.user_id),
+                    source_id=str(source_id),
+                    trace_id=trace_id,
+                    run_id=str(run_id),
+                    kind=job_kind,
+                    label=job_label or f"索引任务 {source_id}",
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap,
+                    splitter_type=splitter_type,
+                    separators=separators,
+                    min_chunk_size=min_chunk_size,
+                )
+                return
+
+            from app.workers.tasks import ingest_source
+
+            logger.info(
+                "Dispatching ingest_source for source %s (chunk_size=%s, chunk_overlap=%s, splitter_type=%s)",
+                source_id,
+                chunk_size,
+                chunk_overlap,
+                splitter_type,
+            )
+            if (
+                chunk_size is None
+                and chunk_overlap is None
+                and splitter_type is None
+                and separators is None
+                and min_chunk_size is None
+            ):
+                ingest_source.delay(str(source_id), trace_id=trace_id, run_id=str(run_id))
+                return
+
+            ingest_source.apply_async(
+                args=[str(source_id)],
+                kwargs={
+                    "trace_id": trace_id,
+                    "run_id": str(run_id),
+                    "chunk_size": chunk_size,
+                    "chunk_overlap": chunk_overlap,
+                    "splitter_type": splitter_type,
+                    "separators": separators,
+                    "min_chunk_size": min_chunk_size,
+                },
+            )
+
+        enqueue_after_commit(self.db, _dispatch)
+
     # ── Upload / Import ────────────────────────────────────────────────────────
 
     async def upload_source(
@@ -163,15 +271,12 @@ class SourceService:
         await self._assert_notebook_owner(notebook_id)
 
         ext = os.path.splitext(filename or "")[1].lower()
-        type_map = {".pdf": "pdf", ".md": "md", ".txt": "md"}
+        type_map = {".pdf": "pdf", ".md": "md", ".txt": "md", ".docx": "doc"}
         source_type = type_map.get(ext, "md")
 
         file_id = str(uuid.uuid4())
         storage_key = f"notebooks/{notebook_id}/{file_id}{ext}"
         content_type = self._guess_content_type(filename or "")
-
-        from app.providers.storage import storage as get_storage
-        await get_storage().upload(storage_key, content, content_type)
 
         source = Source(
             notebook_id=notebook_id,
@@ -184,9 +289,36 @@ class SourceService:
         self.db.add(source)
         await self.db.flush()
         await self.db.refresh(source)
+        trace_id, run = await self._create_source_ingest_run(source, origin="upload")
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        from app.providers.storage import storage as get_storage
+
+        upload_started_at = datetime.now(UTC)
+        await get_storage().upload(storage_key, content, content_type)
+        await record_completed_span(
+            self.db,
+            "source_ingest.upload",
+            run=run,
+            component="api",
+            span_kind="phase",
+            status="succeeded",
+            metadata={
+                "content_type": content_type,
+                "filename": filename,
+                "byte_length": len(content),
+            },
+            started_at=upload_started_at,
+            finished_at=datetime.now(UTC),
+        )
+
+        self._enqueue_ingestion(
+            source.id,
+            trace_id=trace_id,
+            run_id=run.id,
+            job_kind="import",
+            job_label=f"索引资料：{filename or '未命名文件'}",
+        )
+        await self.db.commit()
 
         return source
 
@@ -205,9 +337,25 @@ class SourceService:
         self.db.add(source)
         await self.db.flush()
         await self.db.refresh(source)
+        trace_id, run = await self._create_source_ingest_run(source, origin="url_import")
+        await record_instant_span(
+            self.db,
+            "source_ingest.upload",
+            run=run,
+            component="api",
+            span_kind="phase",
+            status="succeeded",
+            metadata={"mode": "url", "url": url, "skipped": True},
+        )
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(
+            source.id,
+            trace_id=trace_id,
+            run_id=run.id,
+            job_kind="import",
+            job_label=f"索引网页：{title or url}",
+        )
+        await self.db.commit()
 
         return source
 
@@ -259,14 +407,31 @@ class SourceService:
             self.db.add(source)
             await self.db.flush()
             await self.db.refresh(source)
+            trace_id, run = await self._create_source_ingest_run(source, origin="web_batch_import")
+            await record_instant_span(
+                self.db,
+                "source_ingest.upload",
+                run=run,
+                component="api",
+                span_kind="phase",
+                status="succeeded",
+                metadata={"mode": "url", "url": normalized_url, "skipped": True},
+            )
 
-            from app.workers.tasks import ingest_source
-
-            ingest_source.delay(str(source.id))
+            self._enqueue_ingestion(
+                source.id,
+                trace_id=trace_id,
+                run_id=run.id,
+                job_kind="import",
+                job_label=f"索引网页：{source.title or normalized_url}",
+            )
 
             existing_urls.add(normalized_url)
             created_count += 1
             source_ids.append(source.id)
+
+        if created_count > 0:
+            await self.db.commit()
 
         return WebImportResult(
             notebook_id=target_notebook_id,
@@ -376,17 +541,17 @@ class SourceService:
         source.status = "pending"
         await self.db.flush()
 
-        from app.workers.tasks import ingest_source
-        ingest_source.apply_async(
-            args=[str(source.id)],
-            kwargs={
-                "chunk_size": size,
-                "chunk_overlap": overlap,
-                "splitter_type": splitter_type,
-                "separators": separators,
-                "min_chunk_size": min_chunk_size,
-            },
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="rechunk",
+            job_label=f"重建索引：{source.title or source.id}",
+            chunk_size=size,
+            chunk_overlap=overlap,
+            splitter_type=splitter_type,
+            separators=separators,
+            min_chunk_size=min_chunk_size,
         )
+        await self.db.commit()
         return size, overlap
 
     # ── Download ──────────────────────────────────────────────────────────────
@@ -485,8 +650,12 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="import",
+            job_label=f"索引资料：{filename or '未命名文件'}",
+        )
+        await self.db.commit()
 
         return source
 
@@ -504,7 +673,71 @@ class SourceService:
         await self.db.flush()
         await self.db.refresh(source)
 
-        from app.workers.tasks import ingest_source
-        ingest_source.delay(str(source.id))
+        self._enqueue_ingestion(
+            source.id,
+            job_kind="import",
+            job_label=f"索引网页：{title or url}",
+        )
+        await self.db.commit()
+
+        return source
+
+    async def import_global_source_path(
+        self,
+        path: str,
+        *,
+        sha256: str | None = None,
+    ) -> Source:
+        file_path = Path(path).expanduser()
+        if not file_path.exists():
+            raise NotFoundError("文件不存在")
+        if not file_path.is_file():
+            raise BadRequestError("暂不支持导入目录")
+
+        try:
+            content = file_path.read_bytes()
+        except OSError as exc:
+            raise BadRequestError("无法读取所选文件") from exc
+
+        content_sha256 = sha256
+        if settings.is_desktop_runtime and not content_sha256:
+            content_sha256 = hashlib.sha256(content).hexdigest()
+
+        if settings.is_desktop_runtime:
+            from app.services.desktop_runtime_service import desktop_state_store
+
+            inspection = desktop_state_store.inspect_local_file(
+                user_id=str(self.user_id),
+                path=str(file_path.resolve()),
+                sha256=content_sha256,
+            )
+            existing_source_id = inspection.get("source_id")
+            if inspection["state"] in {"unchanged", "duplicate"} and existing_source_id:
+                try:
+                    existing_source = await self._get_owned_source(UUID(str(existing_source_id)))
+                except (NotFoundError, ValueError):
+                    existing_source = None
+                if existing_source is not None:
+                    desktop_state_store.record_import(
+                        user_id=str(self.user_id),
+                        path=str(file_path.resolve()),
+                        source_id=str(existing_source.id),
+                        title=existing_source.title or file_path.name,
+                        sha256=content_sha256,
+                    )
+                    return existing_source
+
+        source = await self.upload_global_source(file_path.name, content)
+
+        if settings.is_desktop_runtime:
+            from app.services.desktop_runtime_service import desktop_state_store
+
+            desktop_state_store.record_import(
+                user_id=str(self.user_id),
+                path=str(file_path.resolve()),
+                source_id=str(source.id),
+                title=source.title or file_path.name,
+                sha256=content_sha256,
+            )
 
         return source

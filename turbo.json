@@ -10,12 +10,14 @@
       "persistent": true
     },
     "lint": {
+      "cache": true,
       "outputs": []
     },
     "test": {
       "outputs": []
     },
     "typecheck": {
+      "cache": true,
       "outputs": []
     },
     "tauri": {

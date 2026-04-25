@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Query
 
 from app.dependencies import CurrentUser, DbDep
@@ -38,11 +40,29 @@ async def list_monitoring_traces(
     type: str | None = Query(None),
     status: str | None = Query(None),
     cursor: str | None = Query(None),
+    user_id: UUID | None = Query(None),
+    conversation_id: UUID | None = Query(None),
+    generation_id: UUID | None = Query(None),
+    task_id: UUID | None = Query(None),
+    task_run_id: UUID | None = Query(None),
+    notebook_id: UUID | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
 ):
     _ = current_user
     service = MonitoringService(db)
-    return success(await service.list_traces(window=window, run_type=type, status=status, cursor=cursor, limit=limit))
+    return success(await service.list_traces(
+        window=window,
+        run_type=type,
+        status=status,
+        cursor=cursor,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        generation_id=generation_id,
+        task_id=task_id,
+        task_run_id=task_run_id,
+        notebook_id=notebook_id,
+        limit=limit,
+    ))
 
 
 @router.get("/monitoring/traces/{trace_id}", response_model=ApiResponse[TraceDetailOut])
@@ -65,10 +85,25 @@ async def list_monitoring_failures(
     db: DbDep,
     window: str = Query("24h"),
     kind: str | None = Query(None),
+    user_id: UUID | None = Query(None),
+    conversation_id: UUID | None = Query(None),
+    generation_id: UUID | None = Query(None),
+    task_id: UUID | None = Query(None),
+    task_run_id: UUID | None = Query(None),
+    notebook_id: UUID | None = Query(None),
 ):
     _ = current_user
     service = MonitoringService(db)
-    return success(await service.list_failures(window=window, kind=kind))
+    return success(await service.list_failures(
+        window=window,
+        kind=kind,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        generation_id=generation_id,
+        task_id=task_id,
+        task_run_id=task_run_id,
+        notebook_id=notebook_id,
+    ))
 
 
 @router.get("/monitoring/workers", response_model=ApiResponse[list[WorkerHeartbeatOut]])
@@ -87,9 +122,26 @@ async def list_monitoring_workloads(
     db: DbDep,
     kind: str | None = Query(None),
     status: str | None = Query(None),
+    user_id: UUID | None = Query(None),
+    conversation_id: UUID | None = Query(None),
+    generation_id: UUID | None = Query(None),
+    task_id: UUID | None = Query(None),
+    task_run_id: UUID | None = Query(None),
+    notebook_id: UUID | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ):
     _ = current_user
     service = MonitoringService(db)
-    return success(await service.list_workloads(kind=kind, status=status, offset=offset, limit=limit))
+    return success(await service.list_workloads(
+        kind=kind,
+        status=status,
+        user_id=user_id,
+        conversation_id=conversation_id,
+        generation_id=generation_id,
+        task_id=task_id,
+        task_run_id=task_run_id,
+        notebook_id=notebook_id,
+        offset=offset,
+        limit=limit,
+    ))
