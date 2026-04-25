@@ -105,6 +105,163 @@ async def test_import_source_url_dispatches_ingestion_after_commit(monkeypatch) 
 
 
 @pytest.mark.asyncio
+async def test_upload_global_source_dispatches_ingestion_after_commit(monkeypatch) -> None:
+    added: list[object] = []
+
+    async def flush() -> None:
+        for obj in added:
+            if isinstance(obj, Source) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
+            if isinstance(obj, ObservabilityRun) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
+
+    db = SimpleNamespace(
+        add=Mock(side_effect=added.append),
+        flush=AsyncMock(side_effect=flush),
+        refresh=AsyncMock(return_value=None),
+        commit=AsyncMock(return_value=None),
+        sync_session=SimpleNamespace(info={}),
+    )
+    service = SourceService(db, uuid.uuid4())
+    service._get_or_create_global_notebook = AsyncMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(id=uuid.uuid4())
+    )
+
+    storage = SimpleNamespace(upload=AsyncMock(return_value=None))
+    monkeypatch.setattr("app.providers.storage.storage", lambda: storage)
+
+    delayed: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "app.workers.tasks.ingest_source.delay",
+        lambda source_id, **kwargs: delayed.append((source_id, kwargs)),
+    )
+
+    source = await service.upload_global_source("global.docx", b"doc-bytes")
+
+    assert source.status == "pending"
+    assert source.type == "doc"
+    assert delayed == []
+
+    callbacks = db.sync_session.info.get("_after_commit_callbacks", [])
+    assert len(callbacks) == 1
+    callbacks[0]()
+
+    assert delayed[0][0] == str(source.id)
+    assert delayed[0][1]["trace_id"]
+    assert delayed[0][1]["run_id"]
+    storage.upload.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_import_global_source_url_dispatches_ingestion_after_commit(
+    monkeypatch,
+) -> None:
+    added: list[object] = []
+
+    async def flush() -> None:
+        for obj in added:
+            if isinstance(obj, Source) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
+            if isinstance(obj, ObservabilityRun) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
+
+    db = SimpleNamespace(
+        add=Mock(side_effect=added.append),
+        flush=AsyncMock(side_effect=flush),
+        refresh=AsyncMock(return_value=None),
+        commit=AsyncMock(return_value=None),
+        sync_session=SimpleNamespace(info={}),
+    )
+    service = SourceService(db, uuid.uuid4())
+    service._get_or_create_global_notebook = AsyncMock(  # type: ignore[method-assign]
+        return_value=SimpleNamespace(id=uuid.uuid4())
+    )
+
+    delayed: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "app.workers.tasks.ingest_source.delay",
+        lambda source_id, **kwargs: delayed.append((source_id, kwargs)),
+    )
+
+    source = await service.import_global_source_url(
+        "https://example.com/global",
+        "Global Example",
+    )
+
+    assert source.status == "pending"
+    assert delayed == []
+
+    callbacks = db.sync_session.info.get("_after_commit_callbacks", [])
+    assert len(callbacks) == 1
+    callbacks[0]()
+
+    assert delayed[0][0] == str(source.id)
+    assert delayed[0][1]["trace_id"]
+    assert delayed[0][1]["run_id"]
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_rechunk_source_dispatches_ingestion_after_commit_with_trace_context(
+    monkeypatch,
+) -> None:
+    added: list[object] = []
+
+    async def flush() -> None:
+        for obj in added:
+            if isinstance(obj, ObservabilityRun) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
+
+    db = SimpleNamespace(
+        add=Mock(side_effect=added.append),
+        flush=AsyncMock(side_effect=flush),
+        commit=AsyncMock(return_value=None),
+        sync_session=SimpleNamespace(info={}),
+    )
+    service = SourceService(db, uuid.uuid4())
+    source = SimpleNamespace(
+        id=uuid.uuid4(),
+        notebook_id=uuid.uuid4(),
+        title="demo.pdf",
+        type="pdf",
+        url=None,
+        status="indexed",
+    )
+    monkeypatch.setattr(service, "_get_owned_source", AsyncMock(return_value=source))
+
+    apply_async_calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "app.workers.tasks.ingest_source.apply_async",
+        lambda *args, **kwargs: apply_async_calls.append(
+            {"args": list(args), "kwargs": kwargs}
+        ),
+    )
+
+    chunk_size, chunk_overlap = await service.rechunk_source(
+        source.id,
+        strategy="standard",
+    )
+
+    assert source.status == "pending"
+    assert chunk_size == 512
+    assert chunk_overlap == 64
+    assert apply_async_calls == []
+
+    callbacks = db.sync_session.info.get("_after_commit_callbacks", [])
+    assert len(callbacks) == 1
+    callbacks[0]()
+
+    dispatched = apply_async_calls[0]
+    assert dispatched["kwargs"]["args"] == [str(source.id)]
+    assert dispatched["kwargs"]["kwargs"]["trace_id"]
+    assert dispatched["kwargs"]["kwargs"]["run_id"]
+    assert dispatched["kwargs"]["kwargs"]["chunk_size"] == chunk_size
+    assert dispatched["kwargs"]["kwargs"]["chunk_overlap"] == chunk_overlap
+    db.commit.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_import_global_source_path_reads_file_and_delegates(
     tmp_path,
     monkeypatch,

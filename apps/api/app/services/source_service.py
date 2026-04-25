@@ -540,9 +540,12 @@ class SourceService:
 
         source.status = "pending"
         await self.db.flush()
+        trace_id, run = await self._create_source_ingest_run(source, origin="rechunk")
 
         self._enqueue_ingestion(
             source.id,
+            trace_id=trace_id,
+            run_id=run.id,
             job_kind="rechunk",
             job_label=f"重建索引：{source.title or source.id}",
             chunk_size=size,
@@ -628,15 +631,12 @@ class SourceService:
         nb = await self._get_or_create_global_notebook()
 
         ext = os.path.splitext(filename or "")[1].lower()
-        type_map = {".pdf": "pdf", ".md": "md", ".txt": "md"}
+        type_map = {".pdf": "pdf", ".md": "md", ".txt": "md", ".docx": "doc"}
         source_type = type_map.get(ext, "md")
 
         file_id = str(uuid.uuid4())
         storage_key = f"global/{nb.id}/{file_id}{ext}"
         content_type = self._guess_content_type(filename or "")
-
-        from app.providers.storage import storage as get_storage
-        await get_storage().upload(storage_key, content, content_type)
 
         source = Source(
             notebook_id=nb.id,
@@ -649,9 +649,30 @@ class SourceService:
         self.db.add(source)
         await self.db.flush()
         await self.db.refresh(source)
+        trace_id, run = await self._create_source_ingest_run(source, origin="global_upload")
 
+        from app.providers.storage import storage as get_storage
+        upload_started_at = datetime.now(UTC)
+        await get_storage().upload(storage_key, content, content_type)
+        await record_completed_span(
+            self.db,
+            "source_ingest.upload",
+            run=run,
+            component="api",
+            span_kind="phase",
+            status="succeeded",
+            metadata={
+                "content_type": content_type,
+                "filename": filename,
+                "byte_length": len(content),
+            },
+            started_at=upload_started_at,
+            finished_at=datetime.now(UTC),
+        )
         self._enqueue_ingestion(
             source.id,
+            trace_id=trace_id,
+            run_id=run.id,
             job_kind="import",
             job_label=f"索引资料：{filename or '未命名文件'}",
         )
@@ -672,9 +693,23 @@ class SourceService:
         self.db.add(source)
         await self.db.flush()
         await self.db.refresh(source)
+        trace_id, run = await self._create_source_ingest_run(
+            source, origin="global_url_import"
+        )
+        await record_instant_span(
+            self.db,
+            "source_ingest.upload",
+            run=run,
+            component="api",
+            span_kind="phase",
+            status="succeeded",
+            metadata={"mode": "url", "url": url, "skipped": True},
+        )
 
         self._enqueue_ingestion(
             source.id,
+            trace_id=trace_id,
+            run_id=run.id,
             job_kind="import",
             job_label=f"索引网页：{title or url}",
         )
