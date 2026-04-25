@@ -10,7 +10,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AnimatePresence, m } from "framer-motion";
-import { Copy, FileText, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
+import { Copy, FileText, Pencil, RefreshCw, ThumbsDown, ThumbsUp } from "lucide-react";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { memo, useMemo } from "react";
@@ -54,6 +54,8 @@ export interface ChatMessageBubbleProps {
   onFeedback: (msgId: string, rating: FeedbackRating) => void;
   onRegenerate: () => void;
   onFollowUp: (q: string) => void;
+  onEdit?: (msgId: string, content: string) => void;
+  onSaveDeepResearchNote?: (report?: string, title?: string) => void;
   onSaveDeepResearchSources?: () => void;
   onArtifact?: (payload: { type: "html"; content: string; title: string }) => void;
 }
@@ -70,9 +72,11 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   initials,
   showReasoning = true,
   onCopy,
+  onEdit,
   onFeedback,
   onRegenerate,
   onFollowUp,
+  onSaveDeepResearchNote,
   onSaveDeepResearchSources,
   onArtifact,
 }: ChatMessageBubbleProps) {
@@ -96,7 +100,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
     !liveAgentSteps.some((s) => s.type === "tool_call");
   const showBubble =
     msg.role === "user" ||
-    (msg.content !== "" && !isPreToolPhase);
+    ((msg.content !== "" || !!msg.diagram) && !isPreToolPhase);
 
   const { textContent, choices, needsRichMarkdown } = useMemo(
     () => parseMessageContent(msg.content),
@@ -107,6 +111,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
   const mdComponents = useMemo(() => buildMarkdownComponents({
     citations: msg.citations,
     isMermaidStreaming: isStreaming,
+    isStreaming,
     CodeBlock,
     onArtifact,
   }), [msg.citations, isStreaming, onArtifact]);
@@ -129,6 +134,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
         <div className="mb-3">
           <DeepResearchProgress
             progress={msg.deepResearch.status === "done" ? msg.deepResearch : { ...msg.deepResearch, reportTokens: "" }}
+            onSaveNote={onSaveDeepResearchNote}
             onSaveSources={onSaveDeepResearchSources}
             onFollowUp={(q) => onFollowUp(q)}
             onCopy={(text) => onCopy(text)}
@@ -160,7 +166,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               )}
             </div>
           )}
-          <div className="min-w-0 max-w-[85%] md:max-w-[80%]">
+          <div className="min-w-0 max-w-[85%] md:max-w-[85%]">
             {msg.role === "assistant" && msg.reasoning && showReasoning && (
               <ReasoningBlock content={msg.reasoning} streaming={isStreaming} />
             )}
@@ -171,6 +177,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                 initial={msg.role === "assistant" ? { opacity: 0, y: 4 } : false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
+                data-testid={msg.role === "assistant" ? "assistant-message-bubble" : "user-message-bubble"}
                 className={cn(
                   "rounded-2xl px-3 py-2.5 md:px-4 md:py-3",
                   msg.role === "user"
@@ -180,16 +187,19 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
               >
                 {msg.role === "assistant" ? (
                   <>
-                    {needsRichMarkdown ? (
-                      <div className={cn("text-sm leading-relaxed text-foreground/85", isStreaming && "streaming-cursor")}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-                          {textContent}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <MarkdownContent content={textContent} citations={msg.citations} showCursor={isStreaming} />
+                    {msg.content !== "" && (
+                      needsRichMarkdown ? (
+                        <div className={cn("text-sm leading-relaxed text-foreground/85", isStreaming && "streaming-cursor")}>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                            {textContent}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <MarkdownContent content={textContent} citations={msg.citations} showCursor={isStreaming} />
+                      )
                     )}
                     {choices && <ChoiceCards choices={choices} onSelect={onFollowUp} />}
+                    {msg.diagram && <DiagramView data={msg.diagram} variant="embedded" />}
                   </>
                 ) : (
                   <p className="text-sm leading-relaxed">{msg.content}</p>
@@ -211,10 +221,10 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
                     )}
                   </div>
                 )}
-                {msg.content !== "" && (
-                  <p className={cn("mt-1.5 flex items-center gap-2 text-[10px]", msg.role === "user" ? "text-white/50 justify-end" : "text-muted-foreground/40 justify-between")}>
+                {msg.role === "assistant" && msg.content !== "" && (
+                  <p className="mt-1.5 flex items-center justify-between gap-2 text-[10px] text-muted-foreground/40">
                     <span>{formatTime(msg.timestamp, t)}</span>
-                    {msg.role === "assistant" && msg.speed && !isStreaming && (() => {
+                    {msg.speed && !isStreaming && (() => {
                       const totalSec = (msg.speed.ttft_ms + (msg.speed.tokens / (msg.speed.tps || 1)) * 1000) / 1000;
                       const label = totalSec >= 1 ? `${totalSec.toFixed(1)}s` : `${msg.speed.ttft_ms}ms`;
                       const tokenLabel = t("tokenCost", { count: numberFormatter.format(msg.speed.tokens) });
@@ -233,12 +243,35 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
             )}
             </AnimatePresence>
 
+            {msg.role === "user" && msg.content !== "" && (
+              <div className="mt-1.5 flex items-center justify-end gap-1.5 text-muted-foreground/40">
+                <span className="text-[10px]">{formatTime(msg.timestamp, t)}</span>
+                <button
+                  type="button"
+                  onClick={() => onCopy(msg.content)}
+                  className="rounded-md p-1 transition-colors hover:bg-accent hover:text-muted-foreground"
+                  title={copied ? t("copied") : t("copy")}
+                >
+                  <Copy size={13} />
+                </button>
+                {onEdit && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(msg.id, msg.content)}
+                    className="rounded-md p-1 transition-colors hover:bg-accent hover:text-muted-foreground"
+                    title={t("edit")}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                )}
+              </div>
+            )}
+
             {msg.role === "assistant" && msg.citations && msg.citations.length > 0 && (
               <CitationFooter citations={msg.citations} content={msg.content} namespace="chat" />
             )}
 
-{msg.role === "assistant" && msg.mindMap && <MindMapView data={msg.mindMap} />}
-            {msg.role === "assistant" && msg.diagram && <DiagramView data={msg.diagram} />}
+            {msg.role === "assistant" && msg.mindMap && <MindMapView data={msg.mindMap} />}
             {msg.role === "assistant" && msg.mcpResult && (
               msg.mcpResult.html_content
                 ? <MCPHTMLView data={msg.mcpResult} />

@@ -514,6 +514,8 @@ class AgentEngine:
                 )
                 result = await execute_tool(tc, self.tool_ctx)
             except BaseException as exc:
+                if isinstance(exc, asyncio.CancelledError):
+                    raise
                 from app.mcp.client import _exc_msg
 
                 msg = _exc_msg(exc)

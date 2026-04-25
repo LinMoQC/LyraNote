@@ -127,6 +127,8 @@ export const CONVERSATIONS = {
   startGeneration: (conversationId: string) => `/conversations/${conversationId}/messages/generations`,
   /** GET - 消息生成状态 */
   generationStatus: (generationId: string) => `/messages/generations/${generationId}`,
+  /** DELETE - 取消消息生成 */
+  cancelGeneration: (generationId: string) => `/messages/generations/${generationId}`,
   /** GET - 消息生成事件流 (SSE) */
   generationEvents: (generationId: string, from?: number) =>
     `/messages/generations/${generationId}/events${from !== undefined ? `?from=${from}` : ""}`,

@@ -1,13 +1,11 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo, useEffect, useRef } from "react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 function FormulaBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -23,13 +21,7 @@ function FormulaBlockInner({ code, isStreaming }: { code: string; isStreaming?: 
     }
   }, [code, isStreaming])
 
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-16 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("formulaStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   return (
     <div className="my-3 overflow-x-auto rounded-xl border border-border/40 bg-muted/10 px-4 py-3">

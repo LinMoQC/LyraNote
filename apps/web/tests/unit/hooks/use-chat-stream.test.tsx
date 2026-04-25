@@ -10,12 +10,14 @@ import type { DrProgress } from "@/components/deep-research/deep-research-progre
 import { createTestQueryClient } from "@test/utils/create-test-query-client";
 
 const {
+  cancelMessageGenerationMock,
   getMessagesMock,
   notifyErrorMock,
   notifySuccessMock,
   saveActiveConversationMock,
   sendMessageStreamMock,
 } = vi.hoisted(() => ({
+  cancelMessageGenerationMock: vi.fn(),
   getMessagesMock: vi.fn(),
   notifyErrorMock: vi.fn(),
   notifySuccessMock: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 vi.mock("@/services/ai-service", () => ({
+  cancelMessageGeneration: cancelMessageGenerationMock,
   getMessageGenerationStatus: vi.fn(),
   sendMessageStream: sendMessageStreamMock,
   subscribeMessageGeneration: vi.fn(),
@@ -98,6 +101,7 @@ function useChatStreamHarness() {
 describe("useChatStream", () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    cancelMessageGenerationMock.mockReset()
     sendMessageStreamMock.mockReset()
     getMessagesMock.mockReset()
     notifyErrorMock.mockReset()
@@ -147,5 +151,69 @@ describe("useChatStream", () => {
       resolveStream?.("conv-1")
       await Promise.resolve()
     })
+  })
+
+  it("cancels the durable generation when the user stops streaming", async () => {
+    const generationId = "22222222-2222-4222-8222-222222222222"
+
+    sendMessageStreamMock.mockImplementation(async (
+      _prompt: string,
+      _onToken: (token: string) => void,
+      _onDone: (citations?: unknown[]) => void,
+      _editorContext: unknown,
+      _notebookId: unknown,
+      _onAgentEvent: unknown,
+      _conversationId: unknown,
+      _globalSearch: unknown,
+      signal?: AbortSignal,
+      _toolHint?: unknown,
+      _attachmentIds?: unknown,
+      _attachmentsMeta?: unknown,
+      _thinkingEnabled?: unknown,
+      _isCopilot?: unknown,
+      _onConversationReady?: unknown,
+      onGenerationReady?: (generation: {
+        generation_id: string
+        conversation_id: string
+        user_message_id: string
+        assistant_message_id: string
+      }) => void,
+    ) => new Promise<string>((_resolve, reject) => {
+      onGenerationReady?.({
+        generation_id: generationId,
+        conversation_id: "conv-1",
+        user_message_id: "44444444-4444-4444-8444-444444444444",
+        assistant_message_id: "33333333-3333-4333-8333-333333333333",
+      })
+      signal?.addEventListener("abort", () => {
+        const error = new DOMException("Aborted", "AbortError")
+        reject(error)
+      }, { once: true })
+    }))
+
+    cancelMessageGenerationMock.mockResolvedValue(undefined)
+
+    const { result } = renderHook(() => useChatStreamHarness(), {
+      wrapper: createWrapper(),
+    })
+
+    await act(async () => {
+      void result.current.handleSend()
+      await Promise.resolve()
+    })
+
+    expect(result.current.streaming).toBe(true)
+    expect(result.current.messages).toHaveLength(2)
+
+    await act(async () => {
+      result.current.handleCancelStreaming()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(cancelMessageGenerationMock).toHaveBeenCalledWith(generationId)
+    expect(result.current.streaming).toBe(false)
+    expect(result.current.messages).toHaveLength(1)
+    expect(result.current.messages[0]?.role).toBe("user")
   })
 })

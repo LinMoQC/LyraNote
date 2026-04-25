@@ -82,7 +82,7 @@ export function DrPlanCard({ plan, mode, onConfirm, onCancel, isStarting }: DrPl
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.2 }}
-      className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border/40 bg-card shadow-sm"
+      className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border/40 bg-card shadow-sm 2xl:max-w-4xl"
     >
       {/* Header */}
       <div className="border-b border-border/30 px-4 py-3">
@@ -235,7 +235,7 @@ export function DrPlanSkeleton() {
     <m.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="w-full max-w-2xl overflow-hidden rounded-2xl border border-border/40 bg-card shadow-sm"
+      className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border/40 bg-card shadow-sm 2xl:max-w-4xl"
     >
       <div className="border-b border-border/30 px-4 py-3">
         <div className="flex items-center gap-2">

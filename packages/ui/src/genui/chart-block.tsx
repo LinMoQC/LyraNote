@@ -1,44 +1,56 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo } from "react"
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 const COLORS = ["#6366f1", "#818cf8", "#60a5fa", "#34d399", "#fbbf24", "#f87171", "#a78bfa", "#38bdf8"]
 
 interface RawChartData {
   type?: "bar" | "line" | "area" | "pie"
+  chartType?: "bar" | "line" | "area" | "pie"
   title?: string
   xKey?: string
   yKey?: string
   yKeys?: string[]
   data?: Record<string, unknown>[]
   items?: Record<string, unknown>[]
+  xAxis?: string[]
+  series?: Array<{ name: string; data: number[] }>
 }
 
 function ChartBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-48 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("chartStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const raw = safeParseJSON<RawChartData>(code)
-  const chartItems = raw?.data ?? raw?.items
-  if (!raw || !Array.isArray(chartItems)) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
+  if (!raw) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
 
-  const { type = "bar", title, xKey = "name" } = raw
+  // Normalize xAxis/series format → data array format
+  let chartItems = raw.data ?? raw.items
+  let seriesYKeys: string[] | undefined
+  if (!chartItems && raw.xAxis && raw.series) {
+    seriesYKeys = raw.series.map((s) => s.name)
+    chartItems = raw.xAxis.map((label, i) => {
+      const point: Record<string, unknown> = { name: label }
+      for (const s of raw.series!) {
+        point[s.name] = s.data[i] ?? 0
+      }
+      return point
+    })
+  }
 
-  // Detect y-keys: explicit yKeys array > explicit yKey > auto-detect numeric keys
+  if (!Array.isArray(chartItems)) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>
+
+  const { type: rawType, chartType, title, xKey = "name" } = raw
+  const type = rawType ?? chartType ?? "bar"
+
+  // Detect y-keys: explicit yKeys array > explicit yKey > series names > auto-detect numeric keys
   const autoYKeys = raw.yKeys ??
+    seriesYKeys ??
     (raw.yKey
       ? [raw.yKey]
       : Object.keys(chartItems[0] ?? {}).filter((k) => k !== xKey && typeof chartItems[0][k] === "number"))

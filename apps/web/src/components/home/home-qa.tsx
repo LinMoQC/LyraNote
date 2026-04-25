@@ -72,7 +72,10 @@ export function HomeQA({ showHint = true }: HomeQAProps) {
     payload.dr_mode = drMode;
     if (isThinkingModel) payload.thinking_enabled = thinkingEnabled ? "1" : "0";
     if (selectedToolId) payload.tool = selectedToolId;
-    if (selectedNotebook) payload.notebook = selectedNotebook.title;
+    if (selectedNotebook) {
+      payload.notebook = selectedNotebook.title;
+      payload.notebook_id = selectedNotebook.id;
+    }
     const ids = getServerIds();
     if (ids.length > 0) {
       payload.attachments = ids.join(",");
@@ -131,7 +134,7 @@ export function HomeQA({ showHint = true }: HomeQAProps) {
   );
 
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full max-w-3xl 2xl:max-w-4xl">
       <ChatInput
         value={value}
         onChange={setValue}

@@ -15,6 +15,7 @@ export function OverviewCards({ overview }: { overview: MonitoringOverview }) {
         hint={`5xx ${overview.requests.errors_5xx} / P95 ${formatDuration(overview.requests.p95_ms)}`}
         color="blue"
         icon={<Activity size={14} />}
+        delay={0}
       />
       <MetricCard
         label="聊天成功率"
@@ -22,6 +23,7 @@ export function OverviewCards({ overview }: { overview: MonitoringOverview }) {
         hint={`统计窗口 ${overview.window} / 总数 ${overview.chat.total}`}
         color="teal"
         icon={<MessageSquare size={14} />}
+        delay={100}
       />
       <MetricCard
         label="运行中任务"
@@ -29,6 +31,7 @@ export function OverviewCards({ overview }: { overview: MonitoringOverview }) {
         hint={`卡住 ${overview.workloads.stuck}`}
         color="yellow"
         icon={<Layers size={14} />}
+        delay={200}
       />
       <MetricCard
         label="Worker 健康"
@@ -36,6 +39,7 @@ export function OverviewCards({ overview }: { overview: MonitoringOverview }) {
         hint={`stale ${overview.workers.stale} / down ${overview.workers.down}`}
         color={workersDown ? "yellow" : "green"}
         icon={<Cpu size={14} />}
+        delay={300}
       />
     </div>
   )

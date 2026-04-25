@@ -198,6 +198,19 @@ async def subscribe_message_generation(
 
 
 @router.delete(
+    "/messages/generations/{generation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def cancel_message_generation(
+    generation_id: UUID,
+    db: DbDep,
+    current_user: CurrentUser,
+):
+    svc = ConversationService(db, current_user.id)
+    await svc.cancel_message_generation(generation_id)
+
+
+@router.delete(
     "/conversations/{conversation_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )

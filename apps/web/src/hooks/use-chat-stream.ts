@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 
 import {
+  cancelMessageGeneration,
   getMessageGenerationStatus,
   sendMessageStream,
   subscribeMessageGeneration,
@@ -426,8 +427,10 @@ export function useChatStream({
 
   const handleCancelStreaming = useCallback(() => {
     if (!streaming) return;
+    const generationId = activeGenerationIdRef.current;
     streamAbortRef.current?.abort();
     stopTokenDrain();
+    resetGenerationTracking();
     streamLifecycle.finish();
     setStreaming(false);
     // If the assistant placeholder never received any tokens, remove it
@@ -439,7 +442,11 @@ export function useChatStream({
       }
       return prev;
     });
-  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain, setMessages]);
+    if (!generationId) return;
+    void cancelMessageGeneration(generationId).catch((error) => {
+      notifyError(getErrorMessage(error, t("streamFailed")));
+    });
+  }, [streaming, streamLifecycle, streamAbortRef, setStreaming, stopTokenDrain, setMessages, resetGenerationTracking, t]);
 
   const recoverGeneration = useCallback(async (
     conversationId: string,

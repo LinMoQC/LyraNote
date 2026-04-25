@@ -13,6 +13,7 @@ import type { useStreamLifecycle } from "@/hooks/use-stream-lifecycle";
 import { lyraQueryKeys } from "@/lib/query-keys";
 import { getErrorMessage, isAbortError } from "@/lib/request-error";
 import { notifyError, notifySuccess } from "@/lib/notify";
+import { markdownToTiptapDoc } from "@/utils/markdown-to-tiptap";
 import type { LocalMessage } from "@/features/chat/chat-types";
 import { MESSAGES_PAGE_SIZE } from "@/features/chat/chat-types";
 import { mapRecord, sortMessagesByTime } from "@/features/chat/chat-helpers";
@@ -23,6 +24,7 @@ export const DR_MESSAGES_KEY = "lyranote-dr-messages";
 interface UseDeepResearchOpts {
   activeConvId: string | null;
   drMode: "quick" | "deep";
+  selectedNotebookId?: string;
   streaming: boolean;
   streamLifecycle: ReturnType<typeof useStreamLifecycle>;
   streamAbortRef: React.MutableRefObject<AbortController | null>;
@@ -32,11 +34,17 @@ interface UseDeepResearchOpts {
   setActiveConvId: Dispatch<SetStateAction<string | null>>;
 }
 
+interface PendingSaveNoteRequest {
+  report: string;
+  title: string;
+}
+
 const getDrState = () => useDeepResearchStore.getState();
 
 export function useDeepResearch({
   activeConvId,
   drMode,
+  selectedNotebookId,
   streaming,
   streamLifecycle,
   streamAbortRef,
@@ -55,6 +63,8 @@ export function useDeepResearch({
   const deliverableMessageIdRef = useRef<string | null>(null);
   const drPersistedRef = useRef(false);
   const drQueryRef = useRef<string>("");
+  const drNotebookIdRef = useRef<string | undefined>(selectedNotebookId);
+  const [pendingSaveNoteRequest, setPendingSaveNoteRequest] = useState<PendingSaveNoteRequest | null>(null);
 
   // Watch store: when isActive transitions false → handle completion
   const prevIsActiveRef = useRef(drStore.isActive);
@@ -154,7 +164,13 @@ export function useDeepResearch({
     deliverableMessageIdRef.current = null;
 
     try {
-      await getDrState().start(text, undefined, drMode, clarificationContext ?? undefined, planOverride);
+      await getDrState().start(
+        text,
+        drNotebookIdRef.current,
+        drMode,
+        clarificationContext ?? undefined,
+        planOverride,
+      );
       getDrState().setDrawerOpen(true);
 
       const { conversationId } = getDrState();
@@ -175,11 +191,12 @@ export function useDeepResearch({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drMode, streamLifecycle, streamAbortRef, setStreaming, setActiveConvId, queryClient, t]);
 
-  const handleDeepResearch = useCallback(async (overrideText?: string) => {
+  const handleDeepResearch = useCallback(async (overrideText?: string, notebookIdOverride?: string) => {
     const text = overrideText ?? "";
     if (!text || streaming) return;
     setInput("");
     drQueryRef.current = text;
+    drNotebookIdRef.current = notebookIdOverride ?? selectedNotebookId;
 
     const userMsg: LocalMessage = { id: `local-${Date.now()}`, role: "user", content: text, timestamp: new Date() };
     setMessages((prev) => [...prev, userMsg]);
@@ -198,7 +215,7 @@ export function useDeepResearch({
     } finally {
       getDrState().setPlanLoading(false);
     }
-  }, [streaming, drMode, _startResearch, setMessages, setInput]);
+  }, [streaming, selectedNotebookId, drMode, _startResearch, setMessages, setInput]);
 
   const confirmPlan = useCallback(async (editedPlan: DrPlanData) => {
     const text = drQueryRef.current;
@@ -212,23 +229,19 @@ export function useDeepResearch({
     getDrState().setPlanLoading(false);
   }, []);
 
-  const handleSaveAsNote = useCallback(async (reportOverride?: string, titleOverride?: string) => {
-    const state = getDrState();
-    const notebookId = state.notebookId;
-    const report = reportOverride ?? state.reportTokens ?? lastReportRef.current?.tokens;
-    const title = titleOverride ?? state.progress?.deliverable?.title ?? lastReportRef.current?.title ?? t("reportLabel");
-    if (!report) throw new Error("No report content");
-    if (!notebookId) throw new Error("No notebook");
+  const saveReportToNotebook = useCallback(async (
+    notebookId: string,
+    report: string,
+    title: string,
+  ) => {
     try {
       await saveNote({
         notebookId,
         noteId: null,
         title,
-        contentJson: {
-          type: "doc",
-          content: [{ type: "paragraph", content: [{ type: "text", text: report }] }],
-        },
+        contentJson: markdownToTiptapDoc(report),
       });
+      drNotebookIdRef.current = notebookId;
       notifySuccess(t("savedAsNote"));
     } catch (e) {
       notifyError(tc("saveFailed"));
@@ -236,12 +249,46 @@ export function useDeepResearch({
     }
   }, [t, tc]);
 
+  const handleSaveAsNote = useCallback(async (reportOverride?: string, titleOverride?: string) => {
+    const state = getDrState();
+    const notebookId = state.notebookId ?? drNotebookIdRef.current ?? selectedNotebookId;
+    const report = reportOverride ?? state.reportTokens ?? lastReportRef.current?.tokens;
+    const title = titleOverride ?? state.progress?.deliverable?.title ?? lastReportRef.current?.title ?? t("reportLabel");
+
+    if (!report) {
+      notifyError(tc("saveFailed"));
+      throw new Error("No report content");
+    }
+
+    if (!notebookId) {
+      setPendingSaveNoteRequest({ report, title });
+      throw new Error("Notebook selection required");
+    }
+
+    await saveReportToNotebook(notebookId, report, title);
+  }, [selectedNotebookId, saveReportToNotebook, t, tc]);
+
+  const cancelPendingSaveNote = useCallback(() => {
+    setPendingSaveNoteRequest(null);
+  }, []);
+
+  const confirmPendingSaveNote = useCallback(async (notebookId: string) => {
+    if (!pendingSaveNoteRequest) return;
+    await saveReportToNotebook(
+      notebookId,
+      pendingSaveNoteRequest.report,
+      pendingSaveNoteRequest.title,
+    );
+    setPendingSaveNoteRequest(null);
+  }, [pendingSaveNoteRequest, saveReportToNotebook]);
+
   const handleSaveSources = useCallback(async () => {
     const state = getDrState();
     if (!state.taskId) throw new Error("No deep research task");
 
     try {
-      const result = await saveDeepResearchSources(state.taskId, state.notebookId);
+      const targetNotebookId = state.notebookId ?? drNotebookIdRef.current ?? selectedNotebookId;
+      const result = await saveDeepResearchSources(state.taskId, targetNotebookId);
       notifySuccess(
         t("savedSources", {
           created: result.created_count,
@@ -252,7 +299,7 @@ export function useDeepResearch({
       notifyError(tc("saveFailed"));
       throw e;
     }
-  }, [t, tc]);
+  }, [selectedNotebookId, t, tc]);
 
   const handleDrRate = useCallback(async (rating: "like" | "dislike") => {
     const msgId = deliverableMessageIdRef.current;
@@ -281,6 +328,9 @@ export function useDeepResearch({
     setDrProgress,
     confirmPlan,
     cancelPlan,
+    pendingSaveNoteRequest,
+    cancelPendingSaveNote,
+    confirmPendingSaveNote,
     planData: drStore.planData,
     isPlanLoading: drStore.isPlanLoading,
     drawerOpen: drStore.drawerOpen,

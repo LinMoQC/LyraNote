@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from app.exceptions import NotFoundError
-from app.models import Source
+from app.models import ObservabilityRun, Source
 from app.services.desktop_runtime_service import desktop_state_store
 from app.services.source_service import SourceService
 
@@ -19,6 +19,8 @@ async def test_upload_source_dispatches_ingestion_after_commit(monkeypatch) -> N
     async def flush() -> None:
         for obj in added:
             if isinstance(obj, Source) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
+            if isinstance(obj, ObservabilityRun) and getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid.uuid4())
 
     db = SimpleNamespace(
@@ -35,8 +37,11 @@ async def test_upload_source_dispatches_ingestion_after_commit(monkeypatch) -> N
     storage = SimpleNamespace(upload=AsyncMock(return_value=None))
     monkeypatch.setattr("app.providers.storage.storage", lambda: storage)
 
-    delayed: list[str] = []
-    monkeypatch.setattr("app.workers.tasks.ingest_source.delay", lambda source_id: delayed.append(source_id))
+    delayed: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "app.workers.tasks.ingest_source.delay",
+        lambda source_id, **kwargs: delayed.append((source_id, kwargs)),
+    )
 
     source = await service.upload_source(notebook_id, "demo.pdf", b"pdf-bytes")
 
@@ -47,7 +52,9 @@ async def test_upload_source_dispatches_ingestion_after_commit(monkeypatch) -> N
     assert len(callbacks) == 1
     callbacks[0]()
 
-    assert delayed == [str(source.id)]
+    assert delayed[0][0] == str(source.id)
+    assert delayed[0][1]["trace_id"]
+    assert delayed[0][1]["run_id"]
     storage.upload.assert_awaited_once()
     db.commit.assert_awaited_once()
 
@@ -60,6 +67,8 @@ async def test_import_source_url_dispatches_ingestion_after_commit(monkeypatch) 
         for obj in added:
             if isinstance(obj, Source) and getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid.uuid4())
+            if isinstance(obj, ObservabilityRun) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
 
     db = SimpleNamespace(
         add=Mock(side_effect=added.append),
@@ -71,8 +80,11 @@ async def test_import_source_url_dispatches_ingestion_after_commit(monkeypatch) 
     service = SourceService(db, uuid.uuid4())
     service._assert_notebook_owner = AsyncMock(return_value=None)  # type: ignore[method-assign]
 
-    delayed: list[str] = []
-    monkeypatch.setattr("app.workers.tasks.ingest_source.delay", lambda source_id: delayed.append(source_id))
+    delayed: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "app.workers.tasks.ingest_source.delay",
+        lambda source_id, **kwargs: delayed.append((source_id, kwargs)),
+    )
 
     source = await service.import_source_url(
         uuid.uuid4(),
@@ -86,7 +98,9 @@ async def test_import_source_url_dispatches_ingestion_after_commit(monkeypatch) 
     callbacks = db.sync_session.info.get("_after_commit_callbacks", [])
     assert len(callbacks) == 1
     callbacks[0]()
-    assert delayed == [str(source.id)]
+    assert delayed[0][0] == str(source.id)
+    assert delayed[0][1]["trace_id"]
+    assert delayed[0][1]["run_id"]
     db.commit.assert_awaited_once()
 
 
@@ -126,6 +140,8 @@ async def test_upload_source_uses_desktop_job_queue_when_runtime_profile_is_desk
         for obj in added:
             if isinstance(obj, Source) and getattr(obj, "id", None) is None:
                 setattr(obj, "id", uuid.uuid4())
+            if isinstance(obj, ObservabilityRun) and getattr(obj, "id", None) is None:
+                setattr(obj, "id", uuid.uuid4())
 
     db = SimpleNamespace(
         add=Mock(side_effect=added.append),
@@ -156,10 +172,14 @@ async def test_upload_source_uses_desktop_job_queue_when_runtime_profile_is_desk
     callbacks[0]()
 
     assert source.status == "pending"
+    assert queued[0]["trace_id"]
+    assert queued[0]["run_id"]
     assert queued == [
         {
             "user_id": str(service.user_id),
             "source_id": str(source.id),
+            "trace_id": queued[0]["trace_id"],
+            "run_id": queued[0]["run_id"],
             "kind": "import",
             "label": "索引资料：desktop.pdf",
             "chunk_size": None,

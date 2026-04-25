@@ -14,6 +14,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
@@ -25,6 +26,12 @@ from app.config import settings
 from app.database import enqueue_after_commit
 from app.exceptions import BadRequestError, ConflictError, NotFoundError
 from app.models import Chunk, Notebook, Source
+from app.services.monitoring_service import (
+    create_observability_run,
+    record_completed_span,
+    record_instant_span,
+)
+from app.trace import generate_trace_id, get_trace_id
 from app.utils.async_tasks import create_logged_task
 
 logger = logging.getLogger(__name__)
@@ -163,10 +170,38 @@ class SourceService:
             while chunk := await f.read(65536):
                 yield chunk
 
+    async def _create_source_ingest_run(
+        self,
+        source: Source,
+        *,
+        origin: str,
+    ):
+        trace_id = get_trace_id() or generate_trace_id()
+        run = await create_observability_run(
+            self.db,
+            trace_id=trace_id,
+            run_type="source_ingest",
+            name="source.ingest",
+            status="running",
+            user_id=self.user_id,
+            task_id=source.id,
+            notebook_id=source.notebook_id,
+            metadata={
+                "origin": origin,
+                "source_id": str(source.id),
+                "source_title": source.title,
+                "source_type": source.type,
+                "source_url": source.url,
+            },
+        )
+        return trace_id, run
+
     def _enqueue_ingestion(
         self,
         source_id: UUID,
         *,
+        trace_id: str,
+        run_id: UUID,
         job_kind: str = "import",
         job_label: str | None = None,
         chunk_size: int | None = None,
@@ -182,6 +217,8 @@ class SourceService:
                 desktop_job_manager.enqueue_source_ingest(
                     user_id=str(self.user_id),
                     source_id=str(source_id),
+                    trace_id=trace_id,
+                    run_id=str(run_id),
                     kind=job_kind,
                     label=job_label or f"索引任务 {source_id}",
                     chunk_size=chunk_size,
@@ -208,12 +245,14 @@ class SourceService:
                 and separators is None
                 and min_chunk_size is None
             ):
-                ingest_source.delay(str(source_id))
+                ingest_source.delay(str(source_id), trace_id=trace_id, run_id=str(run_id))
                 return
 
             ingest_source.apply_async(
                 args=[str(source_id)],
                 kwargs={
+                    "trace_id": trace_id,
+                    "run_id": str(run_id),
                     "chunk_size": chunk_size,
                     "chunk_overlap": chunk_overlap,
                     "splitter_type": splitter_type,
@@ -239,9 +278,6 @@ class SourceService:
         storage_key = f"notebooks/{notebook_id}/{file_id}{ext}"
         content_type = self._guess_content_type(filename or "")
 
-        from app.providers.storage import storage as get_storage
-        await get_storage().upload(storage_key, content, content_type)
-
         source = Source(
             notebook_id=notebook_id,
             title=filename,
@@ -253,9 +289,32 @@ class SourceService:
         self.db.add(source)
         await self.db.flush()
         await self.db.refresh(source)
+        trace_id, run = await self._create_source_ingest_run(source, origin="upload")
+
+        from app.providers.storage import storage as get_storage
+
+        upload_started_at = datetime.now(UTC)
+        await get_storage().upload(storage_key, content, content_type)
+        await record_completed_span(
+            self.db,
+            "source_ingest.upload",
+            run=run,
+            component="api",
+            span_kind="phase",
+            status="succeeded",
+            metadata={
+                "content_type": content_type,
+                "filename": filename,
+                "byte_length": len(content),
+            },
+            started_at=upload_started_at,
+            finished_at=datetime.now(UTC),
+        )
 
         self._enqueue_ingestion(
             source.id,
+            trace_id=trace_id,
+            run_id=run.id,
             job_kind="import",
             job_label=f"索引资料：{filename or '未命名文件'}",
         )
@@ -278,9 +337,21 @@ class SourceService:
         self.db.add(source)
         await self.db.flush()
         await self.db.refresh(source)
+        trace_id, run = await self._create_source_ingest_run(source, origin="url_import")
+        await record_instant_span(
+            self.db,
+            "source_ingest.upload",
+            run=run,
+            component="api",
+            span_kind="phase",
+            status="succeeded",
+            metadata={"mode": "url", "url": url, "skipped": True},
+        )
 
         self._enqueue_ingestion(
             source.id,
+            trace_id=trace_id,
+            run_id=run.id,
             job_kind="import",
             job_label=f"索引网页：{title or url}",
         )
@@ -336,9 +407,21 @@ class SourceService:
             self.db.add(source)
             await self.db.flush()
             await self.db.refresh(source)
+            trace_id, run = await self._create_source_ingest_run(source, origin="web_batch_import")
+            await record_instant_span(
+                self.db,
+                "source_ingest.upload",
+                run=run,
+                component="api",
+                span_kind="phase",
+                status="succeeded",
+                metadata={"mode": "url", "url": normalized_url, "skipped": True},
+            )
 
             self._enqueue_ingestion(
                 source.id,
+                trace_id=trace_id,
+                run_id=run.id,
                 job_kind="import",
                 job_label=f"索引网页：{source.title or normalized_url}",
             )

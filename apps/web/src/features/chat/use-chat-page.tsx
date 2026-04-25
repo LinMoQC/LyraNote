@@ -185,6 +185,7 @@ export function useChatPage() {
   const dr = useDeepResearch({
     activeConvId,
     drMode,
+    selectedNotebookId: selectedNotebook?.id,
     streaming,
     streamLifecycle,
     streamAbortRef,
@@ -560,6 +561,7 @@ export function useChatPage() {
     query: string;
     deepResearch: boolean;
     drMode: "quick" | "deep";
+    notebookId?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -568,7 +570,7 @@ export function useChatPage() {
     autoTriggered.current = true;
     pendingChatPayload.current = null;
 
-    const { q, tool: toolParam, attachments: attachmentsParam, notebook: notebookParam,
+    const { q, tool: toolParam, attachments: attachmentsParam, notebook: notebookParam, notebook_id: notebookIdParam,
       deep_research: deepResearchParam, dr_mode: drModeParam, thinking_enabled: thinkingParam } = payload;
 
     setActiveConvId(null);
@@ -623,6 +625,7 @@ export function useChatPage() {
       query: finalQuery,
       deepResearch: deepResearchEnabled,
       drMode: resolvedDrMode,
+      notebookId: notebookIdParam,
     };
   }, [
     chat, dr, streamLifecycle,
@@ -637,7 +640,7 @@ export function useChatPage() {
     if (pending.deepResearch && pending.drMode !== drMode) return;
     pendingAutoSendRef.current = null;
     if (pending.deepResearch) {
-      dr.handleDeepResearch(pending.query);
+      dr.handleDeepResearch(pending.query, pending.notebookId);
     } else {
       chat.handleSend(pending.query);
     }

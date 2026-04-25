@@ -70,7 +70,9 @@ describe("WorkloadsPage", () => {
           kind: "chat_generation",
           id: "run-1",
           trace_id: "trace-1",
-          status: "done",
+          trace_available: true,
+          trace_missing_reason: null,
+          status: "succeeded",
           started_at: "2026-04-02T10:00:00+00:00",
           finished_at: "2026-04-02T10:00:10+00:00",
           conversation_id: null,
@@ -90,7 +92,18 @@ describe("WorkloadsPage", () => {
       expect(screen.getByText("第 1 / 2 页 · 每页 12 条 · 共 24 条")).toBeInTheDocument();
     });
 
-    expect(getWorkloads).toHaveBeenCalledWith(undefined, undefined, 0, 12);
+    expect(getWorkloads).toHaveBeenCalledWith({
+      kind: undefined,
+      status: undefined,
+      offset: 0,
+      limit: 12,
+      user_id: undefined,
+      conversation_id: undefined,
+      generation_id: undefined,
+      task_id: undefined,
+      task_run_id: undefined,
+      notebook_id: undefined,
+    });
     expect(screen.getAllByText("chat_generation").length).toBeGreaterThan(0);
   });
 
@@ -104,7 +117,9 @@ describe("WorkloadsPage", () => {
           kind: "chat_generation",
           id: "run-1",
           trace_id: "trace-1",
-          status: "done",
+          trace_available: true,
+          trace_missing_reason: null,
+          status: "succeeded",
           started_at: "2026-04-02T10:00:00+00:00",
           finished_at: "2026-04-02T10:00:10+00:00",
           conversation_id: null,

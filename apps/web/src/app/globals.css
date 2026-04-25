@@ -249,28 +249,28 @@ html[data-theme-preset="notion"] ::selection {
 /* ─── Tiptap editor content styles ──────────────────────────────────────── */
 /* 字号跟随笔记本外观（NotebookWorkspace 上的 --editor-*），避免 text-2xl 等写死覆盖继承 */
 .tiptap h1 {
-  @apply mb-3 mt-8 font-extrabold leading-tight tracking-tight text-foreground first:mt-0;
+  @apply mb-4 mt-8 font-extrabold leading-tight tracking-tight text-foreground first:mt-0;
   font-size: calc(
     var(--editor-font-size, 16px) * (1.54 * var(--editor-heading-scale, 1.12))
   );
 }
 .tiptap h2 {
-  @apply mb-2 mt-6 font-bold leading-tight tracking-tight text-foreground first:mt-0;
+  @apply mb-3 mt-6 font-bold leading-tight tracking-tight text-foreground first:mt-0;
   font-size: calc(
     var(--editor-font-size, 16px) * (1.22 * var(--editor-heading-scale, 1.12))
   );
 }
 .tiptap h3 {
-  @apply mb-2 mt-5 font-bold leading-snug text-foreground first:mt-0;
+  @apply mb-2 mt-5 font-semibold leading-snug text-foreground first:mt-0;
   font-size: calc(
     var(--editor-font-size, 16px) * (1.04 * var(--editor-heading-scale, 1.12))
   );
 }
 .tiptap p {
-  @apply mb-3 font-bold leading-[1.8] last:mb-0;
+  @apply mb-3 font-normal leading-[1.8] last:mb-0;
 }
 .tiptap strong {
-  @apply font-extrabold text-foreground;
+  @apply font-bold text-foreground;
 }
 .tiptap em {
   @apply italic;

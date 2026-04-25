@@ -1,10 +1,9 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo, useMemo } from "react"
 import dynamic from "next/dynamic"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 const ResponsiveCalendar = dynamic(
   () => import("@nivo/calendar").then((m) => m.ResponsiveCalendar),
@@ -25,14 +24,7 @@ const COLOR_SCHEMES: Record<string, string[]> = {
 }
 
 function HeatmapBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-40 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("heatmapStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const data = safeParseJSON<HeatmapData>(code)
   if (!data || !Array.isArray(data.data)) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>

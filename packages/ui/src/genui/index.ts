@@ -18,6 +18,9 @@ export { GraphBlock } from "./graph-block"
 export { WordCloudBlock } from "./wordcloud-block"
 export { HeatmapBlock } from "./heatmap-block"
 
+// Shared streaming placeholder
+export { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
+
 // Artifact
 export { ArtifactPanel } from "./artifact-panel"
 

@@ -257,7 +257,7 @@ export function DrDocumentViewer({
                   onClick={handleSave}
                   disabled={saving || saved || !onSaveNote}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all",
+                    "flex cursor-pointer items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all disabled:cursor-not-allowed",
                     saved
                       ? "bg-emerald-500/15 text-emerald-400"
                       : "bg-muted/40 text-muted-foreground/60 hover:bg-muted/60 hover:text-foreground/70",

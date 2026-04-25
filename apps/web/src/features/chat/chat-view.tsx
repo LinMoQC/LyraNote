@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { DrPlanCard } from "@/components/deep-research/dr-plan-card";
 import { DrProgressCard } from "@/components/deep-research/dr-progress-card";
 import { DrResearchDrawer } from "@/components/deep-research/dr-research-drawer";
+import { DeepResearchSaveNoteDialog } from "@/components/deep-research/dr-save-note-dialog";
 import { ChatInputContainer, ChatMessageList } from "@/features/chat/chat-layout";
 import { ArtifactPanel } from "@lyranote/ui/genui";
 import { approveToolCall } from "@/services/ai-service";
@@ -101,6 +102,9 @@ export function ChatView() {
                   onFeedback={p.handleFeedback}
                   onRegenerate={p.stableRegenerate}
                   onFollowUp={p.stableFollowUp}
+                  onSaveDeepResearchNote={
+                    msg.deepResearch ? p.dr.handleSaveAsNote : undefined
+                  }
                   onSaveDeepResearchSources={
                     msg.deepResearch &&
                     p.dr.taskId &&
@@ -284,6 +288,13 @@ export function ChatView() {
         onRate={p.dr.handleDrRate}
         onCopy={p.copy}
         savedMessageId={p.dr.deliverableMessageIdRef.current}
+      />
+
+      <DeepResearchSaveNoteDialog
+        open={!!p.dr.pendingSaveNoteRequest}
+        reportTitle={p.dr.pendingSaveNoteRequest?.title}
+        onClose={p.dr.cancelPendingSaveNote}
+        onSelectNotebook={p.dr.confirmPendingSaveNote}
       />
     </div>
   );

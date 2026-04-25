@@ -1,10 +1,9 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo, useMemo, useState } from "react"
 import { ArrowUpDown } from "lucide-react"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface RawTableData {
   columns?: string[]
@@ -13,13 +12,14 @@ interface RawTableData {
   data?: unknown[]
 }
 
-function normalizeRows(columns: string[], rawRows: unknown[]): (string | number)[][] {
+function normalizeRows(columns: string[], rawRows: unknown[], dataKeys?: string[]): (string | number)[][] {
   return rawRows.map(row => {
     if (Array.isArray(row)) return row.map(c => (c == null ? "" : c))
     if (typeof row === "object" && row !== null) {
       const obj = row as Record<string, unknown>
-      return columns.map(col => {
-        const val = obj[col]
+      const keys = dataKeys ?? columns
+      return keys.map(k => {
+        const val = obj[k]
         return val == null ? "" : val as string | number
       })
     }
@@ -28,17 +28,10 @@ function normalizeRows(columns: string[], rawRows: unknown[]): (string | number)
 }
 
 function TableBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
   const [sortCol, setSortCol] = useState<number | null>(null)
   const [sortAsc, setSortAsc] = useState(true)
 
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-32 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("tableStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const raw = safeParseJSON<RawTableData>(code)
   const rawRows = raw?.rows ?? raw?.data
@@ -48,7 +41,15 @@ function TableBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
 
   // Normalize columns: could be string[] or object[] like [{title, dataIndex}]
   let columns: string[]
+  let dataKeys: string[] | undefined
   if (Array.isArray(rawColumns) && rawColumns.length > 0) {
+    // When columns are objects with key+title, use key for data lookup and title for display
+    const hasKeys = rawColumns.some(c => typeof c === "object" && c !== null && "key" in (c as Record<string, unknown>))
+    if (hasKeys) {
+      dataKeys = rawColumns.map(c =>
+        typeof c === "object" && c !== null ? String((c as Record<string, unknown>).key ?? (c as Record<string, unknown>).dataIndex ?? "") : String(c)
+      )
+    }
     columns = rawColumns.map(c =>
       typeof c === "string" ? c
       : typeof c === "object" && c !== null ? String((c as Record<string, unknown>).title ?? (c as Record<string, unknown>).label ?? (c as Record<string, unknown>).key ?? JSON.stringify(c))
@@ -64,7 +65,7 @@ function TableBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
     }
   }
 
-  const rows = normalizeRows(columns, rawRows)
+  const rows = normalizeRows(columns, rawRows, dataKeys)
 
   const handleSort = (colIdx: number) => {
     if (sortCol === colIdx) setSortAsc(!sortAsc)

@@ -14,6 +14,7 @@ import logging
 import re
 import random
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -364,6 +365,48 @@ class ConversationService:
             "created_at": generation.started_at,
             "completed_at": generation.completed_at,
         }
+
+    async def cancel_message_generation(self, generation_id: UUID) -> None:
+        from app.agents.chat import cancel_message_generation_task
+
+        generation = await self._get_owned_generation(generation_id)
+        if generation.status in {"done", "error", "cancelled"}:
+            return
+
+        task = cancel_message_generation_task(str(generation.id))
+        if task is not None:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            await self.db.refresh(generation)
+            if generation.status == "cancelled":
+                return
+
+        assistant_message = await self.db.get(Message, generation.assistant_message_id)
+        has_visible_output = bool(
+            (assistant_message.content if assistant_message else "")
+            or (assistant_message.reasoning if assistant_message else None)
+            or (assistant_message.citations if assistant_message else None)
+            or (assistant_message.agent_steps if assistant_message else None)
+            or (assistant_message.speed if assistant_message else None)
+            or (assistant_message.mind_map if assistant_message else None)
+            or (assistant_message.diagram if assistant_message else None)
+            or (assistant_message.mcp_result if assistant_message else None)
+            or (assistant_message.ui_elements if assistant_message else None)
+        )
+
+        generation.status = "cancelled"
+        generation.completed_at = datetime.now(timezone.utc)
+        generation.error_message = None
+
+        if assistant_message is not None:
+            if has_visible_output:
+                assistant_message.status = "completed"
+            else:
+                await self.db.delete(assistant_message)
+
+        await self.db.commit()
 
     async def subscribe_message_generation(
         self,

@@ -11,6 +11,7 @@ import { GhostText } from "@/lib/tiptap-ghost-text";
 import { MindMapExtension } from "@/lib/tiptap-mind-map";
 import { SlashCommand } from "@/lib/tiptap-slash-command";
 import { CalloutExtension } from "@/lib/tiptap-callout";
+import { GenUIBlockExtension } from "@/lib/tiptap-genui";
 
 export const tiptapExtensions = [
   StarterKit.configure({
@@ -28,5 +29,6 @@ export const tiptapExtensions = [
   GhostText,
   MindMapExtension,
   CalloutExtension,
+  GenUIBlockExtension,
   SlashCommand,
 ];

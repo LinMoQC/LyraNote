@@ -5,6 +5,7 @@ import { CheckCircle2, XCircle } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { cn } from "../message-render/utils"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface QuizQuestion {
   q: string
@@ -33,13 +34,7 @@ function QuizBlockInner({ code, isStreaming }: { code: string; isStreaming?: boo
   const t = useTranslations("genui")
   const [answers, setAnswers] = useState<Record<number, number>>({})
 
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-24 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("quizStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const raw = safeParseJSON<RawQuizData>(code)
   const qArr = raw?.questions ?? raw?.items

@@ -128,3 +128,56 @@ async def test_subscribe_message_generation_replays_persisted_events(monkeypatch
     assert json.loads(lines[0].removeprefix("data: ").strip())["type"] == "token"
     assert json.loads(lines[1].removeprefix("data: ").strip())["type"] == "done"
     assert lines[2] == "data: [DONE]\n\n"
+
+
+@pytest.mark.asyncio
+async def test_cancel_message_generation_deletes_empty_placeholder_when_no_task(monkeypatch) -> None:
+    generation_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+    generation = SimpleNamespace(
+        id=generation_id,
+        status="running",
+        assistant_message_id=assistant_message_id,
+        completed_at=None,
+        error_message="boom",
+    )
+    assistant_message = SimpleNamespace(
+        id=assistant_message_id,
+        content="",
+        reasoning=None,
+        citations=None,
+        agent_steps=None,
+        speed=None,
+        mind_map=None,
+        diagram=None,
+        mcp_result=None,
+        ui_elements=None,
+        status="streaming",
+    )
+
+    async def fake_get(model, item_id):
+        if model is Message and item_id == assistant_message_id:
+            return assistant_message
+        return None
+
+    db = SimpleNamespace(
+        get=AsyncMock(side_effect=fake_get),
+        refresh=AsyncMock(return_value=None),
+        delete=AsyncMock(return_value=None),
+        commit=AsyncMock(return_value=None),
+    )
+    svc = ConversationService(db, uuid.uuid4())
+    monkeypatch.setattr(
+        ConversationService,
+        "_get_owned_generation",
+        AsyncMock(return_value=generation),
+    )
+    monkeypatch.setattr("app.agents.chat.cancel_message_generation_task", Mock(return_value=None))
+
+    await svc.cancel_message_generation(generation_id)
+
+    assert generation.status == "cancelled"
+    assert generation.completed_at is not None
+    assert generation.error_message is None
+    db.delete.assert_awaited_once_with(assistant_message)
+    db.commit.assert_awaited_once()

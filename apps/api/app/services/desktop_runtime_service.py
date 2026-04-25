@@ -784,6 +784,8 @@ class DesktopJobManager:
         *,
         user_id: str,
         source_id: str,
+        trace_id: str,
+        run_id: str,
         kind: str,
         label: str,
         chunk_size: int | None,
@@ -800,6 +802,8 @@ class DesktopJobManager:
             resource_id=source_id,
             payload={
                 "source_id": source_id,
+                "trace_id": trace_id,
+                "run_id": run_id,
                 "chunk_size": chunk_size,
                 "chunk_overlap": chunk_overlap,
                 "splitter_type": splitter_type,
@@ -901,12 +905,19 @@ class DesktopJobManager:
     async def _process_job(self, job: dict[str, Any]) -> None:
         from app.agents.rag.ingestion import ingest
         from app.models import Source
+        from app.services.monitoring_service import (
+            finish_observability_run,
+            get_or_create_source_ingest_run,
+        )
         from app.services.desktop_knowledge_service import DesktopKnowledgeService
         from app.workers.tasks.ingestion import _mark_source_failed
+        from app.services.monitoring_service import bind_trace_and_run, reset_trace_and_run
         from sqlalchemy import select
 
         payload = json.loads(job["payload_json"])
         source_id = str(payload["source_id"])
+        trace_id = payload.get("trace_id")
+        run_id = payload.get("run_id")
         chunk_size = payload.get("chunk_size") or 512
         chunk_overlap = payload.get("chunk_overlap") or 64
         splitter_type = payload.get("splitter_type") or "recursive"
@@ -914,7 +925,26 @@ class DesktopJobManager:
         min_chunk_size = payload.get("min_chunk_size") or 50
 
         async with AsyncSessionLocal() as db:
+            trace_token = None
+            run_token = None
             try:
+                source_result = await db.execute(
+                    select(Source).where(Source.id == UUID(source_id))
+                )
+                source = source_result.scalar_one_or_none()
+                if source is None:
+                    raise ValueError(f"Source {source_id} not found")
+
+                observability_run = await get_or_create_source_ingest_run(
+                    db,
+                    source_id=source.id,
+                    notebook_id=source.notebook_id,
+                    user_id=UUID(str(job["user_id"])),
+                    trace_id=trace_id,
+                    run_id=UUID(run_id) if run_id else None,
+                    metadata={"origin": "desktop_runtime"},
+                )
+                trace_token, run_token = bind_trace_and_run(observability_run.trace_id, observability_run.id)
                 await ingest(
                     source_id,
                     db,
@@ -925,10 +955,29 @@ class DesktopJobManager:
                     min_chunk_size=min_chunk_size,
                 )
                 await db.commit()
+                source_status = source.status
+                if source_status != "indexed":
+                    await finish_observability_run(
+                        db,
+                        observability_run,
+                        status="failed",
+                        metadata={"source_status": source_status},
+                        error_message=source.summary or "source ingest failed",
+                    )
+                    await db.commit()
+                    raise RuntimeError(source.summary or "source ingest failed")
                 await DesktopKnowledgeService(
                     db,
                     UUID(str(job["user_id"])),
                 ).sync_source_chunks(source_id)
+                await finish_observability_run(
+                    db,
+                    observability_run,
+                    status="succeeded",
+                    metadata={"source_status": source_status},
+                    error_message=None,
+                )
+                await db.commit()
             except Exception as error:
                 await db.rollback()
                 async with AsyncSessionLocal() as db2:
@@ -936,10 +985,32 @@ class DesktopJobManager:
                         select(Source).where(Source.id == UUID(source_id))
                     )
                     source = result.scalar_one_or_none()
+                    observability_run = None
+                    if source is not None:
+                        observability_run = await get_or_create_source_ingest_run(
+                            db2,
+                            source_id=source.id,
+                            notebook_id=source.notebook_id,
+                            user_id=UUID(str(job["user_id"])),
+                            trace_id=trace_id,
+                            run_id=UUID(run_id) if run_id else None,
+                            metadata={"origin": "desktop_runtime"},
+                        )
                     if source is not None:
                         _mark_source_failed(source, str(error))
-                        await db2.commit()
+                    if observability_run is not None:
+                        await finish_observability_run(
+                            db2,
+                            observability_run,
+                            status="failed",
+                            metadata={"source_status": "failed"},
+                            error_message=str(error),
+                        )
+                    await db2.commit()
                 raise
+            finally:
+                if trace_token is not None and run_token is not None:
+                    reset_trace_and_run(trace_token, run_token)
 
         completed = self._store.update_job(
             str(job["id"]),

@@ -3,7 +3,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy import JSON as SAJSON
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,6 +25,11 @@ json_type = SAJSON().with_variant(JSONB(astext_type=Text()), "postgresql")
 
 class ObservabilityRun(Base):
     __tablename__ = "observability_runs"
+    __table_args__ = (
+        Index("ix_observability_runs_started_at", "started_at"),
+        Index("ix_observability_runs_run_type_started_at", "run_type", "started_at"),
+        Index("ix_observability_runs_status_started_at", "status", "started_at"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     trace_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
@@ -24,20 +38,24 @@ class ObservabilityRun(Base):
     status: Mapped[str] = mapped_column(String(20), index=True, nullable=False, default="running")
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
         nullable=True,
     )
     conversation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("conversations.id", ondelete="SET NULL"),
+        index=True,
         nullable=True,
     )
     generation_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("message_generations.id", ondelete="SET NULL"),
+        index=True,
         nullable=True,
     )
-    task_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    task_run_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    task_id: Mapped[uuid.UUID | None] = mapped_column(index=True, nullable=True)
+    task_run_id: Mapped[uuid.UUID | None] = mapped_column(index=True, nullable=True)
     notebook_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("notebooks.id", ondelete="SET NULL"),
+        index=True,
         nullable=True,
     )
     duration_ms: Mapped[int | None] = mapped_column(Integer)
@@ -65,6 +83,10 @@ class ObservabilityRun(Base):
 
 class ObservabilitySpan(Base):
     __tablename__ = "observability_spans"
+    __table_args__ = (
+        Index("ix_observability_spans_started_at", "started_at"),
+        Index("ix_observability_spans_trace_id_started_at", "trace_id", "started_at"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     run_id: Mapped[uuid.UUID] = mapped_column(
@@ -72,8 +94,15 @@ class ObservabilitySpan(Base):
         nullable=False,
         index=True,
     )
+    parent_span_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("observability_spans.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     trace_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     span_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    component: Mapped[str | None] = mapped_column(String(20))
+    span_kind: Mapped[str | None] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
     duration_ms: Mapped[int | None] = mapped_column(Integer)
     error_message: Mapped[str | None] = mapped_column(Text)

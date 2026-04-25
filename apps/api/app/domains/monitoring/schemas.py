@@ -57,8 +57,11 @@ class TraceRunOut(BaseModel):
 class TraceSpanOut(BaseModel):
     id: str
     run_id: str
+    parent_span_id: str | None = None
     trace_id: str
     span_name: str
+    component: str | None = None
+    span_kind: str | None = None
     status: str
     duration_ms: int | None = None
     error_message: str | None = None
@@ -138,6 +141,8 @@ class FailureItemOut(BaseModel):
     status: str
     message: str | None = None
     trace_id: str | None = None
+    trace_available: bool = False
+    trace_missing_reason: str | None = None
     title: str | None = None
     conversation_id: str | None = None
     notebook_id: str | None = None
@@ -169,6 +174,8 @@ class WorkloadItemOut(BaseModel):
     kind: str
     id: str
     trace_id: str | None = None
+    trace_available: bool = False
+    trace_missing_reason: str | None = None
     status: str
     started_at: str
     finished_at: str | None = None

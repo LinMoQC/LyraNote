@@ -1,10 +1,9 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo } from "react"
 import { ExternalLink } from "lucide-react"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface PaperCardData {
   title: string
@@ -18,14 +17,7 @@ interface PaperCardData {
 }
 
 function PaperCardBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-32 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("paperCardStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const data = safeParseJSON<PaperCardData>(code)
   if (!data) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>

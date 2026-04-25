@@ -51,7 +51,8 @@ describe("TraceDetailPage", () => {
           trace_id: "trace-1",
           run_type: "chat_generation",
           name: "chat.generation",
-          status: "done",
+          status: "succeeded",
+          user_id: "user-1",
           conversation_id: "conv-1",
           generation_id: "gen-1",
           task_id: null,
@@ -90,9 +91,12 @@ describe("TraceDetailPage", () => {
         {
           id: "span-1",
           run_id: "run-1",
+          parent_span_id: null,
           trace_id: "trace-1",
           span_name: "chat.llm.stream",
-          status: "success",
+          component: "worker",
+          span_kind: "phase",
+          status: "succeeded",
           duration_ms: 1500,
           error_message: null,
           metadata: {},
@@ -108,7 +112,7 @@ describe("TraceDetailPage", () => {
           call_type: "stream_answer",
           provider: "openai",
           model: "gpt-4o-mini",
-          status: "success",
+          status: "succeeded",
           finish_reason: "stop",
           input_tokens: 120,
           output_tokens: 48,
@@ -142,7 +146,7 @@ describe("TraceDetailPage", () => {
           run_id: "run-1",
           trace_id: "trace-1",
           tool_name: "search_notebook_knowledge",
-          status: "success",
+          status: "succeeded",
           cache_hit: false,
           result_count: 3,
           followup_tool_hint: null,
@@ -173,7 +177,7 @@ describe("TraceDetailPage", () => {
         total_tool_calls: 1,
         total_input_tokens: 120,
         total_output_tokens: 48,
-        final_status: "done",
+        final_status: "succeeded",
       },
     });
 
@@ -187,7 +191,8 @@ describe("TraceDetailPage", () => {
     expect(screen.getAllByText("Output").length).toBeGreaterThan(0);
     expect(screen.getByText("Tools")).toBeInTheDocument();
     expect(screen.getByText("chat.llm.stream")).toBeInTheDocument();
-    expect(screen.getByText("Span 1")).toBeInTheDocument();
+    expect(screen.getByText("phase")).toBeInTheDocument();
+    expect(screen.getByText("Worker")).toBeInTheDocument();
     expect(screen.getByText("用户问题")).toBeInTheDocument();
     expect(screen.getByText("最终回答")).toBeInTheDocument();
 

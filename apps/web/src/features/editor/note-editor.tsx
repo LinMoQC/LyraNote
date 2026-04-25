@@ -76,7 +76,7 @@ export function NoteEditor({
   const editor = useEditor({
     editorProps: {
       attributes: {
-        class: "tiptap outline-none text-[var(--editor-font-size,16px)] font-medium leading-[var(--editor-line-height,1.85)] text-foreground min-h-[60vh] [&_p]:mb-[var(--editor-paragraph-spacing,0.8em)]"
+        class: "tiptap outline-none text-[var(--editor-font-size,16px)] font-normal leading-[var(--editor-line-height,1.85)] text-foreground min-h-[60vh] [&_p]:mb-[var(--editor-paragraph-spacing,0.8em)]"
       }
     },
     extensions: tiptapExtensions,

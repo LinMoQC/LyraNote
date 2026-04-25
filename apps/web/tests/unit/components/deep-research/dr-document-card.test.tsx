@@ -56,4 +56,18 @@ describe("DrDocumentCard", () => {
 
     expect(onSaveSources).toHaveBeenCalledTimes(1);
   });
+
+  it("uses a pointer cursor for the save-as-note menu action", () => {
+    render(
+      <DrDocumentCard
+        progress={makeProgress()}
+        onOpen={vi.fn()}
+        onSaveNote={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button"));
+
+    expect(screen.getByText("saveAsNote")).toHaveClass("cursor-pointer");
+  });
 });

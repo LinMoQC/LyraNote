@@ -637,6 +637,9 @@ importers:
       '@lyranote/types':
         specifier: workspace:*
         version: link:../types
+      lowlight:
+        specifier: ^3.3.0
+        version: 3.3.0
     devDependencies:
       '@dnd-kit/core':
         specifier: ^6.3.1

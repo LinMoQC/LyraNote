@@ -4,6 +4,7 @@ import { memo, useMemo } from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "../message-render/utils"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface DiffData {
   label_before?: string
@@ -52,13 +53,7 @@ function computeWordDiff(before: string, after: string): DiffToken[] {
 
 function DiffBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
   const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-20 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("diffStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const data = safeParseJSON<DiffData>(code)
   if (!data || typeof data.before !== "string" || typeof data.after !== "string") return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>

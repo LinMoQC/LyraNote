@@ -80,7 +80,7 @@ export function DeepResearchProgress({
   if (!isDone || !reportTokens) return null
 
   return (
-    <div className="w-full max-w-2xl">
+    <div className="w-full max-w-3xl 2xl:max-w-4xl">
       {subQuestions.length > 0 && (
         <div className="mb-3">
           <button

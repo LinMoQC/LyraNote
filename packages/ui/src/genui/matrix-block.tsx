@@ -4,6 +4,7 @@ import { memo, useMemo } from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "../message-render/utils"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface MatrixOption {
   name: string
@@ -26,13 +27,7 @@ function scoreColor(score: number, max: number = 10): string {
 
 function MatrixBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
   const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-32 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("matrixStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const data = safeParseJSON<MatrixData>(code)
   if (!data || !Array.isArray(data.criteria) || !Array.isArray(data.options)) return <pre className="my-2 overflow-x-auto rounded-xl bg-accent/60 p-3 font-mono text-xs leading-5"><code>{code}</code></pre>

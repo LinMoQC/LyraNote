@@ -17,14 +17,16 @@ from datetime import UTC, datetime, timedelta
 from statistics import quantiles
 from typing import Any
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.config import settings
 from app.database import AsyncSessionLocal
+from app.exceptions import BadRequestError
 from app.models import (
     MessageGeneration,
+    Notebook,
     ObservabilityLLMCall,
     ObservabilityRun,
     ObservabilitySpan,
@@ -50,8 +52,35 @@ _WINDOW_RE = re.compile(r"^(?P<value>\d+)(?P<unit>[mhd])$")
 CHAT_STUCK_MINUTES = 5
 RESEARCH_STUCK_MINUTES = 30
 SCHEDULED_STUCK_MINUTES = 15
+SOURCE_INGEST_STUCK_MINUTES = 15
 SNAPSHOT_HEAD_CHARS = 2000
 SNAPSHOT_TAIL_CHARS = 1000
+OBSERVABILITY_RUN_TYPES = (
+    "chat_generation",
+    "research_task",
+    "scheduled_task_run",
+    "source_ingest",
+)
+DEFAULT_TRACE_RUN_TYPES = OBSERVABILITY_RUN_TYPES
+SUCCESS_STATUSES = {"succeeded"}
+_OBSERVABILITY_STATUS_MAP = {
+    "success": "succeeded",
+    "done": "succeeded",
+    "completed": "succeeded",
+    "succeeded": "succeeded",
+    "error": "failed",
+    "failed": "failed",
+    "running": "running",
+    "cancelled": "cancelled",
+    "stuck": "stuck",
+}
+_WORKLOAD_STATUS_MAP = {
+    **_OBSERVABILITY_STATUS_MAP,
+    "pending": "running",
+    "processing": "running",
+    "queued": "running",
+    "indexed": "succeeded",
+}
 
 
 @asynccontextmanager
@@ -105,8 +134,47 @@ def compute_percentile(values: list[int], percentile: float) -> int | None:
     return round(bucket[index])
 
 
+def normalize_observability_status(status: str | None) -> str:
+    raw = (status or "running").strip().lower()
+    return _OBSERVABILITY_STATUS_MAP.get(raw, raw)
+
+
+def normalize_workload_status(status: str | None) -> str:
+    raw = (status or "running").strip().lower()
+    return _WORKLOAD_STATUS_MAP.get(raw, raw)
+
+
+def build_observability_status_filter(status: str | None) -> tuple[str, ...]:
+    normalized = normalize_observability_status(status)
+    if normalized == "succeeded":
+        return ("succeeded", "success", "done", "completed")
+    if normalized == "failed":
+        return ("failed", "error")
+    return (normalized,)
+
+
 def success_status(status: str) -> bool:
-    return status in {"success", "done", "completed"}
+    return normalize_observability_status(status) in SUCCESS_STATUSES
+
+
+def infer_span_component(run_type: str | None, span_name: str | None = None) -> str:
+    if run_type == "source_ingest":
+        if span_name == "source_ingest.upload":
+            return "api"
+        return "ingest"
+    return "worker"
+
+
+def encode_trace_cursor(started_at: datetime, run_id: uuid.UUID) -> str:
+    return f"{ensure_utc(started_at).isoformat()}|{run_id}"
+
+
+def decode_trace_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        raw_started_at, raw_id = cursor.split("|", 1)
+        return ensure_utc(datetime.fromisoformat(raw_started_at)), uuid.UUID(raw_id)
+    except (TypeError, ValueError) as exc:  # pragma: no cover - guarded by API tests
+        raise BadRequestError("cursor 无效") from exc
 
 
 def build_worker_instance_id(component: str) -> str:
@@ -253,11 +321,14 @@ async def create_observability_run(
     metadata: dict[str, Any] | None = None,
     started_at: datetime | None = None,
 ) -> ObservabilityRun:
+    if run_type not in OBSERVABILITY_RUN_TYPES:
+        raise ValueError(f"Unsupported observability run_type: {run_type}")
+
     run = ObservabilityRun(
         trace_id=trace_id,
         run_type=run_type,
         name=name,
-        status=status,
+        status=normalize_observability_status(status),
         user_id=user_id,
         conversation_id=conversation_id,
         generation_id=generation_id,
@@ -282,7 +353,7 @@ async def update_observability_run(
     finished_at: datetime | None = None,
 ) -> ObservabilityRun:
     if status is not None:
-        run.status = status
+        run.status = normalize_observability_status(status)
     if metadata:
         run.metadata_json = {**(run.metadata_json or {}), **metadata}
     if error_message is not None:
@@ -360,7 +431,7 @@ async def record_completed_llm_call(
         call_type=call_type,
         provider=provider,
         model=model,
-        status=status,
+        status=normalize_observability_status(status),
         finish_reason=finish_reason,
         input_tokens=input_value,
         output_tokens=output_value,
@@ -415,7 +486,7 @@ async def record_completed_tool_call(
         run_id=resolved_run.id,
         trace_id=resolved_run.trace_id,
         tool_name=tool_name,
-        status=status,
+        status=normalize_observability_status(status),
         cache_hit=cache_hit,
         result_count=result_count,
         followup_tool_hint=followup_tool_hint,
@@ -455,6 +526,9 @@ async def traced_span(
     span_name: str,
     *,
     run: ObservabilityRun | None = None,
+    parent_span: ObservabilitySpan | None = None,
+    component: str | None = None,
+    span_kind: str | None = "phase",
     metadata: dict[str, Any] | None = None,
 ) -> AsyncIterator[ObservabilitySpan]:
     resolved_run = run
@@ -463,13 +537,16 @@ async def traced_span(
         if run_id:
             resolved_run = await db.get(ObservabilityRun, uuid.UUID(run_id))
     if resolved_run is None:
-        yield ObservabilitySpan(trace_id=get_trace_id() or "", span_name=span_name)
+        yield ObservabilitySpan(trace_id=get_trace_id() or "", span_name=span_name, component=component, span_kind=span_kind)
         return
 
     span = ObservabilitySpan(
         run_id=resolved_run.id,
+        parent_span_id=parent_span.id if parent_span else None,
         trace_id=resolved_run.trace_id,
         span_name=span_name,
+        component=component or infer_span_component(resolved_run.run_type, span_name),
+        span_kind=span_kind,
         status="running",
         metadata_json=metadata,
         started_at=utcnow(),
@@ -480,14 +557,14 @@ async def traced_span(
     try:
         yield span
     except Exception as exc:
-        span.status = "error"
+        span.status = "failed"
         span.error_message = str(exc)[:2000]
         span.finished_at = utcnow()
         span.duration_ms = int((time.monotonic() - started) * 1000)
         await db.flush()
         raise
     else:
-        span.status = "success"
+        span.status = "succeeded"
         span.finished_at = utcnow()
         span.duration_ms = int((time.monotonic() - started) * 1000)
         await db.flush()
@@ -498,7 +575,10 @@ async def record_instant_span(
     span_name: str,
     *,
     run: ObservabilityRun | None = None,
-    status: str = "success",
+    parent_span: ObservabilitySpan | None = None,
+    component: str | None = None,
+    span_kind: str | None = "phase",
+    status: str = "succeeded",
     metadata: dict[str, Any] | None = None,
     error_message: str | None = None,
 ) -> ObservabilitySpan | None:
@@ -513,9 +593,12 @@ async def record_instant_span(
     now = utcnow()
     span = ObservabilitySpan(
         run_id=resolved_run.id,
+        parent_span_id=parent_span.id if parent_span else None,
         trace_id=resolved_run.trace_id,
         span_name=span_name,
-        status=status,
+        component=component or infer_span_component(resolved_run.run_type, span_name),
+        span_kind=span_kind,
+        status=normalize_observability_status(status),
         error_message=error_message[:2000] if error_message else None,
         metadata_json=metadata,
         started_at=now,
@@ -532,7 +615,10 @@ async def record_completed_span(
     span_name: str,
     *,
     run: ObservabilityRun | None = None,
-    status: str = "success",
+    parent_span: ObservabilitySpan | None = None,
+    component: str | None = None,
+    span_kind: str | None = "phase",
+    status: str = "succeeded",
     metadata: dict[str, Any] | None = None,
     error_message: str | None = None,
     started_at: datetime | None = None,
@@ -555,9 +641,12 @@ async def record_completed_span(
 
     span = ObservabilitySpan(
         run_id=resolved_run.id,
+        parent_span_id=parent_span.id if parent_span else None,
         trace_id=resolved_run.trace_id,
         span_name=span_name,
-        status=status,
+        component=component or infer_span_component(resolved_run.run_type, span_name),
+        span_kind=span_kind,
+        status=normalize_observability_status(status),
         error_message=error_message[:2000] if error_message else None,
         metadata_json=metadata,
         started_at=span_started_at,
@@ -567,6 +656,35 @@ async def record_completed_span(
     db.add(span)
     await db.flush()
     return span
+
+
+async def get_or_create_source_ingest_run(
+    db: AsyncSession,
+    *,
+    source_id: uuid.UUID,
+    notebook_id: uuid.UUID | None,
+    user_id: uuid.UUID | None = None,
+    trace_id: str | None = None,
+    run_id: uuid.UUID | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> ObservabilityRun:
+    if run_id is not None:
+        existing = await db.get(ObservabilityRun, run_id)
+        if existing is not None:
+            return existing
+
+    resolved_trace_id = trace_id or get_trace_id() or uuid.uuid4().hex
+    return await create_observability_run(
+        db,
+        trace_id=resolved_trace_id,
+        run_type="source_ingest",
+        name="source.ingest",
+        status="running",
+        user_id=user_id,
+        task_id=source_id,
+        notebook_id=notebook_id,
+        metadata=metadata or {"source_id": str(source_id)},
+    )
 
 
 async def touch_worker_heartbeat(
@@ -661,6 +779,7 @@ WORKLOAD_THRESHOLDS = {
     "chat_generation": WorkloadThreshold("chat_generation", timedelta(minutes=CHAT_STUCK_MINUTES)),
     "research_task": WorkloadThreshold("research_task", timedelta(minutes=RESEARCH_STUCK_MINUTES)),
     "scheduled_task_run": WorkloadThreshold("scheduled_task_run", timedelta(minutes=SCHEDULED_STUCK_MINUTES)),
+    "source_ingest": WorkloadThreshold("source_ingest", timedelta(minutes=SOURCE_INGEST_STUCK_MINUTES)),
 }
 
 
@@ -671,7 +790,7 @@ class MonitoringService:
     async def overview(self, *, window: str = "24h") -> dict[str, Any]:
         since = utcnow() - parse_window(window)
         business_runs = await self._load_runs(select(ObservabilityRun).where(
-            ObservabilityRun.run_type.in_(("chat_generation", "research_task")),
+            ObservabilityRun.run_type.in_(DEFAULT_TRACE_RUN_TYPES),
             ObservabilityRun.started_at >= since,
         ))
         chat_runs = await self._load_runs(select(ObservabilityRun).where(
@@ -683,7 +802,7 @@ class MonitoringService:
 
         http_durations = [run.duration_ms for run in business_runs if run.duration_ms is not None]
         request_total = len(business_runs)
-        request_5xx = sum(1 for run in business_runs if run.status in {"error", "failed"})
+        request_5xx = sum(1 for run in business_runs if normalize_observability_status(run.status) == "failed")
         chat_total = len(chat_runs)
         chat_success = sum(1 for run in chat_runs if success_status(run.status))
 
@@ -718,16 +837,26 @@ class MonitoringService:
         run_type: str | None = None,
         status: str | None = None,
         cursor: str | None = None,
+        user_id: uuid.UUID | None = None,
+        conversation_id: uuid.UUID | None = None,
+        generation_id: uuid.UUID | None = None,
+        task_id: uuid.UUID | None = None,
+        task_run_id: uuid.UUID | None = None,
+        notebook_id: uuid.UUID | None = None,
         limit: int = 20,
     ) -> dict[str, Any]:
         since = utcnow() - parse_window(window)
-        base_stmt = select(ObservabilityRun).where(ObservabilityRun.started_at >= since)
-        if run_type:
-            base_stmt = base_stmt.where(ObservabilityRun.run_type == run_type)
-        else:
-            base_stmt = base_stmt.where(ObservabilityRun.run_type.in_(("chat_generation", "research_task")))
-        if status:
-            base_stmt = base_stmt.where(ObservabilityRun.status == status)
+        base_stmt = self._apply_run_filters(
+            select(ObservabilityRun).where(ObservabilityRun.started_at >= since),
+            run_type=run_type,
+            status=status,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            generation_id=generation_id,
+            task_id=task_id,
+            task_run_id=task_run_id,
+            notebook_id=notebook_id,
+        )
 
         total = int((await self.db.execute(
             select(func.count()).select_from(base_stmt.subquery())
@@ -735,15 +864,22 @@ class MonitoringService:
 
         stmt = base_stmt
         if cursor:
-            stmt = stmt.where(ObservabilityRun.trace_id < cursor)
-        stmt = stmt.order_by(ObservabilityRun.started_at.desc()).limit(limit + 1)
+            cursor_started_at, cursor_run_id = decode_trace_cursor(cursor)
+            stmt = stmt.where(or_(
+                ObservabilityRun.started_at < cursor_started_at,
+                and_(
+                    ObservabilityRun.started_at == cursor_started_at,
+                    ObservabilityRun.id < cursor_run_id,
+                ),
+            ))
+        stmt = stmt.order_by(ObservabilityRun.started_at.desc(), ObservabilityRun.id.desc()).limit(limit + 1)
         runs = await self._load_runs(stmt)
         has_more = len(runs) > limit
         items = runs[:limit]
         return {
             "items": [self._serialize_run(run) for run in items],
             "total": total,
-            "next_cursor": items[-1].trace_id if has_more and items else None,
+            "next_cursor": encode_trace_cursor(items[-1].started_at, items[-1].id) if has_more and items else None,
         }
 
     async def get_trace_detail(self, trace_id: str) -> dict[str, Any]:
@@ -755,7 +891,7 @@ class MonitoringService:
         spans = list((await self.db.execute(
             select(ObservabilitySpan)
             .where(ObservabilitySpan.trace_id == trace_id)
-            .order_by(ObservabilitySpan.started_at.asc())
+            .order_by(ObservabilitySpan.started_at.asc(), ObservabilitySpan.id.asc())
         )).scalars().all())
         llm_calls = list((await self.db.execute(
             select(ObservabilityLLMCall)
@@ -768,8 +904,14 @@ class MonitoringService:
             .order_by(ObservabilityToolCall.started_at.asc())
         )).scalars().all())
 
-        total_duration_ms = sum(run.duration_ms or 0 for run in runs)
-        final_status = runs[-1].status if runs else "unknown"
+        if runs:
+            started_at = min(ensure_utc(run.started_at) for run in runs)
+            finished_at = max(ensure_utc(run.finished_at or run.started_at) for run in runs)
+            total_duration_ms = max(0, int((finished_at - started_at).total_seconds() * 1000))
+            final_status = normalize_observability_status(runs[-1].status)
+        else:
+            total_duration_ms = 0
+            final_status = "unknown"
         return {
             "trace_id": trace_id,
             "runs": [self._serialize_run(run) for run in runs],
@@ -786,76 +928,143 @@ class MonitoringService:
             },
         }
 
-    async def list_failures(self, *, window: str = "24h", kind: str | None = None) -> dict[str, Any]:
+    async def list_failures(
+        self,
+        *,
+        window: str = "24h",
+        kind: str | None = None,
+        user_id: uuid.UUID | None = None,
+        conversation_id: uuid.UUID | None = None,
+        generation_id: uuid.UUID | None = None,
+        task_id: uuid.UUID | None = None,
+        task_run_id: uuid.UUID | None = None,
+        notebook_id: uuid.UUID | None = None,
+    ) -> dict[str, Any]:
         since = utcnow() - parse_window(window)
         items: list[dict[str, Any]] = []
 
         if kind in (None, "chat_generation"):
-            generations = list((await self.db.execute(
-                select(MessageGeneration).where(
+            stmt = select(MessageGeneration).where(
                     MessageGeneration.started_at >= since,
-                    MessageGeneration.status == "error",
+                    MessageGeneration.status.in_(("error", "failed")),
                 )
-            )).scalars().all())
+            if user_id is not None:
+                stmt = stmt.where(MessageGeneration.user_id == user_id)
+            if conversation_id is not None:
+                stmt = stmt.where(MessageGeneration.conversation_id == conversation_id)
+            if generation_id is not None:
+                stmt = stmt.where(MessageGeneration.id == generation_id)
+            generations = list((await self.db.execute(stmt)).scalars().all())
+            trace_map = await self._load_trace_map(
+                run_type="chat_generation",
+                field_name="generation_id",
+                ids=[generation.id for generation in generations],
+            )
             for generation in generations:
+                trace_id = trace_map.get(generation.id)
                 items.append({
                     "kind": "chat_generation",
                     "id": str(generation.id),
-                    "status": generation.status,
+                    "status": normalize_workload_status(generation.status),
                     "message": generation.error_message,
-                    "trace_id": await self._lookup_trace_id(generation_id=generation.id),
+                    "trace_id": trace_id,
+                    "trace_available": trace_id is not None,
+                    "trace_missing_reason": None if trace_id else "trace_not_found",
                     "conversation_id": str(generation.conversation_id),
                     "created_at": generation.started_at,
                 })
 
         if kind in (None, "research_task"):
-            tasks = list((await self.db.execute(
-                select(ResearchTask).where(
+            stmt = select(ResearchTask).where(
                     ResearchTask.created_at >= since,
-                    ResearchTask.status == "error",
+                    ResearchTask.status.in_(("error", "failed")),
                 )
-            )).scalars().all())
+            if user_id is not None:
+                stmt = stmt.where(ResearchTask.user_id == user_id)
+            if conversation_id is not None:
+                stmt = stmt.where(ResearchTask.conversation_id == conversation_id)
+            if task_id is not None:
+                stmt = stmt.where(ResearchTask.id == task_id)
+            if notebook_id is not None:
+                stmt = stmt.where(ResearchTask.notebook_id == str(notebook_id))
+            tasks = list((await self.db.execute(stmt)).scalars().all())
+            trace_map = await self._load_trace_map(
+                run_type="research_task",
+                field_name="task_id",
+                ids=[task.id for task in tasks],
+            )
             for task in tasks:
+                trace_id = trace_map.get(task.id)
                 items.append({
                     "kind": "research_task",
                     "id": str(task.id),
-                    "status": task.status,
+                    "status": normalize_workload_status(task.status),
                     "message": task.error_message,
-                    "trace_id": await self._lookup_trace_id(task_id=task.id),
+                    "trace_id": trace_id,
+                    "trace_available": trace_id is not None,
+                    "trace_missing_reason": None if trace_id else "trace_not_found",
                     "conversation_id": str(task.conversation_id) if task.conversation_id else None,
                     "created_at": task.created_at,
                 })
 
         if kind in (None, "scheduled_task_run"):
-            runs = list((await self.db.execute(
+            stmt = (
                 select(ScheduledTaskRun, ScheduledTask.name)
                 .join(ScheduledTask, ScheduledTaskRun.task_id == ScheduledTask.id)
-                .where(ScheduledTaskRun.started_at >= since, ScheduledTaskRun.status == "failed")
-            )).all())
+                .where(ScheduledTaskRun.started_at >= since, ScheduledTaskRun.status.in_(("failed", "error")))
+            )
+            if user_id is not None:
+                stmt = stmt.where(ScheduledTask.user_id == user_id)
+            if task_id is not None:
+                stmt = stmt.where(ScheduledTaskRun.task_id == task_id)
+            if task_run_id is not None:
+                stmt = stmt.where(ScheduledTaskRun.id == task_run_id)
+            runs = list((await self.db.execute(stmt)).all())
+            trace_map = await self._load_trace_map(
+                run_type="scheduled_task_run",
+                field_name="task_run_id",
+                ids=[run.id for run, _ in runs],
+            )
             for run, task_name in runs:
+                trace_id = trace_map.get(run.id)
                 items.append({
                     "kind": "scheduled_task_run",
                     "id": str(run.id),
-                    "status": run.status,
+                    "status": normalize_workload_status(run.status),
                     "message": run.error_message,
                     "title": task_name,
-                    "trace_id": await self._lookup_trace_id(task_id=run.task_id, task_run_id=run.id),
+                    "trace_id": trace_id,
+                    "trace_available": trace_id is not None,
+                    "trace_missing_reason": None if trace_id else "trace_not_found",
                     "created_at": run.started_at,
                 })
 
         if kind in (None, "source_ingest"):
-            sources = list((await self.db.execute(
-                select(Source).where(Source.updated_at >= since, Source.status == "failed")
-            )).scalars().all())
+            stmt = select(Source).where(Source.updated_at >= since, Source.status == "failed")
+            if user_id is not None:
+                stmt = stmt.join(Notebook, Source.notebook_id == Notebook.id).where(Notebook.user_id == user_id)
+            if notebook_id is not None:
+                stmt = stmt.where(Source.notebook_id == notebook_id)
+            if task_id is not None:
+                stmt = stmt.where(Source.id == task_id)
+            sources = list((await self.db.execute(stmt)).scalars().all())
+            trace_map = await self._load_trace_map(
+                run_type="source_ingest",
+                field_name="task_id",
+                ids=[source.id for source in sources],
+            )
             for source in sources:
+                trace_id = trace_map.get(source.id)
                 items.append({
                     "kind": "source_ingest",
                     "id": str(source.id),
-                    "status": source.status,
+                    "status": normalize_workload_status(source.status),
                     "message": source.summary or source.title or "source ingest failed",
                     "created_at": source.updated_at,
                     "notebook_id": str(source.notebook_id),
-                    "trace_id": None,
+                    "trace_id": trace_id,
+                    "trace_available": trace_id is not None,
+                    "trace_missing_reason": None if trace_id else "legacy_source_ingest_without_trace",
                 })
 
         items.sort(key=lambda item: item["created_at"], reverse=True)
@@ -884,6 +1093,12 @@ class MonitoringService:
         *,
         kind: str | None = None,
         status: str | None = None,
+        user_id: uuid.UUID | None = None,
+        conversation_id: uuid.UUID | None = None,
+        generation_id: uuid.UUID | None = None,
+        task_id: uuid.UUID | None = None,
+        task_run_id: uuid.UUID | None = None,
+        notebook_id: uuid.UUID | None = None,
         offset: int = 0,
         limit: int = 20,
     ) -> dict[str, Any]:
@@ -891,17 +1106,42 @@ class MonitoringService:
         items: list[dict[str, Any]] = []
 
         if kind in (None, "chat_generation"):
-            chat_items = await self._build_chat_generation_items(status=status)
+            chat_items = await self._build_chat_generation_items(
+                status=status,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                generation_id=generation_id,
+            )
             summary.append(self._summarize_workload("chat_generation", chat_items))
             items.extend(chat_items)
         if kind in (None, "research_task"):
-            research_items = await self._build_research_items(status=status)
+            research_items = await self._build_research_items(
+                status=status,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                task_id=task_id,
+                notebook_id=notebook_id,
+            )
             summary.append(self._summarize_workload("research_task", research_items))
             items.extend(research_items)
         if kind in (None, "scheduled_task_run"):
-            scheduled_items = await self._build_scheduled_items(status=status)
+            scheduled_items = await self._build_scheduled_items(
+                status=status,
+                user_id=user_id,
+                task_id=task_id,
+                task_run_id=task_run_id,
+            )
             summary.append(self._summarize_workload("scheduled_task_run", scheduled_items))
             items.extend(scheduled_items)
+        if kind in (None, "source_ingest"):
+            ingest_items = await self._build_source_ingest_items(
+                status=status,
+                user_id=user_id,
+                task_id=task_id,
+                notebook_id=notebook_id,
+            )
+            summary.append(self._summarize_workload("source_ingest", ingest_items))
+            items.extend(ingest_items)
 
         items.sort(key=lambda item: item["started_at"], reverse=True)
         total = len(items)
@@ -912,20 +1152,44 @@ class MonitoringService:
                 item["finished_at"] = item["finished_at"].isoformat()
         return {"summary": summary, "items": page_items, "total": total}
 
-    async def _build_chat_generation_items(self, *, status: str | None) -> list[dict[str, Any]]:
-        result = await self.db.execute(select(MessageGeneration).order_by(MessageGeneration.started_at.desc()).limit(100))
+    async def _build_chat_generation_items(
+        self,
+        *,
+        status: str | None,
+        user_id: uuid.UUID | None,
+        conversation_id: uuid.UUID | None,
+        generation_id: uuid.UUID | None,
+    ) -> list[dict[str, Any]]:
+        stmt = select(MessageGeneration).order_by(MessageGeneration.started_at.desc()).limit(100)
+        if user_id is not None:
+            stmt = stmt.where(MessageGeneration.user_id == user_id)
+        if conversation_id is not None:
+            stmt = stmt.where(MessageGeneration.conversation_id == conversation_id)
+        if generation_id is not None:
+            stmt = stmt.where(MessageGeneration.id == generation_id)
+        result = await self.db.execute(stmt)
         rows = list(result.scalars().all())
+        trace_map = await self._load_trace_map(
+            run_type="chat_generation",
+            field_name="generation_id",
+            ids=[row.id for row in rows],
+        )
         items: list[dict[str, Any]] = []
         threshold = WORKLOAD_THRESHOLDS["chat_generation"].max_age
+        requested_status = normalize_workload_status(status) if status else None
         for row in rows:
-            stuck = row.status == "running" and utcnow() - ensure_utc(row.started_at) > threshold
-            normalized_status = "stuck" if stuck else row.status
-            if status and normalized_status != status:
+            base_status = normalize_workload_status(row.status)
+            stuck = base_status == "running" and utcnow() - ensure_utc(row.started_at) > threshold
+            normalized_status = "stuck" if stuck else base_status
+            if requested_status and normalized_status != requested_status:
                 continue
+            trace_id = trace_map.get(row.id)
             items.append({
                 "kind": "chat_generation",
                 "id": str(row.id),
-                "trace_id": await self._lookup_trace_id(generation_id=row.id),
+                "trace_id": trace_id,
+                "trace_available": trace_id is not None,
+                "trace_missing_reason": None if trace_id else "trace_not_found",
                 "status": normalized_status,
                 "started_at": row.started_at,
                 "finished_at": row.completed_at,
@@ -937,20 +1201,47 @@ class MonitoringService:
             })
         return items
 
-    async def _build_research_items(self, *, status: str | None) -> list[dict[str, Any]]:
-        result = await self.db.execute(select(ResearchTask).order_by(ResearchTask.created_at.desc()).limit(100))
+    async def _build_research_items(
+        self,
+        *,
+        status: str | None,
+        user_id: uuid.UUID | None,
+        conversation_id: uuid.UUID | None,
+        task_id: uuid.UUID | None,
+        notebook_id: uuid.UUID | None,
+    ) -> list[dict[str, Any]]:
+        stmt = select(ResearchTask).order_by(ResearchTask.created_at.desc()).limit(100)
+        if user_id is not None:
+            stmt = stmt.where(ResearchTask.user_id == user_id)
+        if conversation_id is not None:
+            stmt = stmt.where(ResearchTask.conversation_id == conversation_id)
+        if task_id is not None:
+            stmt = stmt.where(ResearchTask.id == task_id)
+        if notebook_id is not None:
+            stmt = stmt.where(ResearchTask.notebook_id == str(notebook_id))
+        result = await self.db.execute(stmt)
         rows = list(result.scalars().all())
+        trace_map = await self._load_trace_map(
+            run_type="research_task",
+            field_name="task_id",
+            ids=[row.id for row in rows],
+        )
         items: list[dict[str, Any]] = []
         threshold = WORKLOAD_THRESHOLDS["research_task"].max_age
+        requested_status = normalize_workload_status(status) if status else None
         for row in rows:
-            stuck = row.status == "running" and utcnow() - ensure_utc(row.created_at) > threshold
-            normalized_status = "stuck" if stuck else row.status
-            if status and normalized_status != status:
+            base_status = normalize_workload_status(row.status)
+            stuck = base_status == "running" and utcnow() - ensure_utc(row.created_at) > threshold
+            normalized_status = "stuck" if stuck else base_status
+            if requested_status and normalized_status != requested_status:
                 continue
+            trace_id = trace_map.get(row.id)
             items.append({
                 "kind": "research_task",
                 "id": str(row.id),
-                "trace_id": await self._lookup_trace_id(task_id=row.id),
+                "trace_id": trace_id,
+                "trace_available": trace_id is not None,
+                "trace_missing_reason": None if trace_id else "trace_not_found",
                 "status": normalized_status,
                 "started_at": row.created_at,
                 "finished_at": row.completed_at,
@@ -962,26 +1253,50 @@ class MonitoringService:
             })
         return items
 
-    async def _build_scheduled_items(self, *, status: str | None) -> list[dict[str, Any]]:
-        result = await self.db.execute(
+    async def _build_scheduled_items(
+        self,
+        *,
+        status: str | None,
+        user_id: uuid.UUID | None,
+        task_id: uuid.UUID | None,
+        task_run_id: uuid.UUID | None,
+    ) -> list[dict[str, Any]]:
+        stmt = (
             select(ScheduledTaskRun, ScheduledTask.name)
             .join(ScheduledTask, ScheduledTaskRun.task_id == ScheduledTask.id)
             .order_by(ScheduledTaskRun.started_at.desc())
             .limit(100)
         )
+        if user_id is not None:
+            stmt = stmt.where(ScheduledTask.user_id == user_id)
+        if task_id is not None:
+            stmt = stmt.where(ScheduledTaskRun.task_id == task_id)
+        if task_run_id is not None:
+            stmt = stmt.where(ScheduledTaskRun.id == task_run_id)
+        result = await self.db.execute(stmt)
         rows = list(result.all())
+        trace_map = await self._load_trace_map(
+            run_type="scheduled_task_run",
+            field_name="task_run_id",
+            ids=[row.id for row, _ in rows],
+        )
         items: list[dict[str, Any]] = []
         threshold = WORKLOAD_THRESHOLDS["scheduled_task_run"].max_age
+        requested_status = normalize_workload_status(status) if status else None
         for row, task_name in rows:
-            stuck = row.status == "running" and utcnow() - ensure_utc(row.started_at) > threshold
-            normalized_status = "stuck" if stuck else row.status
-            if status and normalized_status != status:
+            base_status = normalize_workload_status(row.status)
+            stuck = base_status == "running" and utcnow() - ensure_utc(row.started_at) > threshold
+            normalized_status = "stuck" if stuck else base_status
+            if requested_status and normalized_status != requested_status:
                 continue
+            trace_id = trace_map.get(row.id)
             items.append({
                 "kind": "scheduled_task_run",
                 "id": str(row.id),
                 "title": task_name,
-                "trace_id": await self._lookup_trace_id(task_id=row.task_id, task_run_id=row.id),
+                "trace_id": trace_id,
+                "trace_available": trace_id is not None,
+                "trace_missing_reason": None if trace_id else "trace_not_found",
                 "status": normalized_status,
                 "started_at": row.started_at,
                 "finished_at": row.finished_at,
@@ -993,24 +1308,113 @@ class MonitoringService:
             })
         return items
 
-    async def _lookup_trace_id(
+    async def _build_source_ingest_items(
         self,
         *,
-        generation_id: uuid.UUID | None = None,
-        task_id: uuid.UUID | None = None,
-        task_run_id: uuid.UUID | None = None,
-    ) -> str | None:
-        stmt: Select[tuple[ObservabilityRun]] = select(ObservabilityRun)
+        status: str | None,
+        user_id: uuid.UUID | None,
+        task_id: uuid.UUID | None,
+        notebook_id: uuid.UUID | None,
+    ) -> list[dict[str, Any]]:
+        stmt = select(Source).order_by(Source.updated_at.desc()).limit(100)
+        if user_id is not None:
+            stmt = stmt.join(Notebook, Source.notebook_id == Notebook.id).where(Notebook.user_id == user_id)
+        if notebook_id is not None:
+            stmt = stmt.where(Source.notebook_id == notebook_id)
+        if task_id is not None:
+            stmt = stmt.where(Source.id == task_id)
+        result = await self.db.execute(stmt)
+        rows = list(result.scalars().all())
+        trace_map = await self._load_trace_map(
+            run_type="source_ingest",
+            field_name="task_id",
+            ids=[row.id for row in rows],
+        )
+        items: list[dict[str, Any]] = []
+        threshold = WORKLOAD_THRESHOLDS["source_ingest"].max_age
+        requested_status = normalize_workload_status(status) if status else None
+        for row in rows:
+            base_status = normalize_workload_status(row.status)
+            stuck = base_status == "running" and utcnow() - ensure_utc(row.updated_at) > threshold
+            normalized_status = "stuck" if stuck else base_status
+            if requested_status and normalized_status != requested_status:
+                continue
+            trace_id = trace_map.get(row.id)
+            items.append({
+                "kind": "source_ingest",
+                "id": str(row.id),
+                "trace_id": trace_id,
+                "trace_available": trace_id is not None,
+                "trace_missing_reason": None if trace_id else "legacy_source_ingest_without_trace",
+                "status": normalized_status,
+                "started_at": row.created_at,
+                "finished_at": row.updated_at if normalized_status in {"succeeded", "failed"} else None,
+                "conversation_id": None,
+                "task_id": str(row.id),
+                "task_run_id": None,
+                "message": row.summary or row.title,
+                "stuck": stuck,
+            })
+        return items
+
+    def _apply_run_filters(
+        self,
+        stmt: Select[tuple[ObservabilityRun]],
+        *,
+        run_type: str | None,
+        status: str | None,
+        user_id: uuid.UUID | None,
+        conversation_id: uuid.UUID | None,
+        generation_id: uuid.UUID | None,
+        task_id: uuid.UUID | None,
+        task_run_id: uuid.UUID | None,
+        notebook_id: uuid.UUID | None,
+    ) -> Select[tuple[ObservabilityRun]]:
+        if run_type:
+            stmt = stmt.where(ObservabilityRun.run_type == run_type)
+        else:
+            stmt = stmt.where(ObservabilityRun.run_type.in_(DEFAULT_TRACE_RUN_TYPES))
+        if status:
+            stmt = stmt.where(ObservabilityRun.status.in_(build_observability_status_filter(status)))
+        if user_id is not None:
+            stmt = stmt.where(ObservabilityRun.user_id == user_id)
+        if conversation_id is not None:
+            stmt = stmt.where(ObservabilityRun.conversation_id == conversation_id)
         if generation_id is not None:
             stmt = stmt.where(ObservabilityRun.generation_id == generation_id)
         if task_id is not None:
             stmt = stmt.where(ObservabilityRun.task_id == task_id)
         if task_run_id is not None:
             stmt = stmt.where(ObservabilityRun.task_run_id == task_run_id)
-        stmt = stmt.order_by(ObservabilityRun.started_at.desc()).limit(1)
-        result = await self.db.execute(stmt)
-        run = result.scalar_one_or_none()
-        return run.trace_id if run else None
+        if notebook_id is not None:
+            stmt = stmt.where(ObservabilityRun.notebook_id == notebook_id)
+        return stmt
+
+    async def _load_trace_map(
+        self,
+        *,
+        run_type: str,
+        field_name: str,
+        ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, str]:
+        if not ids:
+            return {}
+
+        column = getattr(ObservabilityRun, field_name)
+        result = await self.db.execute(
+            select(column, ObservabilityRun.trace_id, ObservabilityRun.started_at, ObservabilityRun.id)
+            .where(
+                ObservabilityRun.run_type == run_type,
+                column.in_(ids),
+            )
+            .order_by(column.asc(), ObservabilityRun.started_at.desc(), ObservabilityRun.id.desc())
+        )
+        mapping: dict[uuid.UUID, str] = {}
+        for row_id, trace_id, _, _ in result.all():
+            if row_id is None or row_id in mapping:
+                continue
+            mapping[row_id] = trace_id
+        return mapping
 
     async def _load_runs(self, stmt: Select[tuple[ObservabilityRun]]) -> list[ObservabilityRun]:
         result = await self.db.execute(stmt)
@@ -1022,7 +1426,7 @@ class MonitoringService:
             "trace_id": run.trace_id,
             "run_type": run.run_type,
             "name": run.name,
-            "status": run.status,
+            "status": normalize_observability_status(run.status),
             "user_id": str(run.user_id) if run.user_id else None,
             "conversation_id": str(run.conversation_id) if run.conversation_id else None,
             "generation_id": str(run.generation_id) if run.generation_id else None,
@@ -1040,9 +1444,12 @@ class MonitoringService:
         return {
             "id": str(span.id),
             "run_id": str(span.run_id),
+            "parent_span_id": str(span.parent_span_id) if span.parent_span_id else None,
             "trace_id": span.trace_id,
             "span_name": span.span_name,
-            "status": span.status,
+            "component": span.component or "worker",
+            "span_kind": span.span_kind or "phase",
+            "status": normalize_observability_status(span.status),
             "duration_ms": span.duration_ms,
             "error_message": span.error_message,
             "metadata": span.metadata_json or {},
@@ -1058,7 +1465,7 @@ class MonitoringService:
             "call_type": call.call_type,
             "provider": call.provider,
             "model": call.model,
-            "status": call.status,
+            "status": normalize_observability_status(call.status),
             "finish_reason": call.finish_reason,
             "input_tokens": call.input_tokens,
             "output_tokens": call.output_tokens,
@@ -1080,7 +1487,7 @@ class MonitoringService:
             "run_id": str(call.run_id),
             "trace_id": call.trace_id,
             "tool_name": call.tool_name,
-            "status": call.status,
+            "status": normalize_observability_status(call.status),
             "cache_hit": call.cache_hit,
             "result_count": call.result_count,
             "followup_tool_hint": call.followup_tool_hint,
@@ -1098,7 +1505,7 @@ class MonitoringService:
             "kind": kind,
             "running_count": sum(1 for item in items if item["status"] == "running"),
             "stuck_count": sum(1 for item in items if item["status"] == "stuck"),
-            "failed_count": sum(1 for item in items if item["status"] in {"error", "failed"}),
+            "failed_count": sum(1 for item in items if item["status"] == "failed"),
         }
 
 

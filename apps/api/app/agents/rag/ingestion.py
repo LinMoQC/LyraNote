@@ -22,6 +22,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Chunk, Source
+from app.services.monitoring_service import traced_span
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,14 @@ async def ingest(
     await db.flush()
 
     try:
-        text, chunk_metadata = await _extract_text_with_metadata(source)
+        async with traced_span(
+            db,
+            "source_ingest.parse",
+            component="ingest",
+            span_kind="phase",
+            metadata={"source_type": source.type, "storage_backend": source.storage_backend},
+        ):
+            text, chunk_metadata = await _extract_text_with_metadata(source)
 
         if not text or len(text.strip()) < 50:
             source.status = "failed"
@@ -62,14 +70,26 @@ async def ingest(
 
         source.raw_text = text
 
-        chunks_with_meta = _chunk_text_with_metadata(
-            text, chunk_metadata,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            splitter_type=splitter_type,
-            separators=separators,
-            min_chunk_size=min_chunk_size,
-        )
+        async with traced_span(
+            db,
+            "source_ingest.chunk",
+            component="ingest",
+            span_kind="phase",
+            metadata={
+                "chunk_size": chunk_size,
+                "chunk_overlap": chunk_overlap,
+                "splitter_type": splitter_type,
+                "min_chunk_size": min_chunk_size,
+            },
+        ):
+            chunks_with_meta = _chunk_text_with_metadata(
+                text, chunk_metadata,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                splitter_type=splitter_type,
+                separators=separators,
+                min_chunk_size=min_chunk_size,
+            )
         chunk_texts = [c["text"] for c in chunks_with_meta]
         chunk_metas = [c["metadata"] for c in chunks_with_meta]
 
@@ -77,33 +97,46 @@ async def ingest(
 
         batch_size = 100
         all_embeddings: list[list[float]] = []
-        for i in range(0, len(chunk_texts), batch_size):
-            batch = chunk_texts[i : i + batch_size]
-            vecs = await embed_texts(batch)
-            all_embeddings.extend(vecs)
-
-        # Delete existing chunks before re-indexing
-        existing = await db.execute(select(Chunk).where(Chunk.source_id == source.id))
-        for c in existing.scalars().all():
-            await db.delete(c)
-
-        for idx, (text_chunk, vec, meta) in enumerate(
-            zip(chunk_texts, all_embeddings, chunk_metas)
+        async with traced_span(
+            db,
+            "source_ingest.embed",
+            component="ingest",
+            span_kind="phase",
+            metadata={"chunk_count": len(chunk_texts), "batch_size": batch_size},
         ):
-            chunk = Chunk(
-                source_id=source.id,
-                notebook_id=source.notebook_id,
-                content=text_chunk,
-                chunk_index=idx,
-                embedding=vec,
-                token_count=len(text_chunk.split()),
-                metadata_=meta if meta else None,
-            )
-            db.add(chunk)
+            for i in range(0, len(chunk_texts), batch_size):
+                batch = chunk_texts[i : i + batch_size]
+                vecs = await embed_texts(batch)
+                all_embeddings.extend(vecs)
 
-        source.summary = _build_fallback_summary(text)
-        source.status = "indexed"
-        await db.flush()
+        async with traced_span(
+            db,
+            "source_ingest.index",
+            component="ingest",
+            span_kind="phase",
+            metadata={"chunk_count": len(chunk_texts)},
+        ):
+            existing = await db.execute(select(Chunk).where(Chunk.source_id == source.id))
+            for c in existing.scalars().all():
+                await db.delete(c)
+
+            for idx, (text_chunk, vec, meta) in enumerate(
+                zip(chunk_texts, all_embeddings, chunk_metas)
+            ):
+                chunk = Chunk(
+                    source_id=source.id,
+                    notebook_id=source.notebook_id,
+                    content=text_chunk,
+                    chunk_index=idx,
+                    embedding=vec,
+                    token_count=len(text_chunk.split()),
+                    metadata_=meta if meta else None,
+                )
+                db.add(chunk)
+
+            source.summary = _build_fallback_summary(text)
+            source.status = "indexed"
+            await db.flush()
 
     except Exception as exc:
         source.status = "failed"

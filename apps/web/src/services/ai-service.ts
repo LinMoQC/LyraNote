@@ -234,6 +234,20 @@ export async function getMessageGenerationStatus(
   return MessageGenerationStatusSchema.parse(raw);
 }
 
+export async function cancelMessageGeneration(generationId: string): Promise<void> {
+  const response = await fetch(http.url(CONVERSATIONS.cancelGeneration(generationId)), {
+    method: "DELETE",
+    credentials: "include",
+    headers: {
+      ...authHeaderFromCookie(),
+    },
+    keepalive: true,
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Cancel request failed: ${response.status}`);
+  }
+}
+
 export async function subscribeMessageGeneration(
   generationId: string,
   onToken: (token: string) => void,

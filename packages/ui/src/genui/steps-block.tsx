@@ -1,11 +1,10 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo } from "react"
 import { cn } from "../message-render/utils"
 import { Check } from "lucide-react"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface StepItem {
   title: string
@@ -26,14 +25,7 @@ function normalizeStep(raw: Record<string, unknown>): StepItem {
 }
 
 function StepsBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-20 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("stepsStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const raw = safeParseJSON<RawStepsData>(code)
   const stepArr = raw?.steps ?? raw?.items

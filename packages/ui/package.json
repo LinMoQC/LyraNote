@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lyranote/types": "workspace:*"
+    "@lyranote/types": "workspace:*",
+    "lowlight": "^3.3.0"
   },
   "peerDependencies": {
     "@excalidraw/excalidraw": ">=0.18.0",

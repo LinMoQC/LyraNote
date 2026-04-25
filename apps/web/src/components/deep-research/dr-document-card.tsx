@@ -61,7 +61,7 @@ export function DrDocumentCard({
               e.stopPropagation();
               setMenuOpen((v) => !v);
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-muted/50 hover:text-muted-foreground/70 group-hover:opacity-100"
+            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground/40 opacity-0 transition-all hover:bg-muted/50 hover:text-muted-foreground/70 group-hover:opacity-100"
           >
             <MoreHorizontal size={14} />
           </button>
@@ -77,7 +77,7 @@ export function DrDocumentCard({
                       setMenuOpen(false);
                       onSaveNote(progress.reportTokens, progress.deliverable?.title);
                     }}
-                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground/80 transition-colors hover:bg-muted/50"
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-xs text-foreground/80 transition-colors hover:bg-muted/50"
                   >
                     <Save size={12} />
                     {t("saveAsNote")}

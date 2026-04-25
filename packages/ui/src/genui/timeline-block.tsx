@@ -1,10 +1,9 @@
 "use client"
 
-import { useTranslations } from "next-intl"
-
 import { memo, useMemo } from "react"
 import { cn } from "../message-render/utils"
 import { safeParseJSON } from "./utils"
+import { GenUIStreamingPlaceholder } from "./genui-streaming-placeholder"
 
 interface TimelineEvent {
   year: string
@@ -29,14 +28,7 @@ function normalizeEvent(raw: Record<string, unknown>): TimelineEvent {
 }
 
 function TimelineBlockInner({ code, isStreaming }: { code: string; isStreaming?: boolean }) {
-  const t = useTranslations("genui")
-  if (isStreaming) {
-    return (
-      <div className="my-3 flex h-24 items-center justify-center rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground/60">
-        {t("timelineStreaming")}
-      </div>
-    )
-  }
+  if (isStreaming) return <GenUIStreamingPlaceholder />
 
   const raw = safeParseJSON<RawTimelineData>(code)
   const eventArr = raw?.events ?? raw?.items

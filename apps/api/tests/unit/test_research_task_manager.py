@@ -104,7 +104,7 @@ async def test_run_research_task_marks_task_and_run_error_when_graph_raises(engi
             .order_by(ObservabilityRun.started_at.desc())
         )
         assert persisted_run is not None
-        assert persisted_run.status == "error"
+        assert persisted_run.status == "failed"
         assert persisted_run.error_message is not None
         assert "graph exploded" in persisted_run.error_message
 
