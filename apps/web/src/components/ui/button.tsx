@@ -1,9 +1,9 @@
-import type { AnchorHTMLAttributes, ButtonHTMLAttributes } from "react";
+import type { ButtonHTMLAttributes, ComponentPropsWithoutRef } from "react";
 
 import { cva, type VariantProps } from "class-variance-authority";
+import Link from "next/link";
 
 import { cn } from "@/lib/utils";
-import Link from "next/link";
 
 const buttonVariants = cva(
   "inline-flex items-center justify-center gap-2 rounded-full text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
@@ -35,10 +35,11 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> &
     href?: never;
   };
 
-type ButtonLinkProps = AnchorHTMLAttributes<HTMLAnchorElement> &
+type ButtonLinkProps = Omit<ComponentPropsWithoutRef<typeof Link>, "className" | "href"> &
   VariantProps<typeof buttonVariants> & {
     asLink: true;
-    href: string;
+    href: ComponentPropsWithoutRef<typeof Link>["href"];
+    className?: string;
   };
 
 export function Button(props: ButtonProps | ButtonLinkProps) {

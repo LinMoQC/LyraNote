@@ -204,47 +204,51 @@ function SlashMenu({ items, command, clientRect }: SlashMenuProps) {
     return () => cancelAnimationFrame(id);
   }, []);
 
-  return createPortal(
-    <AnimatePresence>
-      {visible && items.length > 0 && (
-        <m.div
-          key="slash-menu"
-          initial={{ opacity: 0, y: -8, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -5, scale: 0.97, transition: { duration: 0.1, ease: [0.4, 0, 1, 1] } }}
-          transition={{ type: "spring", stiffness: 400, damping: 28, mass: 0.5 }}
-          className="fixed z-[9999] w-[264px] overflow-hidden rounded-[12px] border border-white/10 bg-[#252525] shadow-[0_8px_32px_rgba(0,0,0,0.6)] py-1"
-          style={{ top: pos.top, left: pos.left, transformOrigin: "top center" }}
-        >
-          <div ref={listRef} className="max-h-[280px] overflow-y-auto px-1">
-            {items.map((item, i) => {
-              const Icon = item.icon;
-              return (
-                <button
-                  key={item.title}
-                  type="button"
-                  data-slash-idx={i}
-                  onClick={() => command(item)}
-                  onMouseEnter={() => setSelected(i)}
-                  className={`group flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left transition-all duration-75 ${
-                    i === selected ? "bg-white/[0.07] text-foreground" : "text-foreground/80 hover:bg-white/[0.05] hover:text-foreground"
-                  }`}
-                >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-white/[0.06] border border-white/[0.07]">
-                    <Icon size={14} className="text-muted-foreground/80" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-[13px] font-medium leading-tight">{item.title}</div>
-                    <div className="truncate text-[11px] text-muted-foreground/50 leading-tight mt-0.5">{item.description}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </m.div>
+  return (
+    <>
+      {createPortal(
+        <AnimatePresence>
+          {visible && items.length > 0 && (
+            <m.div
+              key="slash-menu"
+              initial={{ opacity: 0, y: -8, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -5, scale: 0.97, transition: { duration: 0.1, ease: [0.4, 0, 1, 1] } }}
+              transition={{ type: "spring", stiffness: 400, damping: 28, mass: 0.5 }}
+              className="fixed z-[9999] w-[264px] overflow-hidden rounded-[12px] border border-white/10 bg-[#252525] shadow-[0_8px_32px_rgba(0,0,0,0.6)] py-1"
+              style={{ top: pos.top, left: pos.left, transformOrigin: "top center" }}
+            >
+              <div ref={listRef} className="max-h-[280px] overflow-y-auto px-1">
+                {items.map((item, i) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.title}
+                      type="button"
+                      data-slash-idx={i}
+                      onClick={() => command(item)}
+                      onMouseEnter={() => setSelected(i)}
+                      className={`group flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left transition-all duration-75 ${
+                        i === selected ? "bg-white/[0.07] text-foreground" : "text-foreground/80 hover:bg-white/[0.05] hover:text-foreground"
+                      }`}
+                    >
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[6px] bg-white/[0.06] border border-white/[0.07]">
+                        <Icon size={14} className="text-muted-foreground/80" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-[13px] font-medium leading-tight">{item.title}</div>
+                        <div className="truncate text-[11px] text-muted-foreground/50 leading-tight mt-0.5">{item.description}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </m.div>
+          )}
+        </AnimatePresence>,
+        document.body,
       )}
-    </AnimatePresence>,
-    document.body
+    </>
   );
 }
 

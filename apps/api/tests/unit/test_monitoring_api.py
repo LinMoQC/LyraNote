@@ -193,6 +193,36 @@ async def test_monitoring_traces_failures_and_workloads_support_new_trace_fields
     test_user,
 ) -> None:
     user, _ = test_user
+    conversation = Conversation(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        title="Trace workload conversation",
+        source="chat",
+    )
+    db_session.add(conversation)
+    await db_session.flush()
+
+    generation_one = MessageGeneration(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        user_message_id=uuid.uuid4(),
+        assistant_message_id=uuid.uuid4(),
+        user_id=user.id,
+        status="completed",
+        model="gpt-4o-mini",
+    )
+    generation_two = MessageGeneration(
+        id=uuid.uuid4(),
+        conversation_id=conversation.id,
+        user_message_id=uuid.uuid4(),
+        assistant_message_id=uuid.uuid4(),
+        user_id=user.id,
+        status="completed",
+        model="gpt-4o-mini",
+    )
+    db_session.add_all([generation_one, generation_two])
+    await db_session.flush()
+
     notebook = Notebook(
         user_id=user.id,
         title="Trace Notebook",
@@ -223,7 +253,7 @@ async def test_monitoring_traces_failures_and_workloads_support_new_trace_fields
         name="chat.first",
         status="completed",
         user_id=user.id,
-        generation_id=uuid.uuid4(),
+        generation_id=generation_one.id,
         started_at=shared_started_at,
     )
     chat_run_one.finished_at = shared_started_at + timedelta(seconds=3)
@@ -236,7 +266,7 @@ async def test_monitoring_traces_failures_and_workloads_support_new_trace_fields
         name="chat.second",
         status="error",
         user_id=user.id,
-        generation_id=uuid.uuid4(),
+        generation_id=generation_two.id,
         started_at=shared_started_at,
     )
     chat_run_two.finished_at = shared_started_at + timedelta(seconds=4)

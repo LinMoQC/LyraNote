@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { DeepResearchSaveNoteDialog } from "@/components/deep-research/dr-save-note-dialog";
@@ -36,7 +36,7 @@ vi.mock("@/lib/notify", () => ({
 function createWrapper() {
   const queryClient = createTestQueryClient();
 
-  return function Wrapper({ children }: { children?: ReactNode }) {
+  return function Wrapper({ children }: Pick<ComponentProps<typeof QueryClientProvider>, "children">) {
     return (
       <QueryClientProvider client={queryClient}>
         {children}

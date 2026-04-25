@@ -178,7 +178,7 @@ function GraphBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
         <ForceGraph2D
           graphData={graphData}
           // 节点：自定义画布绘制（圆 + 标签）
-          nodeCanvasObject={(node, ctx) =>
+          nodeCanvasObject={(node: unknown, ctx: CanvasRenderingContext2D) =>
             paintNode(node as Record<string, unknown>, ctx)
           }
           nodeCanvasObjectMode={() => "replace"}
@@ -188,7 +188,7 @@ function GraphBlockInner({ code, isStreaming }: { code: string; isStreaming?: bo
           linkDirectionalArrowLength={4}
           linkDirectionalArrowRelPos={1}
           // 边标签：自定义画布绘制
-          linkCanvasObject={(link, ctx) =>
+          linkCanvasObject={(link: unknown, ctx: CanvasRenderingContext2D) =>
             paintLink(link as Record<string, unknown>, ctx)
           }
           linkCanvasObjectMode={() => "after"}

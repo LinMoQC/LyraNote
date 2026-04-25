@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ComponentProps, useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useChatStream } from "@/hooks/use-chat-stream";
@@ -56,7 +56,7 @@ vi.mock("@/lib/notify", () => ({
 function createWrapper() {
   const queryClient = createTestQueryClient()
 
-  return function Wrapper({ children }: { children?: ReactNode }) {
+  return function Wrapper({ children }: Pick<ComponentProps<typeof QueryClientProvider>, "children">) {
     return (
       <QueryClientProvider client={queryClient}>
         {children}
