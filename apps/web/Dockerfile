@@ -13,8 +13,11 @@ WORKDIR /app
 # 根配置
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 
-# 只复制 web 包声明（减少依赖安装范围）
+# 复制 web 与其 workspace 依赖的包声明，确保 pnpm 能解析本地 workspace 链接
 COPY apps/web/package.json ./apps/web/
+COPY packages/api-client/package.json ./packages/api-client/
+COPY packages/types/package.json ./packages/types/
+COPY packages/ui/package.json ./packages/ui/
 
 # Hoisted node_modules so Next standalone output has real files (pnpm symlinks break in runner).
 RUN printf '%s\n' 'node-linker=hoisted' > .npmrc
@@ -35,8 +38,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
 
-# 拷贝源码
+# 拷贝 web 与其 workspace 依赖源码，保证 node_modules 中的 workspace 链接有真实目标
 COPY apps/web ./apps/web
+COPY packages/api-client ./packages/api-client
+COPY packages/types ./packages/types
+COPY packages/ui ./packages/ui
 
 # 构建参数
 ARG NEXT_PUBLIC_API_BASE_URL=/api/v1
