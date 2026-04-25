@@ -14,6 +14,7 @@ env:
   REGISTRY: ghcr.io
   IMAGE_API: ${{ github.repository }}/api
   IMAGE_WEB: ${{ github.repository }}/web
+  IMAGE_MONITORING: ${{ github.repository }}/monitoring
 
 jobs:
   build-and-push:
@@ -81,6 +82,31 @@ jobs:
             NEXT_PUBLIC_API_BASE_URL=
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+      # ── Monitoring ───────────────────────────────────────────────────────────
+
+      - name: Extract metadata for Monitoring image
+        id: meta-monitoring
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_MONITORING }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-,format=short
+
+      - name: Build and push Monitoring image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/monitoring/Dockerfile
+          push: true
+          tags: ${{ steps.meta-monitoring.outputs.tags }}
+          labels: ${{ steps.meta-monitoring.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=
+            MONITORING_BASE_PATH=/ops
+          cache-from: type=gha,scope=monitoring
+          cache-to: type=gha,mode=max,scope=monitoring
 
   # ── Deploy（按需取消注释）──────────────────────────────────────────────────
   #
