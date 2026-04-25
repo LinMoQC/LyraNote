@@ -13,15 +13,25 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LazyMotion, domAnimation } from "framer-motion";
+import dynamic from "next/dynamic";
 import { AbstractIntlMessages, NextIntlClientProvider } from "next-intl";
 import { useState } from "react";
 
 import { Toaster } from "sileo";
 import { AuthProvider } from "@/features/auth/auth-provider";
 import { setI18nMessages } from "@/lib/i18n";
-import { LocatorDevtools } from "@/lib/locator-devtools";
 import { ThemeProvider, type ColorTheme } from "@/lib/theme";
 import { ThemePresetProvider, type ThemePreset } from "@/lib/theme-preset";
+
+const LocatorDevtools =
+  process.env.NODE_ENV === "development"
+    ? dynamic(
+        () => import("@/lib/locator-devtools").then((module) => module.LocatorDevtools),
+        { ssr: false }
+      )
+    : function LocatorDevtoolsFallback() {
+        return null;
+      };
 
 interface ProvidersProps {
   children: React.ReactNode;
