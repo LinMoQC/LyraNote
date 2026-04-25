@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import {
   buildProdUpdateDirtyWorktreeGuidance,
+  getProdUpdatePullCommand,
   parseTrackedFilesFromGitStatus,
+  PROD_UPDATE_PULL_SERVICES,
 } from './prod.js';
 
 test('parseTrackedFilesFromGitStatus ignores untracked files', () => {
@@ -31,4 +33,12 @@ test('buildProdUpdateDirtyWorktreeGuidance lists files and recovery steps', () =
   assert.ok(lines.includes('如果这些改动不需要保留，请先执行：git restore <文件>'));
   assert.ok(lines.includes('如果这些改动需要暂存，请先执行：git stash push --include-untracked'));
   assert.equal(lines.at(-1), '清理完成后，再重新运行 lyra update。');
+});
+
+test('getProdUpdatePullCommand includes monitoring image', () => {
+  assert.deepEqual(PROD_UPDATE_PULL_SERVICES, ['api', 'web', 'monitoring']);
+  assert.equal(
+    getProdUpdatePullCommand(),
+    'docker compose -f docker-compose.prod.yml pull api web monitoring'
+  );
 });

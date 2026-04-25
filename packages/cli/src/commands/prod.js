@@ -5,6 +5,8 @@ import { section, warn, info } from '../utils/ui.js';
 import { exec, execQ } from '../utils/proc.js';
 import { ROOT_DIR } from '../utils/paths.js';
 
+export const PROD_UPDATE_PULL_SERVICES = ['api', 'web', 'monitoring'];
+
 export function parseTrackedFilesFromGitStatus(statusOutput) {
   return statusOutput
     .split('\n')
@@ -30,6 +32,10 @@ export function buildProdUpdateDirtyWorktreeGuidance(files) {
   lines.push('清理完成后，再重新运行 lyra update。');
 
   return lines;
+}
+
+export function getProdUpdatePullCommand() {
+  return `docker compose -f docker-compose.prod.yml pull ${PROD_UPDATE_PULL_SERVICES.join(' ')}`;
 }
 
 export async function startProd() {
@@ -78,7 +84,7 @@ export async function updateProd() {
   const spinner = ora('更新到最新版本...').start();
   try {
     exec('git pull --ff-only', { shell: true });
-    exec('docker compose -f docker-compose.prod.yml pull web api worker', { shell: true });
+    exec(getProdUpdatePullCommand(), { shell: true });
     exec('docker compose -f docker-compose.prod.yml up -d', { shell: true });
     exec('docker image prune -f', { shell: true });
     spinner.succeed('更新完成');
