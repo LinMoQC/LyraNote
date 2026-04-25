@@ -113,9 +113,11 @@ async def test_run_message_generation_persists_cancelled_partial_output(engine, 
     await db_session.commit()
 
     blocker = asyncio.Event()
+    first_token_consumed = asyncio.Event()
 
     async def fake_run_agent(**_kwargs):
         yield {"type": "token", "content": "部分输出"}
+        first_token_consumed.set()
         await blocker.wait()
         yield {"type": "done"}
 
@@ -147,7 +149,7 @@ async def test_run_message_generation_persists_cancelled_partial_output(engine, 
         trace_id=None,
     )
 
-    await asyncio.sleep(0.05)
+    await asyncio.wait_for(first_token_consumed.wait(), timeout=1)
     cancel_message_generation_task(str(generation.id))
     await task
 
